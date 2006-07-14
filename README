@@ -1,1 +1,1 @@
-This is a program that processes NFSv4 RPC calls.
+This is an NFSv4 server, that serves data from RAM.

@@ -20,6 +20,6 @@ push
 stamp-h1
 
 # app-specific
-nfs4_server
+nfs4_ramd
 nfs-server*.tar.gz
-nfs-server-config.h*
+nfs4-ram-config.h*

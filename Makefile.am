@@ -4,11 +4,11 @@
 
 INCLUDES	= @GLIB_CFLAGS@
 
-sbin_PROGRAMS	= nfs4_server
+sbin_PROGRAMS	= nfs4_ramd
 
-nfs4_server_SOURCES = nfs4_prot.h nfs4_prot_xdr.c \
+nfs4_ramd_SOURCES = nfs4_prot.h nfs4_prot_xdr.c \
 		nfs4_prot_server.c nfs4_prot_svc.c
-nfs4_server_LDADD = @GLIB_LIBS@ @GSSRPC_LIBS@
+nfs4_ramd_LDADD = @GLIB_LIBS@ @GSSRPC_LIBS@
 
 EXTRA_DIST	= autogen.sh nfs4_prot.x
 
