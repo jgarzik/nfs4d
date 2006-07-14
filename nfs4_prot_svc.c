@@ -65,55 +65,6 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 	return;
 }
 
-static void
-nfs4_callback_1(struct svc_req *rqstp, register SVCXPRT *transp)
-{
-	union {
-		CB_COMPOUND4args cb_compound_1_arg;
-	} argument;
-	union {
-		CB_COMPOUND4res cb_compound_1_res;
-	} result;
-	bool_t retval;
-	xdrproc_t _xdr_argument, _xdr_result;
-	bool_t (*local)(char *, void *, struct svc_req *);
-
-	switch (rqstp->rq_proc) {
-	case CB_NULL:
-		_xdr_argument = (xdrproc_t) xdr_void;
-		_xdr_result = (xdrproc_t) xdr_void;
-		local = (bool_t (*) (char *, void *,  struct svc_req *))cb_null_1_svc;
-		break;
-
-	case CB_COMPOUND:
-		_xdr_argument = (xdrproc_t) xdr_CB_COMPOUND4args;
-		_xdr_result = (xdrproc_t) xdr_CB_COMPOUND4res;
-		local = (bool_t (*) (char *, void *,  struct svc_req *))cb_compound_1_svc;
-		break;
-
-	default:
-		svcerr_noproc (transp);
-		return;
-	}
-	memset ((char *)&argument, 0, sizeof (argument));
-	if (!svc_getargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
-		svcerr_decode (transp);
-		return;
-	}
-	retval = (bool_t) (*local)((char *)&argument, (void *)&result, rqstp);
-	if (retval > 0 && !svc_sendreply(transp, (xdrproc_t) _xdr_result, (char *)&result)) {
-		svcerr_systemerr (transp);
-	}
-	if (!svc_freeargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
-		fprintf (stderr, "%s", "unable to free arguments");
-		exit (1);
-	}
-	if (!nfs4_callback_1_freeresult (transp, _xdr_result, (caddr_t) &result))
-		fprintf (stderr, "%s", "unable to free results");
-
-	return;
-}
-
 int
 main (int argc, char **argv)
 {
@@ -129,10 +80,6 @@ main (int argc, char **argv)
 	}
 	if (!svc_register(transp, NFS4_PROGRAM, NFS_V4, nfs4_program_4, IPPROTO_TCP)) {
 		fprintf (stderr, "%s", "unable to register (NFS4_PROGRAM, NFS_V4, tcp).");
-		exit(1);
-	}
-	if (!svc_register(transp, NFS4_CALLBACK, NFS_CB, nfs4_callback_1, IPPROTO_TCP)) {
-		fprintf (stderr, "%s", "unable to register (NFS4_CALLBACK, NFS_CB, tcp).");
 		exit(1);
 	}
 

@@ -43,38 +43,3 @@ nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result
 	return 1;
 }
 
-bool_t
-cb_null_1_svc(void *argp, void *result, struct svc_req *rqstp)
-{
-	bool_t retval;
-
-	/*
-	 * insert server code here
-	 */
-
-	return retval;
-}
-
-bool_t
-cb_compound_1_svc(CB_COMPOUND4args *argp, CB_COMPOUND4res *result, struct svc_req *rqstp)
-{
-	bool_t retval;
-
-	/*
-	 * insert server code here
-	 */
-
-	return retval;
-}
-
-int
-nfs4_callback_1_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
-{
-	xdr_free (xdr_result, result);
-
-	/*
-	 * Insert additional freeing code here, if needed
-	 */
-
-	return 1;
-}
