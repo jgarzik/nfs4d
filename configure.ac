@@ -17,11 +17,11 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with this program; if not, write to the Free Software
 dnl Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-AC_INIT(skeleton, 0.1, [Jeff Garzik <jgarzik@pobox.com>])
+AC_INIT(nfs-server, 0.1, [Jeff Garzik <jgarzik@pobox.com>])
 AC_PREREQ(2.52)
-AC_CONFIG_SRCDIR([skeleton.c])
+AC_CONFIG_SRCDIR([nfs4_prot_server.c])
 AM_INIT_AUTOMAKE([gnu])
-AC_CONFIG_HEADERS([skeleton-config.h])
+AC_CONFIG_HEADERS([nfs-server-config.h])
 
 dnl Make sure anyone changing configure.ac/Makefile.am has a clue
 AM_MAINTAINER_MODE
@@ -42,6 +42,7 @@ dnl AC_TYPE_PID_T
 dnl -----------------------------
 dnl Checks for required libraries
 dnl -----------------------------
+AC_CHECK_LIB(gssrpc, gssrpc_svc_register, GSSRPC_LIBS=-lgssrpc, exit 1)
 
 dnl -------------------------------------
 dnl Checks for optional library functions
@@ -56,6 +57,8 @@ dnl autoconf output generation
 dnl --------------------------
 
 AM_PATH_GLIB_2_0(2.0.0)
+
+AC_SUBST(GSSRPC_LIBS)
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
