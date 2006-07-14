@@ -122,20 +122,6 @@ main (int argc, char **argv)
 	pmap_unset (NFS4_PROGRAM, NFS_V4);
 	pmap_unset (NFS4_CALLBACK, NFS_CB);
 
-	transp = svcudp_create(RPC_ANYSOCK);
-	if (transp == NULL) {
-		fprintf (stderr, "%s", "cannot create udp service.");
-		exit(1);
-	}
-	if (!svc_register(transp, NFS4_PROGRAM, NFS_V4, nfs4_program_4, IPPROTO_UDP)) {
-		fprintf (stderr, "%s", "unable to register (NFS4_PROGRAM, NFS_V4, udp).");
-		exit(1);
-	}
-	if (!svc_register(transp, NFS4_CALLBACK, NFS_CB, nfs4_callback_1, IPPROTO_UDP)) {
-		fprintf (stderr, "%s", "unable to register (NFS4_CALLBACK, NFS_CB, udp).");
-		exit(1);
-	}
-
 	transp = svctcp_create(RPC_ANYSOCK, 0, 0);
 	if (transp == NULL) {
 		fprintf (stderr, "%s", "cannot create tcp service.");
