@@ -4,7 +4,7 @@
 
 static GHashTable *inode_table;
 
-struct nfs_inode *ino_get(uint32_t inum)
+struct nfs_inode *ino_get(nfsino_t inum)
 {
 	g_assert(inode_table != NULL);
 
@@ -19,7 +19,9 @@ void inode_table_init(void)
 
 	root = g_new0(struct nfs_inode, 1);
 	root->type = IT_DIR;
-	root->u.dir.hash = g_hash_table_new(g_str_hash, g_str_equal);
+	root->parents = g_array_new(FALSE, FALSE, sizeof(nfsino_t));
+	root->version = 1ULL;
+	root->u.dir = g_hash_table_new(g_str_hash, g_str_equal);
 
 	g_hash_table_insert(inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 }

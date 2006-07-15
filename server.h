@@ -5,6 +5,8 @@
 #include <glib.h>
 #include "nfs4_prot.h"
 
+typedef uint32_t nfsino_t;
+
 enum {
 	INO_ROOT		= 10,
 	INO_FIRST		= INO_ROOT,
@@ -12,8 +14,8 @@ enum {
 };
 
 struct nfs_client {
-	uint32_t		current_fh;
-	uint32_t		save_fh;
+	nfsino_t		current_fh;
+	nfsino_t		save_fh;
 };
 
 enum inode_type {
@@ -24,24 +26,22 @@ enum inode_type {
 };
 
 struct nfs_inode {
-	enum inode_type		type;
+	enum inode_type		type;		/* inode type: link, dir, ...*/
+	GArray			*parents;	/* list of parent dirs */
+	uint64_t		version;
 
 	union {
-		struct {
-			GHashTable	*hash;
-			uint32_t	parent;
-		} dir;
-
-		gchar		*linktext;
+		GHashTable	*dir;		/* state for a directory */
+		gchar		*linktext;	/* state for a symlink */
 	} u;
 };
 
 struct nfs_dirent {
-	uint32_t		ino;
+	nfsino_t		ino;
 };
 
 /* inode.c */
-struct nfs_inode *ino_get(uint32_t inum);
+struct nfs_inode *ino_get(nfsino_t inum);
 void inode_table_init(void);
 
 /* dir.c */

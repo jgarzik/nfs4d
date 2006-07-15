@@ -37,12 +37,12 @@ static void cli_free(struct nfs_client *cli)
 	free(cli);
 }
 
-static void nfs_fh_set(nfs_fh4 *fh, uint32_t fh_int)
+static void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
 {
-	uint32_t *fh_val = g_new(uint32_t, 1);
+	nfsino_t *fh_val = g_new(nfsino_t, 1);
 	*fh_val = GUINT32_TO_BE(fh_int);
 
-	fh->nfs_fh4_len = sizeof(uint32_t);
+	fh->nfs_fh4_len = sizeof(nfsino_t);
 	fh->nfs_fh4_val = (char *)(void *) fh_val;
 }
 
@@ -54,14 +54,14 @@ static void nfs_fh_free(nfs_fh4 *fh)
 	}
 }
 
-static uint32_t nfs_fh_decode(nfs_fh4 *fh_in)
+static nfsino_t nfs_fh_decode(nfs_fh4 *fh_in)
 {
-	uint32_t *fhp;
-	uint32_t fh;
+	nfsino_t *fhp;
+	nfsino_t fh;
 
 	if (!fh_in)
 		return 0;
-	if (fh_in->nfs_fh4_len != sizeof(uint32_t))
+	if (fh_in->nfs_fh4_len != sizeof(nfsino_t))
 		return 0;
 	if (!fh_in->nfs_fh4_val)
 		return 0;
@@ -127,7 +127,7 @@ static bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
 	nfsstat4 status = NFS4_OK;
-	uint32_t fh;
+	nfsino_t fh;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_PUTFH;
@@ -257,6 +257,31 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static bool_t nfs_op_openattr(struct nfs_client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	OPENATTR4res *res;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_OPENATTR;
+	res = &resop.nfs_resop4_u.opopenattr;
+
+	ino = ino_get(cli->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	/* named attributes not supported */
+	status = NFS4ERR_NOTSUPP;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 {
 	switch (arg->argop) {
@@ -266,6 +291,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_lookup(cli, &arg->nfs_argop4_u.oplookup, res);
 	case OP_LOOKUPP:
 		return nfs_op_lookupp(cli, res);
+	case OP_OPENATTR:
+		return nfs_op_openattr(cli, res);
 	case OP_PUTFH:
 		return nfs_op_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
@@ -292,7 +319,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_LOCKU:
 	case OP_NVERIFY:
 	case OP_OPEN:
-	case OP_OPENATTR:
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
 	case OP_READ:

@@ -34,9 +34,9 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
-	g_assert(ino->u.dir.hash != NULL);
+	g_assert(ino->u.dir != NULL);
 
-	dirent = g_hash_table_lookup(ino->u.dir.hash, &arg->objname);
+	dirent = g_hash_table_lookup(ino->u.dir, &arg->objname);
 	if (!dirent) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -73,12 +73,12 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 		goto out;
 	}
 
-	if (cli->current_fh == INO_ROOT) {
+	if (ino->parents->len == 0) {	/* root inode, no parents */
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
 
-	cli->current_fh = ino->u.dir.parent;
+	cli->current_fh = g_array_index(ino->parents, nfsino_t, 0);
 
 out:
 	res->status = status;
