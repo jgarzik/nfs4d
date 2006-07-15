@@ -198,6 +198,7 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 	res = &resop.nfs_resop4_u.opremove;
 	resok = &res->REMOVE4res_u.resok4;
 
+	/* reference container directory */
 	dir_ino = inode_get(cli->current_fh);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -208,33 +209,50 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
+	/* copy target name */
 	name = copy_utf8string(&arg->target);
 	if (!name) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
-	g_assert(dir_ino->u.dir != NULL);
-
+	/* lookup target name in directory */
 	dirent = g_hash_table_lookup(dir_ino->u.dir, name);
 	if (!dirent) {
 		status = NFS4ERR_NOENT;
 		goto out_name;
 	}
 
+	/* reference target inode */
 	target_ino = inode_get(dirent->ino);
 	if (!target_ino) {			/* should never happen */
 		status = NFS4ERR_SERVERFAULT;
 		goto out_name;
 	}
 
+	/* prevent removal of non-empty dirs */
+	if ((target_ino->type == IT_DIR) &&
+	    (g_hash_table_size(target_ino->u.dir) > 0)) {
+		status = NFS4ERR_INVAL;
+		goto out_name;
+	}
+
+	/* prevent root dir deletion */
+	if (target_ino->ino == INO_ROOT) {
+		status = NFS4ERR_INVAL;
+		goto out_name;
+	}
+
+	/* remove target inode from directory */
 	g_hash_table_remove(dir_ino->u.dir, name);
 
+	/* record directory change info */
 	resok->cinfo.atomic = TRUE;
 	resok->cinfo.before = dir_ino->version;
 	inode_touch(dir_ino);
 	resok->cinfo.after = dir_ino->version;
 
+	/* remove link, possibly deleting inode */
 	inode_unlink(target_ino, dir_ino->ino);
 
 out_name:
