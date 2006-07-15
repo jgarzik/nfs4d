@@ -27,6 +27,7 @@ enum inode_type {
 };
 
 struct nfs_inode {
+	nfsino_t		ino;
 	enum inode_type		type;		/* inode type: link, dir, ...*/
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
@@ -51,11 +52,13 @@ extern struct timeval current_time;
 struct nfs_inode *inode_get(nfsino_t inum);
 void inode_touch(struct nfs_inode *ino);
 bool_t inode_table_init(void);
+void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
 
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres);
 bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres);
 bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cres);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);

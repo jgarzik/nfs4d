@@ -320,6 +320,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_putrootfh(cli, res);
 	case OP_READLINK:
 		return nfs_op_readlink(cli, res);
+	case OP_REMOVE:
+		return nfs_op_remove(cli, &arg->nfs_argop4_u.opremove, res);
 	case OP_RESTOREFH:
 		return nfs_op_restorefh(cli, res);
 	case OP_SAVEFH:
@@ -341,7 +343,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_OPEN_DOWNGRADE:
 	case OP_READ:
 	case OP_READDIR:
-	case OP_REMOVE:
 	case OP_RENAME:
 	case OP_RENEW:
 	case OP_SECINFO:

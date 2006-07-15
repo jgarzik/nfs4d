@@ -183,3 +183,64 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	REMOVE4res *res;
+	REMOVE4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *dir_ino, *target_ino;
+	struct nfs_dirent *dirent;
+	gchar *name;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_REMOVE;
+	res = &resop.nfs_resop4_u.opremove;
+	resok = &res->REMOVE4res_u.resok4;
+
+	dir_ino = inode_get(cli->current_fh);
+	if (!dir_ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+	if (dir_ino->type != IT_DIR) {
+		status = NFS4ERR_NOTDIR;
+		goto out;
+	}
+
+	name = copy_utf8string(&arg->target);
+	if (!name) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	g_assert(dir_ino->u.dir != NULL);
+
+	dirent = g_hash_table_lookup(dir_ino->u.dir, name);
+	if (!dirent) {
+		status = NFS4ERR_NOENT;
+		goto out_name;
+	}
+
+	target_ino = inode_get(dirent->ino);
+	if (!target_ino) {			/* should never happen */
+		status = NFS4ERR_SERVERFAULT;
+		goto out_name;
+	}
+
+	g_hash_table_remove(dir_ino->u.dir, name);
+
+	resok->cinfo.atomic = TRUE;
+	resok->cinfo.before = dir_ino->version;
+	inode_touch(dir_ino);
+	resok->cinfo.after = dir_ino->version;
+
+	inode_unlink(target_ino, dir_ino->ino);
+
+out_name:
+	g_free(name);
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
