@@ -85,7 +85,7 @@ static nfsino_t nfs_fh_decode(nfs_fh4 *fh_in)
 	fhp = (void *) fh_in->nfs_fh4_val;
 	fh = GUINT32_FROM_BE(*fhp);
 
-	if (!ino_get(fh))
+	if (!inode_get(fh))
 		return 0;
 
 	return fh;
@@ -127,7 +127,7 @@ static bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.opgetfh;
 	resok = &res->GETFH4res_u.resok4;
 
-	if (!ino_get(cli->current_fh)) {
+	if (!inode_get(cli->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -205,7 +205,7 @@ static bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_RESTOREFH;
 	res = &resop.nfs_resop4_u.oprestorefh;
 
-	if (!ino_get(cli->save_fh)) {
+	if (!inode_get(cli->save_fh)) {
 		status = NFS4ERR_RESTOREFH;
 		goto out;
 	}
@@ -227,7 +227,7 @@ static bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_SAVEFH;
 	res = &resop.nfs_resop4_u.opsavefh;
 
-	if (!ino_get(cli->current_fh)) {
+	if (!inode_get(cli->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -253,7 +253,7 @@ static bool_t nfs_op_readlink(struct nfs_client *cli, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.opreadlink;
 	resok = &res->READLINK4res_u.resok4;
 
-	ino = ino_get(cli->current_fh);
+	ino = inode_get(cli->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -285,7 +285,7 @@ static bool_t nfs_op_openattr(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_OPENATTR;
 	res = &resop.nfs_resop4_u.opopenattr;
 
-	ino = ino_get(cli->current_fh);
+	ino = inode_get(cli->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;

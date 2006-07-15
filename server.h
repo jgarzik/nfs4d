@@ -48,7 +48,7 @@ extern struct timeval current_time;
 
 
 /* inode.c */
-struct nfs_inode *ino_get(nfsino_t inum);
+struct nfs_inode *inode_get(nfsino_t inum);
 void inode_touch(struct nfs_inode *ino);
 bool_t inode_table_init(void);
 

@@ -4,7 +4,7 @@
 
 static GHashTable *inode_table;
 
-struct nfs_inode *ino_get(nfsino_t inum)
+struct nfs_inode *inode_get(nfsino_t inum)
 {
 	g_assert(inode_table != NULL);
 

@@ -22,7 +22,7 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
-	ino = ino_get(cli->current_fh);
+	ino = inode_get(cli->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -69,7 +69,7 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_LOOKUPP;
 	res = &resop.nfs_resop4_u.oplookupp;
 
-	ino = ino_get(cli->current_fh);
+	ino = inode_get(cli->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -156,20 +156,20 @@ bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	dir_ino = ino_get(cli->current_fh);
+	dir_ino = inode_get(cli->current_fh);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	src_ino = ino_get(cli->save_fh);
+	src_ino = inode_get(cli->save_fh);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
 	resok->cinfo.atomic = TRUE;
-	resok->cinfo.before = 
+	resok->cinfo.before =
 	resok->cinfo.after = dir_ino->version;
 
 	status = dir_add(dir_ino, &arg->newname, cli->save_fh);
