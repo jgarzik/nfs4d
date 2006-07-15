@@ -340,6 +340,17 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 			goto out_name;
 		}
 
+		/* do oldname and newname refer to same file? */
+		if (old_file->ino == new_file->ino) {
+			resok->source_cinfo.atomic = TRUE;
+			resok->source_cinfo.after =
+			resok->source_cinfo.before = src_dir->version;
+			resok->target_cinfo.atomic = TRUE;
+			resok->target_cinfo.after =
+			resok->target_cinfo.before = target_dir->version;
+			goto out_name;
+		}
+
 		if (old_file->type == IT_DIR && new_file->type == IT_DIR) {
 			if (g_hash_table_size(new_file->u.dir) == 0)
 				ok_to_remove = TRUE;
