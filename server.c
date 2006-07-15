@@ -10,6 +10,7 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
+
 bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
 {
 	return TRUE;
@@ -27,24 +28,159 @@ static void cli_free(struct client *cli)
 	free(cli);
 }
 
-static bool_t nfs_getfh(struct client *cli, COMPOUND4res *res)
+static void nfs_fh_set(nfs_fh4 *fh, uint32_t fh_int)
 {
+	uint32_t *fh_val = g_new(uint32_t, 1);
+	*fh_val = GUINT32_TO_BE(fh_int);
+
+	fh->nfs_fh4_len = sizeof(uint32_t);
+	fh->nfs_fh4_val = (char *)(void *) fh_val;
+}
+
+static void nfs_fh_free(nfs_fh4 *fh)
+{
+	if (fh) {
+		free(fh->nfs_fh4_val);
+		fh->nfs_fh4_val = NULL;
+	}
+}
+
+static bool_t nfs_fh_valid(uint32_t fh)
+{
+	if (fh > INO_RESERVED_LAST)
+		return TRUE;
+
+	switch (fh) {
+	case INO_ROOT:
+		return TRUE;
+	default:
+		break;
+	}
+
 	return FALSE;
 }
 
-static bool_t nfs_putfh(struct client *cli, PUTFH4args *arg, COMPOUND4res *res)
+static uint32_t nfs_fh_decode(nfs_fh4 *fh_in)
 {
-	return FALSE;
+	uint32_t *fhp;
+	uint32_t fh;
+
+	if (!fh_in)
+		return 0;
+	if (fh_in->nfs_fh4_len != sizeof(uint32_t))
+		return 0;
+	if (!fh_in->nfs_fh4_val)
+		return 0;
+	fhp = (void *) fh_in->nfs_fh4_val;
+	fh = GUINT32_FROM_BE(*fhp);
+	if (!nfs_fh_valid(fh))
+		return 0;
+	return fh;
 }
 
-static bool_t nfs_putpubfh(struct client *cli, COMPOUND4res *res)
+static bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop,
+			 nfsstat4 stat)
 {
-	return FALSE;
+	void *mem;
+	u_int array_len = res->resarray.resarray_len;
+
+	mem = realloc(res->resarray.resarray_val,
+		((array_len + 1) * sizeof(nfs_resop4)));
+	if (!mem)
+		return FALSE;
+
+	res->resarray.resarray_len++;
+	res->resarray.resarray_val = mem;
+	memcpy(&res->resarray.resarray_val[array_len], resop,
+	       sizeof(struct nfs_resop4));
+	res->status = stat;
+
+	return TRUE;
 }
 
-static bool_t nfs_putrootfh(struct client *cli, COMPOUND4res *res)
+static void nfs_getfh_free(GETFH4res *opgetfh)
 {
-	return FALSE;
+	nfs_fh_free(&opgetfh->GETFH4res_u.resok4.object);
+}
+
+static bool_t nfs_getfh(struct client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	GETFH4res *res;
+	GETFH4resok * resok;
+	nfsstat4 status = NFS4_OK;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_GETFH;
+	res = &resop.nfs_resop4_u.opgetfh;
+	resok = &res->GETFH4res_u.resok4;
+
+	if (!nfs_fh_valid(cli->current_fh)) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	nfs_fh_set(&resok->object, cli->current_fh);
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t nfs_putfh(struct client *cli, PUTFH4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	PUTFH4res *res;
+	nfsstat4 status = NFS4_OK;
+	uint32_t fh;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_PUTFH;
+	res = &resop.nfs_resop4_u.opputfh;
+
+	fh = nfs_fh_decode(&arg->object);
+	if (!fh) {
+		status = NFS4ERR_BADHANDLE;
+		goto out;
+	}
+
+	cli->current_fh = fh;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t nfs_putrootfh(struct client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	PUTFH4res *res;
+	nfsstat4 status = NFS4_OK;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_PUTROOTFH;
+	res = &resop.nfs_resop4_u.opputfh;
+
+	cli->current_fh = INO_ROOT;
+
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t nfs_putpubfh(struct client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	PUTFH4res *res;
+	nfsstat4 status = NFS4_OK;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_PUTPUBFH;
+	res = &resop.nfs_resop4_u.opputfh;
+
+	cli->current_fh = INO_ROOT;
+
+	res->status = status;
+	return push_resop(cres, &resop, status);
 }
 
 static bool_t nfs_arg(struct client *cli, nfs_argop4 *arg, COMPOUND4res *res)
@@ -95,10 +231,30 @@ out:
 	return TRUE;
 }
 
+static void nfs_free(nfs_resop4 *res)
+{
+	switch(res->resop) {
+	case OP_GETFH:
+		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
+		break;
+	case OP_PUTFH:
+	case OP_PUTPUBFH:
+	case OP_PUTROOTFH:
+	default:
+		/* nothing to free */
+		break;
+	}
+}
+
 int nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
 			       COMPOUND4res *res)
 {
-	/* FIXME */
+	unsigned int i;
+
+	for (i = 0; i < res->resarray.resarray_len; i++)
+		nfs_free(&res->resarray.resarray_val[i]);
+
+	free(res->resarray.resarray_val);
 
 	return TRUE;
 }

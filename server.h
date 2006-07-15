@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+enum {
+	INO_ROOT		= 10,
+	INO_FIRST		= INO_ROOT,
+	INO_RESERVED_LAST	= 999,
+};
+
 struct client {
 	uint32_t	current_fh;
 };
