@@ -16,14 +16,23 @@ bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
 	return TRUE;
 }
 
-static struct client *cli_init(struct svc_req *rqstp)
+bool_t valid_utf8string(utf8string *str)
 {
-	struct client *cli = g_new0(struct client, 1);
+	if (!str || !str->utf8string_len || !str->utf8string_val)
+		return FALSE;
+	if (!g_utf8_validate(str->utf8string_val, str->utf8string_len, NULL))
+		return FALSE;
+	return TRUE;
+}
+
+static struct nfs_client *cli_init(struct svc_req *rqstp)
+{
+	struct nfs_client *cli = g_new0(struct nfs_client, 1);
 
 	return cli;
 }
 
-static void cli_free(struct client *cli)
+static void cli_free(struct nfs_client *cli)
 {
 	free(cli);
 }
@@ -78,8 +87,7 @@ static uint32_t nfs_fh_decode(nfs_fh4 *fh_in)
 	return fh;
 }
 
-static bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop,
-			 nfsstat4 stat)
+bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 {
 	void *mem;
 	u_int array_len = res->resarray.resarray_len;
@@ -103,7 +111,7 @@ static void nfs_getfh_free(GETFH4res *opgetfh)
 	nfs_fh_free(&opgetfh->GETFH4res_u.resok4.object);
 }
 
-static bool_t nfs_getfh(struct client *cli, COMPOUND4res *cres)
+static bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	GETFH4res *res;
@@ -127,7 +135,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_putfh(struct client *cli, PUTFH4args *arg, COMPOUND4res *cres)
+static bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -151,7 +159,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_putrootfh(struct client *cli, COMPOUND4res *cres)
+static bool_t nfs_op_putrootfh(struct nfs_client *cli, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -167,7 +175,7 @@ static bool_t nfs_putrootfh(struct client *cli, COMPOUND4res *cres)
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_putpubfh(struct client *cli, COMPOUND4res *cres)
+static bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -183,17 +191,53 @@ static bool_t nfs_putpubfh(struct client *cli, COMPOUND4res *cres)
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_arg(struct client *cli, nfs_argop4 *arg, COMPOUND4res *res)
+static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 {
 	switch (arg->argop) {
 	case OP_GETFH:
-		return nfs_getfh(cli, res);
+		return nfs_op_getfh(cli, res);
+	case OP_LOOKUP:
+		return nfs_op_lookup(cli, &arg->nfs_argop4_u.oplookup, res);
+	case OP_LOOKUPP:
+		return nfs_op_lookupp(cli, res);
 	case OP_PUTFH:
-		return nfs_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
+		return nfs_op_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
-		return nfs_putpubfh(cli, res);
+		return nfs_op_putpubfh(cli, res);
 	case OP_PUTROOTFH:
-		return nfs_putrootfh(cli, res);
+		return nfs_op_putrootfh(cli, res);
+
+	case OP_ACCESS:
+	case OP_CLOSE:
+	case OP_COMMIT:
+	case OP_CREATE:
+	case OP_DELEGPURGE:
+	case OP_DELEGRETURN:
+	case OP_GETATTR:
+	case OP_LINK:
+	case OP_LOCK:
+	case OP_LOCKT:
+	case OP_LOCKU:
+	case OP_NVERIFY:
+	case OP_OPEN:
+	case OP_OPENATTR:
+	case OP_OPEN_CONFIRM:
+	case OP_OPEN_DOWNGRADE:
+	case OP_READ:
+	case OP_READDIR:
+	case OP_READLINK:
+	case OP_REMOVE:
+	case OP_RENAME:
+	case OP_RENEW:
+	case OP_RESTOREFH:
+	case OP_SAVEFH:
+	case OP_SECINFO:
+	case OP_SETATTR:
+	case OP_SETCLIENTID:
+	case OP_SETCLIENTID_CONFIRM:
+	case OP_VERIFY:
+	case OP_WRITE:
+	case OP_RELEASE_LOCKOWNER:
 	default:
 		return FALSE;
 	}
@@ -204,7 +248,7 @@ static bool_t nfs_arg(struct client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 			       struct svc_req *rqstp)
 {
-	struct client *cli;
+	struct nfs_client *cli;
 	unsigned int i;
 
 	memset(res, 0, sizeof(*res));
