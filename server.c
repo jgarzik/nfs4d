@@ -102,7 +102,7 @@ static bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	GETFH4res *res;
-	GETFH4resok * resok;
+	GETFH4resok *resok;
 	nfsstat4 status = NFS4_OK;
 
 	memset(&resop, 0, sizeof(resop));
@@ -222,6 +222,41 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static bool_t nfs_op_readlink(struct nfs_client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	READLINK4res *res;
+	READLINK4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+	gchar *linktext;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_READLINK;
+	res = &resop.nfs_resop4_u.opreadlink;
+	resok = &res->READLINK4res_u.resok4;
+
+	ino = ino_get(cli->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+	if (ino->type != IT_SYMLINK) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	linktext = ino->u.linktext;
+	g_assert(linktext != NULL);
+
+	resok->link.utf8string_len = strlen(linktext);
+	resok->link.utf8string_val = linktext;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 {
 	switch (arg->argop) {
@@ -237,6 +272,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_putpubfh(cli, res);
 	case OP_PUTROOTFH:
 		return nfs_op_putrootfh(cli, res);
+	case OP_READLINK:
+		return nfs_op_readlink(cli, res);
 	case OP_RESTOREFH:
 		return nfs_op_restorefh(cli, res);
 	case OP_SAVEFH:
@@ -260,7 +297,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_OPEN_DOWNGRADE:
 	case OP_READ:
 	case OP_READDIR:
-	case OP_READLINK:
 	case OP_REMOVE:
 	case OP_RENAME:
 	case OP_RENEW:

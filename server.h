@@ -26,8 +26,14 @@ enum inode_type {
 struct nfs_inode {
 	enum inode_type		type;
 
-	GHashTable		*dir;
-	uint32_t		dir_parent;
+	union {
+		struct {
+			GHashTable	*hash;
+			uint32_t	parent;
+		} dir;
+
+		gchar		*linktext;
+	} u;
 };
 
 struct nfs_dirent {

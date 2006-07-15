@@ -19,7 +19,7 @@ void inode_table_init(void)
 
 	root = g_new0(struct nfs_inode, 1);
 	root->type = IT_DIR;
-	root->dir = g_hash_table_new(g_str_hash, g_str_equal);
+	root->u.dir.hash = g_hash_table_new(g_str_hash, g_str_equal);
 
 	g_hash_table_insert(inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 }

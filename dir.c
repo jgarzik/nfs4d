@@ -34,9 +34,9 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
-	g_assert(ino->dir != NULL);
+	g_assert(ino->u.dir.hash != NULL);
 
-	dirent = g_hash_table_lookup(ino->dir, &arg->objname);
+	dirent = g_hash_table_lookup(ino->u.dir.hash, &arg->objname);
 	if (!dirent) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -78,7 +78,7 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 		goto out;
 	}
 
-	cli->current_fh = ino->dir_parent;
+	cli->current_fh = ino->u.dir.parent;
 
 out:
 	res->status = status;
