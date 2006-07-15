@@ -8,9 +8,14 @@
 #include <string.h>
 #include <memory.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include "server.h"
 #include "nfs4_prot.h"
+
+
+struct timeval current_time;
+
 
 static enum auth_stat check_auth(struct svc_req *rqstp)
 {
@@ -33,6 +38,7 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 	xdrproc_t _xdr_argument, _xdr_result;
 	bool_t (*local)(char *, void *, struct svc_req *);
 	enum auth_stat auth_stat;
+	struct timezone tz = { 0, 0 };
 
 	switch (rqstp->rq_proc) {
 	case NFSPROC4_NULL:
@@ -56,6 +62,8 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 		svcerr_decode (transp);
 		return;
 	}
+
+	gettimeofday(&current_time, &tz);
 
 	auth_stat = check_auth(rqstp);
 	if (auth_stat != AUTH_OK) {
@@ -85,6 +93,7 @@ int
 main (int argc, char **argv)
 {
 	register SVCXPRT *transp;
+	struct timezone tz = { 0, 0 };
 
 	pmap_unset (NFS4_PROGRAM, NFS_V4);
 
@@ -98,6 +107,7 @@ main (int argc, char **argv)
 		exit(1);
 	}
 
+	gettimeofday(&current_time, &tz);
 	inode_table_init();
 
 	svc_run ();

@@ -10,7 +10,6 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
-
 bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
 {
 	return TRUE;
@@ -23,6 +22,24 @@ bool_t valid_utf8string(utf8string *str)
 	if (!g_utf8_validate(str->utf8string_val, str->utf8string_len, NULL))
 		return FALSE;
 	return TRUE;
+}
+
+gchar *copy_utf8string(utf8string *str)
+{
+	return g_strndup(str->utf8string_val, str->utf8string_len);
+}
+
+bool_t has_dots(utf8string *str)
+{
+	if (!str)
+		return FALSE;
+	if ((str->utf8string_len == 1) &&
+	    (!memcmp(str->utf8string_val, ".", 1)))
+		return TRUE;
+	if ((str->utf8string_len == 2) &&
+	    (!memcmp(str->utf8string_val, "..", 2)))
+		return TRUE;
+	return FALSE;
 }
 
 static struct nfs_client *cli_init(struct svc_req *rqstp)
@@ -287,6 +304,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	switch (arg->argop) {
 	case OP_GETFH:
 		return nfs_op_getfh(cli, res);
+	case OP_LINK:
+		return nfs_op_link(cli, &arg->nfs_argop4_u.oplink, res);
 	case OP_LOOKUP:
 		return nfs_op_lookup(cli, &arg->nfs_argop4_u.oplookup, res);
 	case OP_LOOKUPP:
@@ -313,7 +332,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
 	case OP_GETATTR:
-	case OP_LINK:
 	case OP_LOCK:
 	case OP_LOCKT:
 	case OP_LOCKU:
