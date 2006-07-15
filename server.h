@@ -59,6 +59,7 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres);
 bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres);
 bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cres);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
