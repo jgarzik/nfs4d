@@ -54,21 +54,6 @@ static void nfs_fh_free(nfs_fh4 *fh)
 	}
 }
 
-static bool_t nfs_fh_valid(uint32_t fh)
-{
-	if (fh > INO_RESERVED_LAST)
-		return TRUE;
-
-	switch (fh) {
-	case INO_ROOT:
-		return TRUE;
-	default:
-		break;
-	}
-
-	return FALSE;
-}
-
 static uint32_t nfs_fh_decode(nfs_fh4 *fh_in)
 {
 	uint32_t *fhp;
@@ -82,8 +67,10 @@ static uint32_t nfs_fh_decode(nfs_fh4 *fh_in)
 		return 0;
 	fhp = (void *) fh_in->nfs_fh4_val;
 	fh = GUINT32_FROM_BE(*fhp);
-	if (!nfs_fh_valid(fh))
+
+	if (!ino_get(fh))
 		return 0;
+
 	return fh;
 }
 
@@ -123,7 +110,7 @@ static bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.opgetfh;
 	resok = &res->GETFH4res_u.resok4;
 
-	if (!nfs_fh_valid(cli->current_fh)) {
+	if (!ino_get(cli->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}

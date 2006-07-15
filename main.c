@@ -3,13 +3,14 @@
  * It was generated using rpcgen.
  */
 
-#include "nfs4_prot.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <memory.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include "server.h"
+#include "nfs4_prot.h"
 
 static enum auth_stat check_auth(struct svc_req *rqstp)
 {
@@ -96,6 +97,8 @@ main (int argc, char **argv)
 		fprintf (stderr, "%s", "unable to register (NFS4_PROGRAM, NFS_V4, tcp).");
 		exit(1);
 	}
+
+	inode_table_init();
 
 	svc_run ();
 	fprintf (stderr, "%s", "svc_run returned");

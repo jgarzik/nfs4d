@@ -2,6 +2,7 @@
 #define __SERVER_H__
 
 #include <stdint.h>
+#include <glib.h>
 #include "nfs4_prot.h"
 
 enum {
@@ -34,6 +35,7 @@ struct nfs_dirent {
 
 /* inode.c */
 struct nfs_inode *ino_get(uint32_t inum);
+void inode_table_init(void);
 
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres);
