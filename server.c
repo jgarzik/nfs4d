@@ -178,6 +178,50 @@ static bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres)
 	return push_resop(cres, &resop, status);
 }
 
+static bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	RESTOREFH4res *res;
+	nfsstat4 status = NFS4_OK;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_RESTOREFH;
+	res = &resop.nfs_resop4_u.oprestorefh;
+
+	if (!ino_get(cli->save_fh)) {
+		status = NFS4ERR_RESTOREFH;
+		goto out;
+	}
+
+	cli->current_fh = cli->save_fh;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	SAVEFH4res *res;
+	nfsstat4 status = NFS4_OK;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_SAVEFH;
+	res = &resop.nfs_resop4_u.opsavefh;
+
+	if (!ino_get(cli->current_fh)) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	cli->save_fh = cli->current_fh;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 {
 	switch (arg->argop) {
@@ -193,6 +237,10 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_putpubfh(cli, res);
 	case OP_PUTROOTFH:
 		return nfs_op_putrootfh(cli, res);
+	case OP_RESTOREFH:
+		return nfs_op_restorefh(cli, res);
+	case OP_SAVEFH:
+		return nfs_op_savefh(cli, res);
 
 	case OP_ACCESS:
 	case OP_CLOSE:
@@ -216,8 +264,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_REMOVE:
 	case OP_RENAME:
 	case OP_RENEW:
-	case OP_RESTOREFH:
-	case OP_SAVEFH:
 	case OP_SECINFO:
 	case OP_SETATTR:
 	case OP_SETCLIENTID:

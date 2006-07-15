@@ -13,6 +13,7 @@ enum {
 
 struct nfs_client {
 	uint32_t		current_fh;
+	uint32_t		save_fh;
 };
 
 enum inode_type {
