@@ -11,23 +11,27 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#ifndef SIG_PF
-#define SIG_PF void(*)(int)
-#endif
-#pragma ident "@(#)nfs4_prot.x	1.122"
+static enum auth_stat check_auth(struct svc_req *rqstp)
+{
+	switch (rqstp->rq_cred.oa_flavor) {
+	case AUTH_UNIX:
+		return AUTH_OK;
+	default:
+		return AUTH_TOOWEAK;
+	}
+
+	return AUTH_FAILED;	/* never reached; kill warning */
+}
 
 static void
 nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 {
-	union {
-		COMPOUND4args nfsproc4_compound_4_arg;
-	} argument;
-	union {
-		COMPOUND4res nfsproc4_compound_4_res;
-	} result;
+	COMPOUND4args argument;
+	COMPOUND4res result;
 	bool_t retval;
 	xdrproc_t _xdr_argument, _xdr_result;
 	bool_t (*local)(char *, void *, struct svc_req *);
+	enum auth_stat auth_stat;
 
 	switch (rqstp->rq_proc) {
 	case NFSPROC4_NULL:
@@ -51,7 +55,15 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 		svcerr_decode (transp);
 		return;
 	}
-	retval = (bool_t) (*local)((char *)&argument, (void *)&result, rqstp);
+
+	auth_stat = check_auth(rqstp);
+	if (auth_stat != AUTH_OK) {
+		retval = FALSE;
+		svcerr_auth(transp, auth_stat);
+	} else
+		retval = (bool_t) (*local)((char *)&argument,
+					   (void *)&result, rqstp);
+
 	if (retval > 0 && !svc_sendreply(transp, (xdrproc_t) _xdr_result, (char *)&result)) {
 		svcerr_systemerr (transp);
 	}
@@ -59,11 +71,14 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 		fprintf (stderr, "%s", "unable to free arguments");
 		exit (1);
 	}
-	if (!nfs4_program_4_freeresult (transp, _xdr_result, (caddr_t) &result))
+	if (!nfs4_program_4_freeresult (transp, _xdr_result, &result))
 		fprintf (stderr, "%s", "unable to free results");
 
 	return;
 }
+
+/* Linux is missing this prototype */
+bool_t gssrpc_pmap_unset(u_long prognum, u_long versnum);
 
 int
 main (int argc, char **argv)
@@ -71,7 +86,6 @@ main (int argc, char **argv)
 	register SVCXPRT *transp;
 
 	pmap_unset (NFS4_PROGRAM, NFS_V4);
-	pmap_unset (NFS4_CALLBACK, NFS_CB);
 
 	transp = svctcp_create(RPC_ANYSOCK, 0, 0);
 	if (transp == NULL) {

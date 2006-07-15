@@ -4,42 +4,102 @@
  * as a guideline for developing your own functions.
  */
 
+#include <stdlib.h>
+#include <string.h>
+#include <glib.h>
 #include "nfs4_prot.h"
-#pragma ident "@(#)nfs4_prot.x	1.122"
+#include "server.h"
 
-bool_t
-nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
+bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
 {
-	bool_t retval;
-
-	/*
-	 * insert server code here
-	 */
-
-	return retval;
+	return TRUE;
 }
 
-bool_t
-nfsproc4_compound_4_svc(COMPOUND4args *argp, COMPOUND4res *result, struct svc_req *rqstp)
+static struct client *cli_init(struct svc_req *rqstp)
 {
-	bool_t retval;
+	struct client *cli = g_new0(struct client, 1);
 
-	/*
-	 * insert server code here
-	 */
-
-	return retval;
+	return cli;
 }
 
-int
-nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result, caddr_t result)
+static void cli_free(struct client *cli)
 {
-	xdr_free (xdr_result, result);
+	free(cli);
+}
 
-	/*
-	 * Insert additional freeing code here, if needed
-	 */
+static bool_t nfs_getfh(struct client *cli, COMPOUND4res *res)
+{
+	return FALSE;
+}
 
-	return 1;
+static bool_t nfs_putfh(struct client *cli, PUTFH4args *arg, COMPOUND4res *res)
+{
+	return FALSE;
+}
+
+static bool_t nfs_putpubfh(struct client *cli, COMPOUND4res *res)
+{
+	return FALSE;
+}
+
+static bool_t nfs_putrootfh(struct client *cli, COMPOUND4res *res)
+{
+	return FALSE;
+}
+
+static bool_t nfs_arg(struct client *cli, nfs_argop4 *arg, COMPOUND4res *res)
+{
+	switch (arg->argop) {
+	case OP_GETFH:
+		return nfs_getfh(cli, res);
+	case OP_PUTFH:
+		return nfs_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
+	case OP_PUTPUBFH:
+		return nfs_putpubfh(cli, res);
+	case OP_PUTROOTFH:
+		return nfs_putrootfh(cli, res);
+	default:
+		return FALSE;
+	}
+
+	return FALSE;	/* never reached */
+}
+
+bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
+			       struct svc_req *rqstp)
+{
+	struct client *cli;
+	unsigned int i;
+
+	memset(res, 0, sizeof(*res));
+	res->status = NFS4_OK;
+	memcpy(&res->tag, &arg->tag, sizeof(utf8str_cs));
+
+	if (arg->minorversion != 0) {
+		res->status = NFS4ERR_MINOR_VERS_MISMATCH;
+		goto out;
+	}
+
+	cli = cli_init(rqstp);
+	if (!cli) {
+		res->status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	for (i = 0; i < arg->argarray.argarray_len; i++)
+		if (!nfs_arg(cli, &arg->argarray.argarray_val[i], res))
+			break;
+
+	cli_free(cli);
+out:
+	return TRUE;
+}
+
+int nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
+			       COMPOUND4res *res)
+{
+	/* FIXME */
+
+	return TRUE;
 }
 

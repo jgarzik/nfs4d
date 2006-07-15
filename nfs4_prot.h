@@ -14,8 +14,6 @@
 extern "C" {
 #endif
 
-#pragma ident "@(#)nfs4_prot.x	1.122"
-
 typedef int int32_t;
 
 typedef u_int uint32_t;
@@ -1512,7 +1510,7 @@ extern  bool_t nfsproc4_null_4_svc(void *, void *, struct svc_req *);
 #define NFSPROC4_COMPOUND 1
 extern  enum clnt_stat nfsproc4_compound_4(COMPOUND4args *, COMPOUND4res *, CLIENT *);
 extern  bool_t nfsproc4_compound_4_svc(COMPOUND4args *, COMPOUND4res *, struct svc_req *);
-extern int nfs4_program_4_freeresult (SVCXPRT *, xdrproc_t, caddr_t);
+extern int nfs4_program_4_freeresult (SVCXPRT *, xdrproc_t, COMPOUND4res *);
 
 #else /* K&R C */
 #define NFSPROC4_NULL 0
