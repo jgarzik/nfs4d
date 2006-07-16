@@ -1,4 +1,6 @@
+#include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <glib.h>
 #include "server.h"
 #include "nfs4_prot.h"
@@ -29,7 +31,13 @@ static struct nfs_inode *inode_new(void)
 	if (!ino->parents)
 		goto out_ino;
 
-	inode_touch(ino);	/* sets version, mtime */
+	ino->version = 1ULL;
+	ino->ctime =
+	ino->atime =
+	ino->mtime = current_time.tv_sec;
+	ino->mode = MODE4_RUSR;
+	ino->uid = 99999999;
+	ino->gid = 99999999;
 
 	ino->ino = next_ino++;
 
@@ -136,6 +144,144 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 	}
 }
 
+static const uint64_t write_only_mask =
+	1ULL << FATTR4_TIME_ACCESS_SET |
+	1ULL << FATTR4_TIME_MODIFY_SET;
+static const uint64_t read_write_mask =
+	1ULL << FATTR4_SIZE |
+	1ULL << FATTR4_ACL |
+	1ULL << FATTR4_ARCHIVE |
+	1ULL << FATTR4_HIDDEN |
+	1ULL << FATTR4_MIMETYPE |
+	1ULL << FATTR4_MODE |
+	1ULL << FATTR4_OWNER |
+	1ULL << FATTR4_OWNER_GROUP |
+	1ULL << FATTR4_SYSTEM |
+	1ULL << FATTR4_TIME_BACKUP |
+	1ULL << FATTR4_TIME_CREATE;
+static const uint64_t read_only_mask =
+	1ULL << FATTR4_SUPPORTED_ATTRS |
+	1ULL << FATTR4_TYPE |
+	1ULL << FATTR4_FH_EXPIRE_TYPE |
+	1ULL << FATTR4_CHANGE |
+	1ULL << FATTR4_LINK_SUPPORT |
+	1ULL << FATTR4_SYMLINK_SUPPORT |
+	1ULL << FATTR4_NAMED_ATTR |
+	1ULL << FATTR4_FSID |
+	1ULL << FATTR4_UNIQUE_HANDLES |
+	1ULL << FATTR4_LEASE_TIME |
+	1ULL << FATTR4_RDATTR_ERROR |
+	1ULL << FATTR4_FILEHANDLE |
+	1ULL << FATTR4_ACLSUPPORT |
+	1ULL << FATTR4_CANSETTIME |
+	1ULL << FATTR4_CASE_INSENSITIVE |
+	1ULL << FATTR4_CASE_PRESERVING |
+	1ULL << FATTR4_CHOWN_RESTRICTED |
+	1ULL << FATTR4_FILEID |
+	1ULL << FATTR4_FILES_AVAIL |
+	1ULL << FATTR4_FILES_FREE |
+	1ULL << FATTR4_FILES_TOTAL |
+	1ULL << FATTR4_FS_LOCATIONS |
+	1ULL << FATTR4_HOMOGENEOUS |
+	1ULL << FATTR4_MAXFILESIZE |
+	1ULL << FATTR4_MAXLINK |
+	1ULL << FATTR4_MAXNAME |
+	1ULL << FATTR4_MAXREAD |
+	1ULL << FATTR4_MAXWRITE |
+	1ULL << FATTR4_NO_TRUNC |
+	1ULL << FATTR4_NUMLINKS |
+	1ULL << FATTR4_QUOTA_AVAIL_HARD |
+	1ULL << FATTR4_QUOTA_AVAIL_SOFT |
+	1ULL << FATTR4_QUOTA_USED |
+	1ULL << FATTR4_RAWDEV |
+	1ULL << FATTR4_SPACE_AVAIL |
+	1ULL << FATTR4_SPACE_FREE |
+	1ULL << FATTR4_SPACE_TOTAL |
+	1ULL << FATTR4_SPACE_USED |
+	1ULL << FATTR4_TIME_ACCESS |
+	1ULL << FATTR4_TIME_DELTA |
+	1ULL << FATTR4_TIME_METADATA |
+	1ULL << FATTR4_TIME_MODIFY |
+	1ULL << FATTR4_MOUNTED_ON_FILEID;
+
+static int int_from_utf8string(utf8string *str_in)
+{
+	gchar *s;
+	int i, rc = -1;
+
+	s = copy_utf8string(str_in);
+	if (!s)
+		return -1;
+
+	for (i = 0; i < strlen(s); i++)
+		if (!isdigit(s[i]))
+			goto out;
+
+	rc = atoi(s);
+
+out:
+	g_free(s);
+	return rc;
+}
+
+static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr)
+{
+	struct nfs_fattr_set fattr;
+	static const uint64_t notsupp_mask =
+		1ULL << FATTR4_ACL |
+		1ULL << FATTR4_ARCHIVE |
+		1ULL << FATTR4_HIDDEN |
+		1ULL << FATTR4_MIMETYPE |
+		1ULL << FATTR4_SYSTEM |
+		1ULL << FATTR4_TIME_BACKUP |
+		1ULL << FATTR4_TIME_CREATE;
+
+	if (!fattr_parse(raw_attr, &fattr))
+		return NFS4ERR_INVAL;
+	if (fattr.bitmap & read_only_mask)
+		return NFS4ERR_INVAL;
+	if (fattr.bitmap & notsupp_mask)
+		return NFS4ERR_NOTSUPP;
+
+	if (fattr.bitmap & (1ULL << FATTR4_SIZE)) /* TODO: truncate */
+		return NFS4ERR_NOTSUPP;
+
+	if (fattr.bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
+		if (fattr.time_access_set.set_it == SET_TO_CLIENT_TIME4)
+			ino->atime =
+			      fattr.time_access_set.settime4_u.time.seconds;
+		else
+			ino->atime = current_time.tv_sec;
+	}
+	if (fattr.bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
+		if (fattr.time_modify_set.set_it == SET_TO_CLIENT_TIME4)
+			ino->mtime =
+			      fattr.time_modify_set.settime4_u.time.seconds;
+		else
+			ino->mtime = current_time.tv_sec;
+	}
+	if (fattr.bitmap & (1ULL << FATTR4_MODE))
+		ino->mode = fattr.mode;
+	if (fattr.bitmap & (1ULL << FATTR4_OWNER)) {
+		int x = int_from_utf8string(&fattr.owner);
+		if (x < 0)
+			return NFS4ERR_INVAL;
+		
+		ino->uid = x;
+	}
+	if (fattr.bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
+		int x = int_from_utf8string(&fattr.owner);
+		if (x < 0)
+			return NFS4ERR_INVAL;
+		
+		ino->gid = x;
+	}
+
+	fattr_free(&fattr);
+
+	return NFS4_OK;
+}
+
 bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -143,17 +289,11 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	CREATE4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *new_ino;
-	struct nfs_fattr_set fattr;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CREATE;
 	res = &resop.nfs_resop4_u.opcreate;
 	resok = &res->CREATE4res_u.resok4;
-
-	if (!fattr_parse(&arg->createattrs, &fattr)) {
-		status = NFS4ERR_INVAL;
-		goto out;
-	}
 
 	dir_ino = inode_get(cli->current_fh);
 	if (!dir_ino) {
@@ -200,6 +340,12 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
+	status = inode_apply_attrs(new_ino, &arg->createattrs);
+	if (status != NFS4_OK) {
+		inode_free(new_ino);
+		goto out;
+	}
+
 	resok->cinfo.atomic = TRUE;
 	resok->cinfo.before =
 	resok->cinfo.after = dir_ino->version;
@@ -213,8 +359,6 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	g_array_append_val(new_ino->parents, dir_ino->ino);
 	resok->cinfo.after = dir_ino->version;
 	cli->current_fh = new_ino->ino;
-
-	/* FIXME: attr-on-create */
 
 out:
 	res->status = status;

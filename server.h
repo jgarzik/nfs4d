@@ -24,7 +24,13 @@ struct nfs_inode {
 	enum nfs_ftype4		type;		/* inode type: link, dir, ...*/
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
+
+	uint64_t		ctime;		/* creation time */
+	uint64_t		atime;		/* last-accessed time */
 	uint64_t		mtime;		/* last-modified time */
+	uint32_t		mode;
+	uint32_t		uid;
+	uint32_t		gid;
 
 	union {
 		GHashTable	*dir;		/* state for a directory */
@@ -75,5 +81,6 @@ bool_t valid_utf8string(utf8string *str);
 gchar *copy_utf8string(utf8string *str);
 bool_t has_dots(utf8string *str);
 bool_t fattr_parse(fattr4 *raw, struct nfs_fattr_set *attr);
+void fattr_free(struct nfs_fattr_set *attr);
 
 #endif /* __SERVER_H__ */

@@ -126,6 +126,7 @@ bool_t fattr_parse(fattr4 *raw, struct nfs_fattr_set *attr)
 		bitmap = raw->attrmask.bitmap4_val[0];
 	if (raw->attrmask.bitmap4_len > 1)
 		bitmap |= ((uint64_t)raw->attrmask.bitmap4_val[1]) << 32;
+	attr->bitmap = bitmap;
 
 	ptr = raw->attr_vals.attrlist4_val;
 
@@ -135,6 +136,10 @@ bool_t fattr_parse(fattr4 *raw, struct nfs_fattr_set *attr)
 }
 
 #undef FATTR_DEFINE
+
+void fattr_free(struct nfs_fattr_set *attr)
+{
+}
 
 bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
 {
