@@ -27,8 +27,8 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-	if (ino->type != IT_DIR) {
-		if (ino->type == IT_SYMLINK)
+	if (ino->type != NF4DIR) {
+		if (ino->type == NF4LNK)
 			status = NFS4ERR_SYMLINK;
 		else
 			status = NFS4ERR_NOTDIR;
@@ -74,8 +74,8 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-	if (ino->type != IT_DIR) {
-		if (ino->type == IT_SYMLINK)
+	if (ino->type != NF4DIR) {
+		if (ino->type == NF4LNK)
 			status = NFS4ERR_SYMLINK;
 		else
 			status = NFS4ERR_NOTDIR;
@@ -94,14 +94,14 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
-			     nfsino_t inum)
+enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
+		      nfsino_t inum)
 {
 	struct nfs_dirent *dirent;
 	gchar *name;
 	enum nfsstat4 status = NFS4_OK;
 
-	if (dir_ino->type != IT_DIR)
+	if (dir_ino->type != NF4DIR)
 		return NFS4ERR_NOTDIR;
 	if (!valid_utf8string(name_in))
 		return NFS4ERR_INVAL;
@@ -176,6 +176,8 @@ bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres)
 	if (status != NFS4_OK)
 		goto out;
 
+	g_array_append_val(src_ino->parents, dir_ino->ino);
+
 	resok->cinfo.after = dir_ino->version;
 
 out:
@@ -209,7 +211,7 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-	if (dir_ino->type != IT_DIR) {
+	if (dir_ino->type != NF4DIR) {
 		status = NFS4ERR_NOTDIR;
 		goto out;
 	}
@@ -236,7 +238,7 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 	}
 
 	/* prevent removal of non-empty dirs */
-	if ((target_ino->type == IT_DIR) &&
+	if ((target_ino->type == NF4DIR) &&
 	    (g_hash_table_size(target_ino->u.dir) > 0)) {
 		status = NFS4ERR_INVAL;
 		goto out_name;
@@ -303,7 +305,7 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-	if ((src_dir->type != IT_DIR) || (target_dir->type != IT_DIR)) {
+	if ((src_dir->type != NF4DIR) || (target_dir->type != NF4DIR)) {
 		status = NFS4ERR_NOTDIR;
 		goto out;
 	}
@@ -351,11 +353,11 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 			goto out_name;
 		}
 
-		if (old_file->type == IT_DIR && new_file->type == IT_DIR) {
+		if (old_file->type == NF4DIR && new_file->type == NF4DIR) {
 			if (g_hash_table_size(new_file->u.dir) == 0)
 				ok_to_remove = TRUE;
 		}
-		else if (old_file->type != IT_DIR && new_file->type != IT_DIR) {
+		else if (old_file->type != NF4DIR && new_file->type != NF4DIR) {
 			ok_to_remove = TRUE;
 		}
 
