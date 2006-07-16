@@ -278,23 +278,11 @@ static bool_t nfs_op_openattr(struct nfs_client *cli, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	OPENATTR4res *res;
-	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	nfsstat4 status = NFS4ERR_NOTSUPP;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_OPENATTR;
 	res = &resop.nfs_resop4_u.opopenattr;
-
-	ino = inode_get(cli->current_fh);
-	if (!ino) {
-		status = NFS4ERR_NOFILEHANDLE;
-		goto out;
-	}
-
-	/* named attributes not supported */
-	status = NFS4ERR_NOTSUPP;
-
-out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
