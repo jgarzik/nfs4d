@@ -508,12 +508,15 @@ out:
 static void nfs_free(nfs_resop4 *res)
 {
 	switch(res->resop) {
+	case OP_CREATE:
+		g_free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
+		break;
 	case OP_GETFH:
 		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
 		break;
-	case OP_PUTFH:
-	case OP_PUTPUBFH:
-	case OP_PUTROOTFH:
+	case OP_SETATTR:
+		g_free(res->nfs_resop4_u.opsetattr.attrsset.bitmap4_val);
+		break;
 	default:
 		/* nothing to free */
 		break;
