@@ -5,6 +5,7 @@
 
 #include "nfs4_prot.h"
 
+#if 0
 bool_t
 xdr_int32_t (XDR *xdrs, int32_t *objp)
 {
@@ -25,7 +26,6 @@ xdr_uint32_t (XDR *xdrs, uint32_t *objp)
 	return TRUE;
 }
 
-#if 0
 bool_t
 xdr_int64_t (XDR *xdrs, int64_t *objp)
 {

@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <glib.h>
 #include "nfs4_prot.h"
 #include "server.h"
@@ -13,6 +14,8 @@
 enum {
 	FATTR_LAST		= FATTR4_MOUNTED_ON_FILEID,
 };
+
+static int debugging = 1;
 
 static void parse_i32(gchar **ptr_io, int32_t *val)
 {
@@ -258,6 +261,9 @@ static bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.opgetfh;
 	resok = &res->GETFH4res_u.resok4;
 
+	if (debugging)
+		syslog(LOG_INFO, "CURRENT_FH == %u", cli->current_fh);
+
 	if (!inode_get(cli->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -405,21 +411,69 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_op_openattr(struct nfs_client *cli, COMPOUND4res *cres)
+static bool_t nfs_op_notsupp(struct nfs_client *cli, COMPOUND4res *cres,
+			     nfs_opnum4 argop)
 {
 	struct nfs_resop4 resop;
 	OPENATTR4res *res;
 	nfsstat4 status = NFS4ERR_NOTSUPP;
 
 	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_OPENATTR;
+	resop.resop = argop;
 	res = &resop.nfs_resop4_u.opopenattr;
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
+static const char *arg_str[] = {
+	"<n/a>",
+	"<n/a>",
+	"<n/a>",
+	"ACCESS",
+	"CLOSE",
+	"COMMIT",
+	"CREATE",
+	"DELEGPURGE",
+	"DELEGRETURN",
+	"GETATTR",
+	"GETFH",
+	"LINK",
+	"LOCK",
+	"LOCKT",
+	"LOCKU",
+	"LOOKUP",
+	"LOOKUPP",
+	"NVERIFY",
+	"OPEN",
+	"OPENATTR",
+	"OPEN_CONFIRM",
+	"OPEN_DOWNGRADE",
+	"PUTFH",
+	"PUTPUBFH",
+	"PUTROOTFH",
+	"READ",
+	"READDIR",
+	"READLINK",
+	"REMOVE",
+	"RENAME",
+	"RENEW",
+	"RESTOREFH",
+	"SAVEFH",
+	"SECINFO",
+	"SETATTR",
+	"SETCLIENTID",
+	"SETCLIENTID_CONFIRM",
+	"VERIFY",
+	"WRITE",
+	"RELEASE_LOCKOWNER",
+};
+
 static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 {
+	if (debugging)
+		syslog(LOG_INFO, "compound op %s",
+		       (arg->argop > 39) ?  "<n/a>" : arg_str[arg->argop]);
+
 	switch (arg->argop) {
 	case OP_CREATE:
 		return nfs_op_create(cli, &arg->nfs_argop4_u.opcreate, res);
@@ -431,8 +485,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_lookup(cli, &arg->nfs_argop4_u.oplookup, res);
 	case OP_LOOKUPP:
 		return nfs_op_lookupp(cli, res);
-	case OP_OPENATTR:
-		return nfs_op_openattr(cli, res);
 	case OP_PUTFH:
 		return nfs_op_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
@@ -473,6 +525,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_VERIFY:
 	case OP_WRITE:
 	case OP_RELEASE_LOCKOWNER:
+	case OP_OPENATTR:
+		return nfs_op_notsupp(cli, res, arg->argop);
 	default:
 		return FALSE;
 	}
@@ -501,9 +555,17 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 		goto out;
 	}
 
+	if (debugging)
+		syslog(LOG_INFO, "compound start");
+
 	for (i = 0; i < arg->argarray.argarray_len; i++)
-		if (!nfs_arg(cli, &arg->argarray.argarray_val[i], res))
+		if (!nfs_arg(cli, &arg->argarray.argarray_val[i], res)) {
+			syslog(LOG_WARNING, "compound failed early");
 			break;
+		}
+
+	if (debugging)
+		syslog(LOG_INFO, "compound stop");
 
 	cli_free(cli);
 out:

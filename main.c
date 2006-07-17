@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <memory.h>
+#include <syslog.h>
 #include <sys/time.h>
 #include <netinet/in.h>
 #include "server.h"
@@ -97,6 +98,8 @@ main (int argc, char **argv)
 	struct timezone tz = { 0, 0 };
 	int sock, val;
 	struct sockaddr_in saddr;
+
+	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
 
 	pmap_unset (NFS4_PROGRAM, NFS_V4);
 
