@@ -224,9 +224,11 @@ out:
 	return rc;
 }
 
-static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr)
+static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
+				       uint64_t *bitmap_set_out)
 {
 	struct nfs_fattr_set fattr;
+	uint64_t bitmap_set = 0;
 	static const uint64_t notsupp_mask =
 		1ULL << FATTR4_ACL |
 		1ULL << FATTR4_ARCHIVE |
@@ -238,6 +240,7 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr)
 
 	if (!fattr_parse(raw_attr, &fattr))
 		return NFS4ERR_INVAL;
+
 	if (fattr.bitmap & read_only_mask)
 		return NFS4ERR_INVAL;
 	if (fattr.bitmap & notsupp_mask)
@@ -252,6 +255,8 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr)
 			      fattr.time_access_set.settime4_u.time.seconds;
 		else
 			ino->atime = current_time.tv_sec;
+
+		bitmap_set |= (1ULL << FATTR4_TIME_ACCESS_SET);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
 		if (fattr.time_modify_set.set_it == SET_TO_CLIENT_TIME4)
@@ -259,15 +264,20 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr)
 			      fattr.time_modify_set.settime4_u.time.seconds;
 		else
 			ino->mtime = current_time.tv_sec;
+
+		bitmap_set |= (1ULL << FATTR4_TIME_MODIFY_SET);
 	}
-	if (fattr.bitmap & (1ULL << FATTR4_MODE))
+	if (fattr.bitmap & (1ULL << FATTR4_MODE)) {
 		ino->mode = fattr.mode;
+		bitmap_set |= (1ULL << FATTR4_MODE);
+	}
 	if (fattr.bitmap & (1ULL << FATTR4_OWNER)) {
 		int x = int_from_utf8string(&fattr.owner);
 		if (x < 0)
 			return NFS4ERR_INVAL;
 		
 		ino->uid = x;
+		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
 		int x = int_from_utf8string(&fattr.owner);
@@ -275,10 +285,12 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr)
 			return NFS4ERR_INVAL;
 		
 		ino->gid = x;
+		bitmap_set |= (1ULL << FATTR4_OWNER_GROUP);
 	}
 
 	fattr_free(&fattr);
 
+	*bitmap_set_out = bitmap_set;
 	return NFS4_OK;
 }
 
@@ -289,6 +301,8 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	CREATE4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *new_ino;
+	uint64_t bitmap_set;
+	uint32_t *bitmap_alloc;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CREATE;
@@ -340,11 +354,20 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
-	status = inode_apply_attrs(new_ino, &arg->createattrs);
+	status = inode_apply_attrs(new_ino, &arg->createattrs, &bitmap_set);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
 		goto out;
 	}
+
+	bitmap_alloc = g_new0(uint32_t, 2);
+	if (!bitmap_alloc) {
+		inode_free(new_ino);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+	bitmap_alloc[0] = bitmap_set;
+	bitmap_alloc[1] = (bitmap_set >> 32);
 
 	resok->cinfo.atomic = TRUE;
 	resok->cinfo.before =
@@ -353,11 +376,15 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	status = dir_add(dir_ino, &arg->objname, new_ino->ino);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
+		g_free(bitmap_alloc);
 		goto out;
 	}
 
 	g_array_append_val(new_ino->parents, dir_ino->ino);
 	resok->cinfo.after = dir_ino->version;
+	resok->attrset.bitmap4_len = 2;
+	resok->attrset.bitmap4_val = bitmap_alloc;
+
 	cli->current_fh = new_ino->ino;
 
 out:

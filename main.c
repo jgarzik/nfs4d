@@ -3,11 +3,12 @@
  * It was generated using rpcgen.
  */
 
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <memory.h>
-#include <sys/socket.h>
 #include <sys/time.h>
 #include <netinet/in.h>
 #include "server.h"
@@ -94,10 +95,39 @@ main (int argc, char **argv)
 {
 	register SVCXPRT *transp;
 	struct timezone tz = { 0, 0 };
+	int sock, val;
+	struct sockaddr_in saddr;
 
 	pmap_unset (NFS4_PROGRAM, NFS_V4);
 
-	transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sock < 0) {
+		perror("socket");
+		return 1;
+	}
+
+	val = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &val,
+		       sizeof(val)) < 0) {
+		perror("setsockopt");
+		return 1;
+	}
+
+	memset(&saddr, 0, sizeof(saddr));
+	saddr.sin_family = AF_INET;
+	saddr.sin_port = htons(2049);
+	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+		perror("bind");
+		return 1;
+	}
+
+	if (listen(sock, 100) < 0) {
+		perror("listen");
+		return 1;
+	}
+
+	transp = svctcp_create(sock, 0, 0);
 	if (transp == NULL) {
 		fprintf (stderr, "%s", "cannot create tcp service.");
 		exit(1);
