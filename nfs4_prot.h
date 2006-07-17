@@ -6,7 +6,7 @@
 #ifndef _NFS4_PROT_H_RPCGEN
 #define _NFS4_PROT_H_RPCGEN
 
-#include <gssrpc/rpc.h>
+#include <rpc/rpc.h>
 
 #include <pthread.h>
 
@@ -24,6 +24,10 @@ typedef u_quad_t uint64_t;
 #define NFS4_FHSIZE 128
 #define NFS4_VERIFIER_SIZE 8
 #define NFS4_OPAQUE_LIMIT 1024
+
+enum rpcsec {
+	RPCSEC_GSS = 6               /* RPCSEC_GSS */
+};
 
 enum nfs_ftype4 {
 	NF4REG = 1,
@@ -1141,6 +1145,13 @@ struct SECINFO4args {
 	component4 name;
 };
 typedef struct SECINFO4args SECINFO4args;
+
+enum rpc_gss_svc_t {
+	RPC_GSS_SVC_NONE = 1,
+	RPC_GSS_SVC_INTEGRITY = 2,
+	RPC_GSS_SVC_PRIVACY = 3,
+};
+typedef enum rpc_gss_svc_t rpc_gss_svc_t;
 
 struct rpcsec_gss_info {
 	sec_oid4 oid;

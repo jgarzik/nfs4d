@@ -11,6 +11,7 @@
 #include <memory.h>
 #include <syslog.h>
 #include <sys/time.h>
+#include <rpc/pmap_clnt.h>
 #include <netinet/in.h>
 #include "server.h"
 #include "nfs4_prot.h"
@@ -89,7 +90,9 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 }
 
 /* Linux is missing this prototype */
+#if 0
 bool_t gssrpc_pmap_unset(u_long prognum, u_long versnum);
+#endif
 
 int
 main (int argc, char **argv)

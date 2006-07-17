@@ -42,7 +42,7 @@ dnl AC_TYPE_PID_T
 dnl -----------------------------
 dnl Checks for required libraries
 dnl -----------------------------
-AC_CHECK_LIB(gssrpc, gssrpc_svc_register, GSSRPC_LIBS=-lgssrpc, exit 1)
+dnl AC_CHECK_LIB(gssrpc, gssrpc_svc_register, GSSRPC_LIBS=-lgssrpc, exit 1)
 
 dnl -------------------------------------
 dnl Checks for optional library functions
@@ -58,7 +58,7 @@ dnl --------------------------
 
 AM_PATH_GLIB_2_0(2.0.0)
 
-AC_SUBST(GSSRPC_LIBS)
+dnl AC_SUBST(GSSRPC_LIBS)
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
