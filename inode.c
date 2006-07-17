@@ -369,13 +369,16 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	bitmap_alloc[0] = bitmap_set;
 	bitmap_alloc[1] = (bitmap_set >> 32);
 
+	g_hash_table_insert(inode_table, GUINT_TO_POINTER(new_ino->ino),
+			    new_ino);
+
 	resok->cinfo.atomic = TRUE;
 	resok->cinfo.before =
 	resok->cinfo.after = dir_ino->version;
 
 	status = dir_add(dir_ino, &arg->objname, new_ino->ino);
 	if (status != NFS4_OK) {
-		inode_free(new_ino);
+		inode_unlink(new_ino, 0);
 		g_free(bitmap_alloc);
 		goto out;
 	}
