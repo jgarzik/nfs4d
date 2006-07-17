@@ -95,7 +95,7 @@ bool_t inode_table_init(void)
 {
 	struct nfs_inode *root;
 
-	inode_table = g_hash_table_new(g_int_hash, g_int_equal);
+	inode_table = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	root = inode_new_dir();
 	if (!root)
