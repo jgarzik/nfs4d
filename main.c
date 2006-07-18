@@ -17,13 +17,53 @@
 #include "nfs4_prot.h"
 
 
+enum {
+	NFS_PORT		= 2049,
+	LISTEN_SIZE		= 100,
+};
+
 struct timeval current_time;
 
+
+static int init_sock(void)
+{
+	int sock, val;
+	struct sockaddr_in saddr;
+
+	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (sock < 0) {
+		perror("socket");
+		return -1;
+	}
+
+	val = 1;
+	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &val,
+		       sizeof(val)) < 0) {
+		perror("setsockopt");
+		return -1;
+	}
+
+	memset(&saddr, 0, sizeof(saddr));
+	saddr.sin_family = AF_INET;
+	saddr.sin_port = htons(NFS_PORT);
+	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
+		perror("bind");
+		return -1;
+	}
+
+	if (listen(sock, LISTEN_SIZE) < 0) {
+		perror("listen");
+		return -1;
+	}
+
+	return sock;
+}
 
 static enum auth_stat check_auth(struct svc_req *rqstp)
 {
 	switch (rqstp->rq_cred.oa_flavor) {
-	case AUTH_UNIX:
+	case AUTH_SYS:
 		return AUTH_OK;
 	default:
 		return AUTH_TOOWEAK;
@@ -94,44 +134,9 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 bool_t gssrpc_pmap_unset(u_long prognum, u_long versnum);
 #endif
 
-int
-main (int argc, char **argv)
+static void init_rpc(int sock)
 {
 	register SVCXPRT *transp;
-	struct timezone tz = { 0, 0 };
-	int sock, val;
-	struct sockaddr_in saddr;
-
-	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
-
-	pmap_unset (NFS4_PROGRAM, NFS_V4);
-
-	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (sock < 0) {
-		perror("socket");
-		return 1;
-	}
-
-	val = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &val,
-		       sizeof(val)) < 0) {
-		perror("setsockopt");
-		return 1;
-	}
-
-	memset(&saddr, 0, sizeof(saddr));
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = htons(2049);
-	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-		perror("bind");
-		return 1;
-	}
-
-	if (listen(sock, 100) < 0) {
-		perror("listen");
-		return 1;
-	}
 
 	transp = svctcp_create(sock, 0, 0);
 	if (transp == NULL) {
@@ -142,9 +147,26 @@ main (int argc, char **argv)
 		fprintf (stderr, "%s", "unable to register (NFS4_PROGRAM, NFS_V4, tcp).");
 		exit(1);
 	}
+}
+
+int
+main (int argc, char **argv)
+{
+	struct timezone tz = { 0, 0 };
+	int sock;
+
+	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
+
+	pmap_unset (NFS4_PROGRAM, NFS_V4);
+
+	sock = init_sock();
+	if (sock < 0)
+		return 1;
 
 	gettimeofday(&current_time, &tz);
 	inode_table_init();
+
+	init_rpc(sock);
 
 	svc_run ();
 	fprintf (stderr, "%s", "svc_run returned");
