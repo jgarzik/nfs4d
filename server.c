@@ -411,6 +411,57 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *arg,
+				 COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	SETCLIENTID4res *res;
+	SETCLIENTID4resok *resok;
+#if 0
+	nfsstat4 status = NFS4_OK;
+#else
+	nfsstat4 status = NFS4ERR_NOTSUPP;
+#endif
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_SETCLIENTID;
+	res = &resop.nfs_resop4_u.opsetclientid;
+	resok = &res->SETCLIENTID4res_u.resok4;
+
+	/* FIXME */
+
+#if 0
+out:
+#endif
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
+					 SETCLIENTID_CONFIRM4args *arg,
+					 COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	SETCLIENTID_CONFIRM4res *res;
+#if 0
+	nfsstat4 status = NFS4_OK;
+#else
+	nfsstat4 status = NFS4ERR_NOTSUPP;
+#endif
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_SETCLIENTID_CONFIRM;
+	res = &resop.nfs_resop4_u.opsetclientid_confirm;
+
+	/* FIXME */
+
+#if 0
+out:
+#endif
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 static bool_t nfs_op_notsupp(struct nfs_client *cli, COMPOUND4res *cres,
 			     nfs_opnum4 argop)
 {
@@ -501,6 +552,12 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_restorefh(cli, res);
 	case OP_SAVEFH:
 		return nfs_op_savefh(cli, res);
+	case OP_SETCLIENTID:
+		return nfs_op_setclientid(cli,
+					&arg->nfs_argop4_u.opsetclientid, res);
+	case OP_SETCLIENTID_CONFIRM:
+		return nfs_op_setclientid_confirm(cli,
+				&arg->nfs_argop4_u.opsetclientid_confirm, res);
 
 	case OP_ACCESS:
 	case OP_CLOSE:
@@ -520,8 +577,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_RENEW:
 	case OP_SECINFO:
 	case OP_SETATTR:
-	case OP_SETCLIENTID:
-	case OP_SETCLIENTID_CONFIRM:
 	case OP_VERIFY:
 	case OP_WRITE:
 	case OP_RELEASE_LOCKOWNER:
