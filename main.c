@@ -23,6 +23,7 @@ enum {
 };
 
 struct timeval current_time;
+GList *client_list = NULL;
 
 
 static int init_sock(void)

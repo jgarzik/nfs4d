@@ -12,11 +12,18 @@ enum {
 	INO_ROOT		= 10,
 	INO_FIRST		= INO_ROOT,
 	INO_RESERVED_LAST	= 999,
+
+	NFS_CLI_CONFIRMED	= (1 << 0),
 };
 
 struct nfs_client {
 	nfsino_t		current_fh;
 	nfsino_t		save_fh;
+};
+
+struct nfs_cli_state {
+	nfs_client_id4		id;
+	unsigned long		flags;
 };
 
 struct nfs_inode {
@@ -57,7 +64,7 @@ struct nfs_dirent {
 
 /* global variables */
 extern struct timeval current_time;
-
+extern GList *client_list;
 
 /* inode.c */
 struct nfs_inode *inode_get(nfsino_t inum);

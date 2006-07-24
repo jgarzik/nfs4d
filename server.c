@@ -411,28 +411,88 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static int client_id_cmp(nfs_client_id4 *a, nfs_client_id4 *b)
+{
+	if (a->id.id_len < b->id.id_len)
+		return -1;
+	if (a->id.id_len > b->id.id_len)
+		return 1;
+	return memcmp(a->id.id_val, b->id.id_val, a->id.id_len);
+}
+
+struct client_id_info {
+	nfs_client_id4		*query_id;
+	GList			*unconfirmed;
+	GList			*confirmed;
+	GList			*all;
+};
+
+struct client_pcpl_info {
+	nfsstat4		*status;
+	struct nfs_client	*cli;
+};
+
+static void client_accum(struct nfs_cli_state *ncs, struct client_id_info *ci)
+{
+	if (client_id_cmp(&ncs->id, ci->query_id))
+		return;
+	
+	ci->all = g_list_append(ci->all, ncs);
+	if (ncs->flags & NFS_CLI_CONFIRMED)
+		ci->confirmed = g_list_append(ci->confirmed, ncs);
+	else
+		ci->unconfirmed = g_list_append(ci->unconfirmed, ncs);
+}
+
+static bool_t principal_cmp(struct nfs_client *cli, struct nfs_cli_state *ncs)
+{
+	/* FIXME */
+	return -1;	/* no match, just like memcmp(3) return */
+}
+
+static void client_check_pcpl(struct nfs_cli_state *ncs, struct client_pcpl_info *pi)
+{
+	nfsstat4 status = NFS4_OK;
+
+	if (!principal_cmp(pi->cli, ncs)) {
+		status = NFS4ERR_CLID_INUSE;
+		goto out;
+	}
+
+out:
+	*(pi->status) = status;
+}
+
 static bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *arg,
 				 COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	SETCLIENTID4res *res;
 	SETCLIENTID4resok *resok;
-#if 0
 	nfsstat4 status = NFS4_OK;
-#else
-	nfsstat4 status = NFS4ERR_NOTSUPP;
-#endif
+	struct client_id_info ci = { &arg->client, NULL, NULL, NULL };
+	struct client_pcpl_info pi;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SETCLIENTID;
 	res = &resop.nfs_resop4_u.opsetclientid;
 	resok = &res->SETCLIENTID4res_u.resok4;
 
+	/* TODO: do we care about duplicate request cache (DRC)? */
+
+	/* build lists of records matching client.id */
+	g_list_foreach(client_list, (GFunc) client_accum, &ci);
+
+	/* check for confirmed record where principal does not match */
+	pi.status = &status;
+	pi.cli = cli;
+	g_list_foreach(ci.confirmed, (GFunc) client_check_pcpl, &pi);
+	if (status != NFS4_OK)
+		goto out;
+
 	/* FIXME */
 
-#if 0
 out:
-#endif
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
