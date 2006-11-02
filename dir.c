@@ -94,6 +94,13 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+void dirent_free(gpointer p)
+{
+	struct nfs_dirent *dirent = p;
+
+	g_slice_free(struct nfs_dirent, dirent);
+}
+
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		      nfsino_t inum)
 {
@@ -120,7 +127,7 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		goto out_name;
 	}
 
-	dirent = g_new(struct nfs_dirent, 1);
+	dirent = g_slice_new(struct nfs_dirent);
 	if (!dirent) {
 		status = NFS4ERR_RESOURCE;
 		goto out_name;
@@ -373,7 +380,7 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 		}
 	}
 
-	new_dirent = g_new(struct nfs_dirent, 1);
+	new_dirent = g_slice_new(struct nfs_dirent);
 	if (!new_dirent) {
 		status = NFS4ERR_RESOURCE;
 		goto out_name;

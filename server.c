@@ -178,19 +178,19 @@ bool_t has_dots(utf8string *str)
 
 static struct nfs_client *cli_init(struct svc_req *rqstp)
 {
-	struct nfs_client *cli = g_new0(struct nfs_client, 1);
+	struct nfs_client *cli = g_slice_new0(struct nfs_client);
 
 	return cli;
 }
 
 static void cli_free(struct nfs_client *cli)
 {
-	free(cli);
+	g_slice_free(struct nfs_client, cli);
 }
 
 static void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
 {
-	nfsino_t *fh_val = g_new(nfsino_t, 1);
+	nfsino_t *fh_val = g_slice_new(nfsino_t);
 	*fh_val = GUINT32_TO_BE(fh_int);
 
 	fh->nfs_fh4_len = sizeof(nfsino_t);
@@ -200,7 +200,8 @@ static void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
 static void nfs_fh_free(nfs_fh4 *fh)
 {
 	if (fh) {
-		free(fh->nfs_fh4_val);
+		nfsino_t *fh_val = (void *) fh->nfs_fh4_val;
+		g_slice_free(nfsino_t, fh_val);
 		fh->nfs_fh4_val = NULL;
 	}
 }

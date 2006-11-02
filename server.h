@@ -81,6 +81,7 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cres);
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		      nfsino_t inum);
+void dirent_free(gpointer p);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);

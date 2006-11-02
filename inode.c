@@ -21,9 +21,29 @@ void inode_touch(struct nfs_inode *ino)
 	ino->mtime = current_time.tv_sec;
 }
 
+static void inode_free(struct nfs_inode *ino)
+{
+	g_array_free(ino->parents, TRUE);
+
+	switch (ino->type) {
+	case NF4DIR:
+		if (ino->u.dir)
+			g_hash_table_destroy(ino->u.dir);
+		break;
+	case NF4LNK:
+		g_free(ino->u.linktext);
+		break;
+	default:
+		/* do nothing */
+		break;
+	}
+
+	g_slice_free(struct nfs_inode, ino);
+}
+
 static struct nfs_inode *inode_new(void)
 {
-	struct nfs_inode *ino = g_new0(struct nfs_inode, 1);
+	struct nfs_inode *ino = g_slice_new0(struct nfs_inode);
 	if (!ino)
 		goto out;
 
@@ -44,7 +64,7 @@ static struct nfs_inode *inode_new(void)
 	goto out;
 
 out_ino:
-	g_free(ino);
+	g_slice_free(struct nfs_inode, ino);
 out:
 	return ino;
 }
@@ -58,9 +78,9 @@ static struct nfs_inode *inode_new_dir(void)
 	ino->type = NF4DIR;
 
 	ino->u.dir = g_hash_table_new_full(g_str_hash, g_str_equal,
-					   g_free, g_free);
+					   g_free, dirent_free);
 	if (!ino->u.dir) {
-		g_free(ino);
+		inode_free(ino);
 		return NULL;
 	}
 
@@ -105,24 +125,6 @@ bool_t inode_table_init(void)
 	g_hash_table_insert(inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 
 	return TRUE;
-}
-
-static void inode_free(struct nfs_inode *ino)
-{
-	g_array_free(ino->parents, TRUE);
-
-	switch (ino->type) {
-	case NF4DIR:
-		g_assert(ino->u.dir != NULL);
-		g_hash_table_destroy(ino->u.dir);
-		break;
-	case NF4LNK:
-		g_free(ino->u.linktext);
-		break;
-	default:
-		/* do nothing */
-		break;
-	}
 }
 
 void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
