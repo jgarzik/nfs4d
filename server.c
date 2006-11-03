@@ -45,6 +45,32 @@ bool_t has_dots(utf8string *str)
 	return FALSE;
 }
 
+guint64 get_bitmap(bitmap4 *map)
+{
+	guint64 v = 0;
+
+	if (map->bitmap4_len > 0)
+		v |= map->bitmap4_val[0];
+	if (map->bitmap4_len > 1)
+		v |= ((guint64)map->bitmap4_val[1]) << 32;
+	return v;
+}
+
+int set_bitmap(guint64 map_in, bitmap4 *map_out)
+{
+	map_out->bitmap4_len = 2;
+	map_out->bitmap4_val = g_new(uint32_t, 2);
+	if (!map_out->bitmap4_val) {
+		map_out->bitmap4_len = 0;
+		return -1;
+	}
+
+	map_out->bitmap4_val[0] = map_in;
+	map_out->bitmap4_val[1] = (map_in >> 32);
+
+	return 0;
+}
+
 static struct nfs_client *cli_init(struct svc_req *rqstp)
 {
 	struct nfs_client *cli = g_slice_new0(struct nfs_client);

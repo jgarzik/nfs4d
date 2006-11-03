@@ -236,7 +236,6 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *new_ino;
 	uint64_t bitmap_set;
-	uint32_t *bitmap_alloc;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CREATE;
@@ -294,14 +293,11 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
-	bitmap_alloc = g_new0(uint32_t, 2);
-	if (!bitmap_alloc) {
+	if (set_bitmap(bitmap_set, &resok->attrset)) {
 		inode_free(new_ino);
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
-	bitmap_alloc[0] = bitmap_set;
-	bitmap_alloc[1] = (bitmap_set >> 32);
 
 	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(new_ino->ino),
 			    new_ino);
@@ -313,14 +309,12 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	status = dir_add(dir_ino, &arg->objname, new_ino->ino);
 	if (status != NFS4_OK) {
 		inode_unlink(new_ino, 0);
-		g_free(bitmap_alloc);
+		free_bitmap(&resok->attrset);
 		goto out;
 	}
 
 	g_array_append_val(new_ino->parents, dir_ino->ino);
 	resok->cinfo.after = dir_ino->version;
-	resok->attrset.bitmap4_len = 2;
-	resok->attrset.bitmap4_val = bitmap_alloc;
 
 	cli->current_fh = new_ino->ino;
 
@@ -352,11 +346,7 @@ bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
 
 	memset(&attrset, 0, sizeof(attrset));
 
-	if (arg->attr_request.bitmap4_len > 0)
-		attrset.bitmap |= arg->attr_request.bitmap4_val[0];
-	if (arg->attr_request.bitmap4_len > 1)
-		attrset.bitmap |=
-			((guint64)arg->attr_request.bitmap4_val[1]) << 32;
+	attrset.bitmap = get_bitmap(&arg->attr_request);
 
 	fattr_fill(ino, &attrset);
 

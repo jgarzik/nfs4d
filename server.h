@@ -126,5 +126,14 @@ bool_t valid_utf8string(utf8string *str);
 gchar *copy_utf8string(utf8string *str);
 bool_t has_dots(utf8string *str);
 void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
+guint64 get_bitmap(bitmap4 *map);
+int set_bitmap(guint64 map_in, bitmap4 *map_out);
+
+static inline void free_bitmap(bitmap4 *map)
+{
+	g_free(map->bitmap4_val);
+	map->bitmap4_len = 0;
+	map->bitmap4_val = NULL;
+}
 
 #endif /* __SERVER_H__ */

@@ -169,13 +169,8 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 
 #include "fattr.h"
 
-	raw->attrmask.bitmap4_len = 2;
-	raw->attrmask.bitmap4_val = g_new(uint32_t, 2);
-	if (!raw->attrmask.bitmap4_val)
+	if (set_bitmap(bitmap, &raw->attrmask))
 		goto out;
-
-	raw->attrmask.bitmap4_val[0] = bitmap;
-	raw->attrmask.bitmap4_val[1] = (bitmap >> 32);
 
 	raw->attr_vals.attrlist4_len = xdr_getpos(&xdr);
 	raw->attr_vals.attrlist4_val = buf;
@@ -201,16 +196,12 @@ out:
 
 bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr)
 {
-	uint64_t bitmap = 0;
+	uint64_t bitmap;
 	XDR xdr;
 	bool_t rc = TRUE;
 
 	memset(attr, 0, sizeof(*attr));
-	if (raw->attrmask.bitmap4_len > 0)
-		bitmap = raw->attrmask.bitmap4_val[0];
-	if (raw->attrmask.bitmap4_len > 1)
-		bitmap |= ((uint64_t)raw->attrmask.bitmap4_val[1]) << 32;
-	attr->bitmap = bitmap;
+	bitmap = attr->bitmap = get_bitmap(&raw->attrmask);
 
 	memset(&xdr, 0, sizeof(xdr));
 	xdrmem_create(&xdr, raw->attr_vals.attrlist4_val,
@@ -242,16 +233,9 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 {
 	guint64 bitmap = attr->bitmap;
 
-	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
-		bitmap4 *map = &attr->supported_attrs;
-		map->bitmap4_len = 2;
-		map->bitmap4_val = g_new(uint32_t, 2);
-		if (!map->bitmap4_val)
-			return;
-
-		map->bitmap4_val[0] = (uint32_t) fattr_supported_mask;
-		map->bitmap4_val[1] = (fattr_supported_mask >> 32);
-	}
+	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS))
+		if (set_bitmap(fattr_supported_mask, &attr->supported_attrs))
+			return;		/* failure, OOM most likely */
 
 	attr->fh_expire_type = FH4_PERSISTENT;
 	attr->link_support = TRUE;
