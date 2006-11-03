@@ -240,7 +240,7 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 		1ULL << FATTR4_TIME_BACKUP |
 		1ULL << FATTR4_TIME_CREATE;
 
-	if (!fattr_parse(raw_attr, &fattr))
+	if (!fattr_decode(raw_attr, &fattr))
 		return NFS4ERR_INVAL;
 
 	if (fattr.bitmap & read_only_mask)
