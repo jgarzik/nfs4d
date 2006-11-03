@@ -38,6 +38,8 @@ struct nfs_inode {
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
 
+	uint64_t		size;
+
 	uint64_t		ctime;		/* creation time */
 	uint64_t		atime;		/* last-accessed time */
 	uint64_t		mtime;		/* last-modified time */
@@ -106,5 +108,6 @@ bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 bool_t valid_utf8string(utf8string *str);
 gchar *copy_utf8string(utf8string *str);
 bool_t has_dots(utf8string *str);
+void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 
 #endif /* __SERVER_H__ */

@@ -57,7 +57,7 @@ static void cli_free(struct nfs_client *cli)
 	g_slice_free(struct nfs_client, cli);
 }
 
-static void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
+void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
 {
 	nfsino_t *fh_val = g_slice_new(nfsino_t);
 	*fh_val = GUINT32_TO_BE(fh_int);

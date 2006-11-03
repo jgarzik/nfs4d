@@ -134,7 +134,7 @@ out:
 
 void fattr_free(struct nfs_fattr_set *attr)
 {
-	/* FIXME? */
+	/* FIXME */
 }
 
 void fattr_fill_server(struct nfs_fattr_set *attr)
@@ -147,11 +147,62 @@ void fattr_fill_server(struct nfs_fattr_set *attr)
 
 void fattr_fill_fs(struct nfs_fattr_set *attr)
 {
-	/* FIXME */
+	guint64 bitmap = attr->bitmap;
+
+	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
+		guint64 val;
+		bitmap4 *map = &attr->supported_attrs;
+		map->bitmap4_len = 2;
+		map->bitmap4_val = g_new(uint32_t, 2);
+		if (!map->bitmap4_val)
+			return;
+
+		val =	(1ULL << FATTR4_SUPPORTED_ATTRS) |
+			(1ULL << FATTR4_TYPE) |
+			(1ULL << FATTR4_FH_EXPIRE_TYPE) |
+			(1ULL << FATTR4_CHANGE) |
+			(1ULL << FATTR4_SIZE) |
+			(1ULL << FATTR4_LINK_SUPPORT) |
+			(1ULL << FATTR4_SYMLINK_SUPPORT) |
+			(1ULL << FATTR4_NAMED_ATTR) |
+			(1ULL << FATTR4_FSID) |
+			(1ULL << FATTR4_UNIQUE_HANDLES) |
+			(1ULL << FATTR4_LEASE_TIME) |
+			(1ULL << FATTR4_RDATTR_ERROR) |
+			(1ULL << FATTR4_FILEHANDLE);
+
+		map->bitmap4_val[0] = val;
+		map->bitmap4_val[1] = (val >> 32);
+	}
+	if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE))
+		attr->fh_expire_type = FH4_PERSISTENT;
+	if (bitmap & (1ULL << FATTR4_LINK_SUPPORT))
+		attr->link_support = TRUE;
+	if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT))
+		attr->symlink_support = TRUE;
+	if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES))
+		attr->unique_handles = TRUE;
 }
 
 void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
-	/* FIXME */
+	guint64 bitmap = attr->bitmap;
+
+	if (bitmap & (1ULL << FATTR4_TYPE))
+		attr->type = ino->type;
+	if (bitmap & (1ULL << FATTR4_CHANGE))
+		attr->change = ino->version;
+	if (bitmap & (1ULL << FATTR4_SIZE))
+		attr->size = ino->size;
+	if (bitmap & (1ULL << FATTR4_NAMED_ATTR))
+		attr->named_attr = FALSE;
+	if (bitmap & (1ULL << FATTR4_FSID)) {
+		attr->fsid.major = 1;
+		attr->fsid.minor = 0;
+	}
+	if (bitmap & (1ULL << FATTR4_RDATTR_ERROR))
+		attr->rdattr_error = NFS4_OK;
+	if (bitmap & (1ULL << FATTR4_FILEHANDLE))
+		nfs_fh_set(&attr->filehandle, ino->ino);
 }
 
