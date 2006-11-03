@@ -5,14 +5,13 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static GHashTable *inode_table;
 static nfsino_t next_ino = INO_RESERVED_LAST + 1;
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
-	g_assert(inode_table != NULL);
+	g_assert(srv.inode_table != NULL);
 
-	return g_hash_table_lookup(inode_table, GUINT_TO_POINTER(inum));
+	return g_hash_table_lookup(srv.inode_table, GUINT_TO_POINTER(inum));
 }
 
 void inode_touch(struct nfs_inode *ino)
@@ -115,14 +114,14 @@ bool_t inode_table_init(void)
 {
 	struct nfs_inode *root;
 
-	inode_table = g_hash_table_new(g_direct_hash, g_direct_equal);
+	srv.inode_table = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	root = inode_new_dir();
 	if (!root)
 		return FALSE;
 	root->ino = INO_ROOT;
 
-	g_hash_table_insert(inode_table, GUINT_TO_POINTER(INO_ROOT), root);
+	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 
 	return TRUE;
 }
@@ -141,7 +140,7 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 	}
 
 	if (ino->parents->len == 0) {
-		g_hash_table_remove(inode_table, GUINT_TO_POINTER(ino->ino));
+		g_hash_table_remove(srv.inode_table, GUINT_TO_POINTER(ino->ino));
 		inode_free(ino);
 	}
 }
@@ -371,7 +370,7 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	bitmap_alloc[0] = bitmap_set;
 	bitmap_alloc[1] = (bitmap_set >> 32);
 
-	g_hash_table_insert(inode_table, GUINT_TO_POINTER(new_ino->ino),
+	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(new_ino->ino),
 			    new_ino);
 
 	resok->cinfo.atomic = TRUE;

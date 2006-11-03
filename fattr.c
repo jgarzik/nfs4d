@@ -169,40 +169,81 @@ void fattr_fill_fs(struct nfs_fattr_set *attr)
 			(1ULL << FATTR4_UNIQUE_HANDLES) |
 			(1ULL << FATTR4_LEASE_TIME) |
 			(1ULL << FATTR4_RDATTR_ERROR) |
-			(1ULL << FATTR4_FILEHANDLE);
+			(1ULL << FATTR4_FILEHANDLE) |
+			(1ULL << FATTR4_CANSETTIME) |
+			(1ULL << FATTR4_CASE_INSENSITIVE) |
+			(1ULL << FATTR4_CASE_PRESERVING) |
+			(1ULL << FATTR4_FILEID) |
+			(1ULL << FATTR4_FILES_TOTAL) |
+			(1ULL << FATTR4_HOMOGENEOUS) |
+			(1ULL << FATTR4_MAXFILESIZE) |
+			(1ULL << FATTR4_MAXLINK) |
+			(1ULL << FATTR4_MAXNAME) |
+			(1ULL << FATTR4_MAXREAD) |
+			(1ULL << FATTR4_MAXWRITE) |
+			(1ULL << FATTR4_NO_TRUNC) |
+			(1ULL << FATTR4_NUMLINKS) |
+			(1ULL << FATTR4_RAWDEV) |
+			(1ULL << FATTR4_TIME_ACCESS) |
+			(1ULL << FATTR4_TIME_CREATE) |
+			(1ULL << FATTR4_TIME_DELTA) |
+			(1ULL << FATTR4_TIME_MODIFY) |
+			(1ULL << FATTR4_MOUNTED_ON_FILEID);
 
 		map->bitmap4_val[0] = val;
 		map->bitmap4_val[1] = (val >> 32);
 	}
-	if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE))
-		attr->fh_expire_type = FH4_PERSISTENT;
-	if (bitmap & (1ULL << FATTR4_LINK_SUPPORT))
-		attr->link_support = TRUE;
-	if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT))
-		attr->symlink_support = TRUE;
-	if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES))
-		attr->unique_handles = TRUE;
+
+	attr->fh_expire_type = FH4_PERSISTENT;
+	attr->link_support = TRUE;
+	attr->symlink_support = TRUE;
+	attr->unique_handles = TRUE;
+	attr->cansettime = TRUE;
+	attr->case_insensitive = FALSE;
+	attr->case_preserving = TRUE;
+	attr->files_total = g_hash_table_size(srv.inode_table);
+	attr->homogeneous = TRUE;
+	attr->maxfilesize = 0xffffffffULL;
+	attr->maxlink = SRV_MAX_LINK;
+	attr->maxname = SRV_MAX_NAME;
+	attr->maxread = SRV_MAX_READ;
+	attr->maxwrite = SRV_MAX_WRITE;
+	attr->no_trunc = TRUE;
+	attr->time_delta.seconds = 1;
+	attr->time_delta.nseconds = 0;
 }
 
 void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
 	guint64 bitmap = attr->bitmap;
 
-	if (bitmap & (1ULL << FATTR4_TYPE))
-		attr->type = ino->type;
-	if (bitmap & (1ULL << FATTR4_CHANGE))
-		attr->change = ino->version;
-	if (bitmap & (1ULL << FATTR4_SIZE))
-		attr->size = ino->size;
-	if (bitmap & (1ULL << FATTR4_NAMED_ATTR))
-		attr->named_attr = FALSE;
-	if (bitmap & (1ULL << FATTR4_FSID)) {
-		attr->fsid.major = 1;
-		attr->fsid.minor = 0;
-	}
-	if (bitmap & (1ULL << FATTR4_RDATTR_ERROR))
-		attr->rdattr_error = NFS4_OK;
+	attr->type = ino->type;
+	attr->change = ino->version;
+	attr->size = ino->size;
+	attr->named_attr = FALSE;
+	attr->fsid.major = 1;
+	attr->fsid.minor = 0;
+	attr->rdattr_error = NFS4_OK;
+
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE))
 		nfs_fh_set(&attr->filehandle, ino->ino);
+
+	attr->fileid = ino->ino;
+	attr->mode = ino->mode;
+	attr->numlinks = ino->parents->len;
+
+	if (ino->type == NF4BLK || ino->type == NF4CHR)
+		memcpy(&attr->rawdev, &ino->u.devdata, sizeof(specdata4));
+	else
+		memset(&attr->rawdev, 0, sizeof(specdata4));
+
+	attr->time_access.seconds = ino->atime;
+	attr->time_access.nseconds = 0;
+	attr->time_create.seconds = ino->ctime;
+	attr->time_create.nseconds = 0;
+	attr->time_modify.seconds = ino->mtime;
+	attr->time_modify.nseconds = 0;
+
+	attr->mounted_on_fileid = ino->ino;
 }
 

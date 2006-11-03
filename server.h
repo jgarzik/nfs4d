@@ -16,6 +16,13 @@ enum {
 	NFS_CLI_CONFIRMED	= (1 << 0),
 };
 
+enum server_limits {
+	SRV_MAX_LINK		= 0xffffffff,	/* max hard links per inode*/
+	SRV_MAX_NAME		= 512,		/* max pathname length */
+	SRV_MAX_READ		= 1024 * 128,	/* max contig. read */
+	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
+};
+
 enum fattr_types {
 	FATTR_TYPE_OBJ,
 	FATTR_TYPE_FS,
@@ -70,7 +77,7 @@ struct nfs_dirent {
 };
 
 struct nfs_server {
-	int dummy; /* for now */
+	GHashTable		*inode_table;
 };
 
 /* global variables */
