@@ -103,6 +103,10 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 void dirent_free(gpointer p);
 
 /* fattr.c */
+extern const uint64_t fattr_write_only_mask;
+extern const uint64_t fattr_read_write_mask;
+extern const uint64_t fattr_read_only_mask;
+extern const uint64_t fattr_supported_mask;
 bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
 bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 void fattr_free(struct nfs_fattr_set *attr);
