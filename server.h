@@ -37,6 +37,11 @@ enum fattr_types {
 	FATTR_TYPE_SRV,
 };
 
+struct blob {
+	unsigned int		len;
+	void			*buf;
+};
+
 struct nfs_client {
 	nfsino_t		current_fh;
 	nfsino_t		save_fh;
@@ -46,7 +51,7 @@ struct nfs_client {
 	uint32_t		gid;
 };
 
-struct nfs_cli_state {
+struct nfs_clientid {
 	nfs_client_id4		id;
 	unsigned long		flags;
 };
@@ -90,7 +95,14 @@ struct nfs_dirent {
 
 struct nfs_server {
 	GHashTable		*inode_table;
+
+	GHashTable		*client_ids;
+
+	GHashTable		*clid_idx;
+
 	unsigned int		lease_time;
+
+	struct drand48_data	rng;
 };
 
 /* global variables */
@@ -140,6 +152,9 @@ void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 guint64 get_bitmap(const bitmap4 *map);
 int set_bitmap(guint64 map_in, bitmap4 *map_out);
 nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in);
+guint blob_hash_for_key(gconstpointer data);
+gboolean blob_equal(gconstpointer _a, gconstpointer _b);
+void clientid_free(gpointer data);
 
 static inline void free_bitmap(bitmap4 *map)
 {

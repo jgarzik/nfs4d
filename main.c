@@ -5,11 +5,17 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <string.h>
 #include <memory.h>
+#include <locale.h>
+#include <unistd.h>
 #include <syslog.h>
+#include <time.h>
 #include <sys/time.h>
 #include <rpc/pmap_clnt.h>
 #include <netinet/in.h>
@@ -27,10 +33,37 @@ GList *client_list = NULL;
 struct nfs_server srv;
 
 
-static void init_server(void)
+static void slerror(const char *prefix)
 {
-	memset(&srv, 0, sizeof(srv));
-	srv.lease_time = 5 * 60;
+	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
+}
+
+static void init_rng(void)
+{
+	unsigned long v;
+	int fd;
+	ssize_t bytes;
+
+	fd = open("/dev/random", O_RDONLY);
+	if (fd < 0) {
+		slerror("/dev/random");
+		goto srand_time;
+	}
+
+	bytes = read(fd, &v, sizeof(v));
+	if (bytes < 0)
+		slerror("/dev/random read");
+		
+	close(fd);
+
+	if (bytes < sizeof(v))
+		goto srand_time;
+
+	srand48_r(v, &srv.rng);
+	return;
+
+srand_time:
+	srand48_r(getpid() ^ time(NULL), &srv.rng);
 }
 
 static int init_sock(void)
@@ -40,14 +73,14 @@ static int init_sock(void)
 
 	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock < 0) {
-		perror("socket");
+		slerror("socket");
 		return -1;
 	}
 
 	val = 1;
 	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &val,
 		       sizeof(val)) < 0) {
-		perror("setsockopt");
+		slerror("setsockopt");
 		return -1;
 	}
 
@@ -56,12 +89,12 @@ static int init_sock(void)
 	saddr.sin_port = htons(NFS_PORT);
 	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-		perror("bind");
+		slerror("bind");
 		return -1;
 	}
 
 	if (listen(sock, LISTEN_SIZE) < 0) {
-		perror("listen");
+		slerror("listen");
 		return -1;
 	}
 
@@ -128,11 +161,11 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 		svcerr_systemerr (transp);
 	}
 	if (!svc_freeargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
-		fprintf (stderr, "%s", "unable to free arguments");
+		syslog(LOG_ERR, "unable to free arguments");
 		exit (1);
 	}
 	if (!nfs4_program_4_freeresult (transp, _xdr_result, &result))
-		fprintf (stderr, "%s", "unable to free results");
+		syslog(LOG_ERR, "unable to free results");
 
 	return;
 }
@@ -142,45 +175,77 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 bool_t gssrpc_pmap_unset(u_long prognum, u_long versnum);
 #endif
 
-static void init_rpc(int sock)
+static int init_rpc(int sock)
 {
 	register SVCXPRT *transp;
 
 	transp = svctcp_create(sock, 0, 0);
 	if (transp == NULL) {
-		fprintf (stderr, "%s", "cannot create tcp service.");
-		exit(1);
+		syslog(LOG_ERR, "cannot create tcp service.");
+		return -1;
 	}
 	if (!svc_register(transp, NFS4_PROGRAM, NFS_V4, nfs4_program_4, IPPROTO_TCP)) {
-		fprintf (stderr, "%s", "unable to register (NFS4_PROGRAM, NFS_V4, tcp).");
-		exit(1);
+		syslog(LOG_ERR, "unable to register (NFS4_PROGRAM, NFS_V4, tcp).");
+		return -1;
 	}
+
+	return 0;
 }
 
-int
-main (int argc, char **argv)
+static int init_server(void)
 {
 	struct timezone tz = { 0, 0 };
 	int sock;
 
-	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
-
 	pmap_unset (NFS4_PROGRAM, NFS_V4);
 
-	sock = init_sock();
-	if (sock < 0)
-		return 1;
+	memset(&srv, 0, sizeof(srv));
+	srv.lease_time = 5 * 60;
+	srv.client_ids = g_hash_table_new_full(blob_hash_for_key, blob_equal,
+					       NULL, clientid_free);
+	srv.clid_idx = g_hash_table_new(NULL, NULL);
 
-	/* init globals */
-	init_server();
-	gettimeofday(&current_time, &tz);
+	if (gettimeofday(&current_time, &tz) < 0) {
+		slerror("gettimeofday(2)");
+		return -1;
+	}
+
+	if (!srv.client_ids || !srv.clid_idx) {
+		syslog(LOG_ERR, "OOM in init_server()");
+		return -1;
+	}
 
 	inode_table_init();
 
-	init_rpc(sock);
+	init_rng();
+
+	sock = init_sock();
+	if (sock < 0)
+		return -1;
+
+	if (init_rpc(sock) < 0)
+		return -1;
+
+	return 0;
+}
+
+int main (int argc, char *argv[])
+{
+	setlocale(LC_ALL, "");
+
+	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
+
+	if (daemon(0, 0) < 0) {
+		slerror("daemon(2)");
+		return 1;
+	}
+
+	if (init_server())
+		return 1;
 
 	svc_run ();
-	fprintf (stderr, "%s", "svc_run returned");
-	exit (1);
-	/* NOTREACHED */
+
+	syslog(LOG_ERR, "svc_run returned");
+	return 1;
 }
+
