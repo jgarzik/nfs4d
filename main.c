@@ -24,6 +24,7 @@ enum {
 
 struct timeval current_time;
 GList *client_list = NULL;
+struct nfs_server srv;
 
 
 static int init_sock(void)
@@ -164,7 +165,10 @@ main (int argc, char **argv)
 	if (sock < 0)
 		return 1;
 
+	/* init globals */
+	memset(&srv, 0, sizeof(srv));
 	gettimeofday(&current_time, &tz);
+
 	inode_table_init();
 
 	init_rpc(sock);

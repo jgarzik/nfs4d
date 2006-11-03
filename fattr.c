@@ -137,3 +137,21 @@ void fattr_free(struct nfs_fattr_set *attr)
 	/* FIXME? */
 }
 
+void fattr_fill_server(struct nfs_fattr_set *attr)
+{
+	guint64 bitmap = attr->bitmap;
+
+	if (bitmap & (1ULL << FATTR4_LEASE_TIME))
+		attr->lease_time = 5 * 60;
+}
+
+void fattr_fill_fs(struct nfs_fattr_set *attr)
+{
+	/* FIXME */
+}
+
+void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
+{
+	/* FIXME */
+}
+

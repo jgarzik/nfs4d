@@ -67,10 +67,14 @@ struct nfs_dirent {
 	nfsino_t		ino;
 };
 
+struct nfs_server {
+	int dummy; /* for now */
+};
 
 /* global variables */
 extern struct timeval current_time;
 extern GList *client_list;
+extern struct nfs_server srv;
 
 /* inode.c */
 struct nfs_inode *inode_get(nfsino_t inum);
@@ -89,12 +93,18 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		      nfsino_t inum);
 void dirent_free(gpointer p);
 
+/* fattr.c */
+bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
+bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
+void fattr_free(struct nfs_fattr_set *attr);
+void fattr_fill_server(struct nfs_fattr_set *attr);
+void fattr_fill_fs(struct nfs_fattr_set *attr);
+void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr);
+
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 bool_t valid_utf8string(utf8string *str);
 gchar *copy_utf8string(utf8string *str);
 bool_t has_dots(utf8string *str);
-bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
-void fattr_free(struct nfs_fattr_set *attr);
 
 #endif /* __SERVER_H__ */
