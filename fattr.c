@@ -56,7 +56,7 @@ static size_t raw_fattr_size(guint64 bitmap, struct nfs_fattr_set *attr)
 	return s;
 }
 
-#define FATTR_DEFINE(a,b)				\
+#define FATTR_DEFINE(a,b,c)				\
 	if (bitmap & ( 1ULL << FATTR4_##a ))		\
 		if (!xdr_fattr4_##b(&xdr, &attr->b))	\
 			goto out;
@@ -98,7 +98,7 @@ out:
 
 #undef FATTR_DEFINE
 
-#define FATTR_DEFINE(a,b)				\
+#define FATTR_DEFINE(a,b,c)				\
 	if (bitmap & ( 1ULL << FATTR4_##a )) {		\
 		if (!xdr_fattr4_##b(&xdr, &attr->b)) {	\
 			rc = FALSE;			\

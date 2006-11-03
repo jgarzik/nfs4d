@@ -16,6 +16,12 @@ enum {
 	NFS_CLI_CONFIRMED	= (1 << 0),
 };
 
+enum fattr_types {
+	FATTR_TYPE_OBJ,
+	FATTR_TYPE_FS,
+	FATTR_TYPE_SRV,
+};
+
 struct nfs_client {
 	nfsino_t		current_fh;
 	nfsino_t		save_fh;
@@ -46,7 +52,7 @@ struct nfs_inode {
 	} u;
 };
 
-#define FATTR_DEFINE(a,b) \
+#define FATTR_DEFINE(a,b,c) \
 	fattr4_##b b;
 
 struct nfs_fattr_set {
