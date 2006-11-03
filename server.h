@@ -46,7 +46,7 @@ struct nfs_inode {
 	} u;
 };
 
-#define FATTR_DEFINE(a,b,c) \
+#define FATTR_DEFINE(a,b) \
 	fattr4_##b b;
 
 struct nfs_fattr_set {

@@ -20,7 +20,7 @@ static size_t raw_pathname_size(pathname4 *path)
 	return s;
 }
 
-#define FATTR_DEFINE(a,b,c)				\
+#define FATTR_DEFINE(a,b)				\
 	if (bitmap & ( 1ULL << FATTR4_##a ))		\
 		s += sizeof(attr->b);
 
@@ -64,7 +64,7 @@ static size_t raw_fattr_size(guint64 bitmap, struct nfs_fattr_set *attr)
 
 #undef FATTR_DEFINE
 
-#define FATTR_DEFINE(a,b,c)				\
+#define FATTR_DEFINE(a,b)				\
 	if (bitmap & ( 1ULL << FATTR4_##a ))		\
 		if (!xdr_fattr4_##b(&xdr, &attr->b))	\
 			goto out;
@@ -100,7 +100,7 @@ out:
 
 #undef FATTR_DEFINE
 
-#define FATTR_DEFINE(a,b,c)				\
+#define FATTR_DEFINE(a,b)				\
 	if (bitmap & ( 1ULL << FATTR4_##a )) {		\
 		if (!xdr_fattr4_##b(&xdr, &attr->b)) {	\
 			rc = FALSE;			\
