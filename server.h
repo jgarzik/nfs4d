@@ -91,6 +91,9 @@ void inode_touch(struct nfs_inode *ino);
 bool_t inode_table_init(void);
 void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
 bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
+		      COMPOUND4res *cres);
+void nfs_getattr_free(GETATTR4res *res);
 
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres);
@@ -110,9 +113,7 @@ extern const uint64_t fattr_supported_mask;
 bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
 bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 void fattr_free(struct nfs_fattr_set *attr);
-void fattr_fill_server(struct nfs_fattr_set *attr);
-void fattr_fill_fs(struct nfs_fattr_set *attr);
-void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr);
+void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);

@@ -306,7 +306,7 @@ static void client_accum(struct nfs_cli_state *ncs, struct client_id_info *ci)
 {
 	if (client_id_cmp(&ncs->id, ci->query_id))
 		return;
-	
+
 	ci->all = g_list_append(ci->all, ncs);
 	if (ncs->flags & NFS_CLI_CONFIRMED)
 		ci->confirmed = g_list_append(ci->confirmed, ncs);
@@ -458,6 +458,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	switch (arg->argop) {
 	case OP_CREATE:
 		return nfs_op_create(cli, &arg->nfs_argop4_u.opcreate, res);
+	case OP_GETATTR:
+		return nfs_op_getattr(cli, &arg->nfs_argop4_u.opgetattr, res);
 	case OP_GETFH:
 		return nfs_op_getfh(cli, res);
 	case OP_LINK:
@@ -494,7 +496,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_COMMIT:
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
-	case OP_GETATTR:
 	case OP_LOCK:
 	case OP_LOCKT:
 	case OP_LOCKU:
@@ -563,11 +564,11 @@ static void nfs_free(nfs_resop4 *res)
 	case OP_CREATE:
 		g_free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
 		break;
+	case OP_GETATTR:
+		nfs_getattr_free(&res->nfs_resop4_u.opgetattr);
+		break;
 	case OP_GETFH:
 		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
-		break;
-	case OP_SETATTR:
-		g_free(res->nfs_resop4_u.opsetattr.attrsset.bitmap4_val);
 		break;
 	default:
 		/* nothing to free */

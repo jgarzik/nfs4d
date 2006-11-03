@@ -164,7 +164,7 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 	buf = g_malloc0(buflen);
 	if (!buf)
 		return FALSE;
-	
+
 	xdrmem_create(&xdr, buf, buflen, XDR_ENCODE);
 
 #include "fattr.h"
@@ -230,7 +230,7 @@ void fattr_free(struct nfs_fattr_set *attr)
 	/* FIXME */
 }
 
-void fattr_fill_server(struct nfs_fattr_set *attr)
+static void fattr_fill_server(struct nfs_fattr_set *attr)
 {
 	guint64 bitmap = attr->bitmap;
 
@@ -238,7 +238,7 @@ void fattr_fill_server(struct nfs_fattr_set *attr)
 		attr->lease_time = 5 * 60;
 }
 
-void fattr_fill_fs(struct nfs_fattr_set *attr)
+static void fattr_fill_fs(struct nfs_fattr_set *attr)
 {
 	guint64 bitmap = attr->bitmap;
 
@@ -272,7 +272,7 @@ void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->time_delta.nseconds = 0;
 }
 
-void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
+static void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
 	guint64 bitmap = attr->bitmap;
 
@@ -306,3 +306,9 @@ void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 	attr->mounted_on_fileid = ino->ino;
 }
 
+void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr)
+{
+	fattr_fill_server(attr);
+	fattr_fill_fs(attr);
+	fattr_fill_obj(ino, attr);
+}

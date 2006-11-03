@@ -209,7 +209,7 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 		int x = int_from_utf8string(&fattr.owner);
 		if (x < 0)
 			return NFS4ERR_INVAL;
-		
+
 		ino->uid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
@@ -217,7 +217,7 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 		int x = int_from_utf8string(&fattr.owner);
 		if (x < 0)
 			return NFS4ERR_INVAL;
-		
+
 		ino->gid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER_GROUP);
 	}
@@ -327,5 +327,51 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
+}
+
+bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
+		      COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	GETATTR4res *res;
+	GETATTR4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+	struct nfs_fattr_set attrset;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_GETATTR;
+	res = &resop.nfs_resop4_u.opgetattr;
+	resok = &res->GETATTR4res_u.resok4;
+
+	ino = inode_get(cli->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	memset(&attrset, 0, sizeof(attrset));
+
+	if (arg->attr_request.bitmap4_len > 0)
+		attrset.bitmap |= arg->attr_request.bitmap4_val[0];
+	if (arg->attr_request.bitmap4_len > 1)
+		attrset.bitmap |=
+			((guint64)arg->attr_request.bitmap4_val[1]) << 32;
+
+	fattr_fill(ino, &attrset);
+
+	if (!fattr_encode(&resok->obj_attributes, &attrset))
+		status = NFS4ERR_IO;
+
+	/* FIXME: free attrset */
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+void nfs_getattr_free(GETATTR4res *res)
+{
+	/* FIXME */
 }
 
