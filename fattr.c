@@ -20,16 +20,10 @@ static size_t raw_pathname_size(pathname4 *path)
 	return s;
 }
 
-#define FATTR_DEFINE(a,b)				\
-	if (bitmap & ( 1ULL << FATTR4_##a ))		\
-		s += sizeof(attr->b);
-
 static size_t raw_fattr_size(guint64 bitmap, struct nfs_fattr_set *attr)
 {
-	size_t s = 0;
+	size_t s = sizeof(struct nfs_fattr_set);
 	unsigned int i;
-
-#include "fattr.h"
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS))
 		s += attr->supported_attrs.bitmap4_len * sizeof(uint32_t);
@@ -62,8 +56,6 @@ static size_t raw_fattr_size(guint64 bitmap, struct nfs_fattr_set *attr)
 	return s;
 }
 
-#undef FATTR_DEFINE
-
 #define FATTR_DEFINE(a,b)				\
 	if (bitmap & ( 1ULL << FATTR4_##a ))		\
 		if (!xdr_fattr4_##b(&xdr, &attr->b))	\
@@ -84,9 +76,15 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 
 #include "fattr.h"
 
-	/* FIXME: set bitmap4 attrmask */
+	raw->attrmask.bitmap4_len = 2;
+	raw->attrmask.bitmap4_val = g_new(uint32_t, 2);
+	if (!raw->attrmask.bitmap4_val)
+		goto out;
 
-	raw->attr_vals.attrlist4_len = buflen;
+	raw->attrmask.bitmap4_val[0] = bitmap;
+	raw->attrmask.bitmap4_val[1] = (bitmap >> 32);
+
+	raw->attr_vals.attrlist4_len = xdr_getpos(&xdr);
 	raw->attr_vals.attrlist4_val = buf;
 
 	xdr_destroy(&xdr);
@@ -120,8 +118,6 @@ bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr)
 	if (raw->attrmask.bitmap4_len > 1)
 		bitmap |= ((uint64_t)raw->attrmask.bitmap4_val[1]) << 32;
 	attr->bitmap = bitmap;
-
-	/* raw->attr_vals.attrlist4_val; */
 
 	memset(&xdr, 0, sizeof(xdr));
 	xdrmem_create(&xdr, raw->attr_vals.attrlist4_val,
