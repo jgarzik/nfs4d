@@ -23,6 +23,14 @@ enum server_limits {
 	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
 };
 
+enum server_fs_settings {
+	SRV_FH_EXP_TYPE		= FH4_PERSISTENT,
+};
+
+enum big_server_fs_settings {
+	SRV_MAX_FILESIZE	= 0xffffffffULL,
+};
+
 enum fattr_types {
 	FATTR_TYPE_OBJ,
 	FATTR_TYPE_FS,
@@ -82,6 +90,7 @@ struct nfs_dirent {
 
 struct nfs_server {
 	GHashTable		*inode_table;
+	unsigned int		lease_time;
 };
 
 /* global variables */
@@ -99,6 +108,8 @@ bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg, COMPOUND4res *cre
 bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
 		      COMPOUND4res *cres);
 void nfs_getattr_free(GETATTR4res *res);
+bool_t nfs_op_verify(struct nfs_client *cli, VERIFY4args *arg,
+		     COMPOUND4res *cres, int nverify);
 
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres);
@@ -126,8 +137,9 @@ bool_t valid_utf8string(utf8string *str);
 gchar *copy_utf8string(utf8string *str);
 bool_t has_dots(utf8string *str);
 void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
-guint64 get_bitmap(bitmap4 *map);
+guint64 get_bitmap(const bitmap4 *map);
 int set_bitmap(guint64 map_in, bitmap4 *map_out);
+nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in);
 
 static inline void free_bitmap(bitmap4 *map)
 {

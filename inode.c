@@ -353,7 +353,7 @@ bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
 	if (!fattr_encode(&resok->obj_attributes, &attrset))
 		status = NFS4ERR_IO;
 
-	/* FIXME: free attrset */
+	fattr_free(&attrset);
 
 out:
 	res->status = status;
@@ -421,6 +421,180 @@ bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg,
 		/* ACCESS4_DELETE | */	/* FIXME */
 		ACCESS4_EXECUTE;
 
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t inode_attr_cmp(const struct nfs_inode *ino,
+			     const struct nfs_fattr_set *attr)
+{
+	guint64 bitmap = attr->bitmap;
+
+	/*
+	 * per-server attributes
+	 */
+        if (bitmap & (1ULL << FATTR4_LEASE_TIME))
+		if (attr->lease_time != srv.lease_time)
+			return FALSE;
+
+	/*
+	 * per-filesystem attributes
+	 */
+        if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
+		guint64 tmp = get_bitmap(&attr->supported_attrs);
+		if (tmp != fattr_supported_mask)
+			return FALSE;
+	}
+        if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE))
+		if (attr->fh_expire_type != SRV_FH_EXP_TYPE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_LINK_SUPPORT))
+		if (attr->link_support != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT))
+		if (attr->symlink_support != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES))
+		if (attr->unique_handles != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_CANSETTIME))
+		if (attr->cansettime != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_CASE_INSENSITIVE))
+		if (attr->case_insensitive != FALSE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_CASE_PRESERVING))
+		if (attr->case_preserving != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_FILES_TOTAL))
+		if (attr->files_total != g_hash_table_size(srv.inode_table))
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_HOMOGENEOUS))
+		if (attr->homogeneous != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_MAXFILESIZE))
+		if (attr->maxfilesize != SRV_MAX_FILESIZE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_MAXLINK))
+		if (attr->maxlink != SRV_MAX_LINK)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_MAXNAME))
+		if (attr->maxname != SRV_MAX_NAME)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_MAXREAD))
+		if (attr->maxread != SRV_MAX_READ)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_MAXWRITE))
+		if (attr->maxwrite != SRV_MAX_WRITE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_NO_TRUNC))
+		if (attr->no_trunc != TRUE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_TIME_DELTA))
+		if ((attr->time_delta.seconds != 1) ||
+		    (attr->time_delta.nseconds != 0))
+			return FALSE;
+
+	/*
+	 * per-object attributes
+	 */
+        if (bitmap & (1ULL << FATTR4_TYPE))
+		if (attr->type != ino->type)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_CHANGE))
+		if (attr->change != ino->version)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_SIZE))
+		if (attr->size != ino->size)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_NAMED_ATTR))
+		if (attr->named_attr != FALSE)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_FSID))
+		if ((attr->fsid.major != 1) || (attr->fsid.minor != 0))
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_FILEHANDLE))
+		if (nfs_fh_decode(&attr->filehandle) != ino->ino)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_FILEID))
+		if (attr->fileid != ino->ino)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_NUMLINKS))
+		if (attr->numlinks != ino->parents->len)
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_RAWDEV))
+		if ((attr->rawdev.specdata1 != ino->u.devdata.specdata1) ||
+		    (attr->rawdev.specdata2 != ino->u.devdata.specdata2))
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_TIME_ACCESS))
+		if ((attr->time_access.seconds != ino->atime) ||
+		    (attr->time_access.nseconds != 0))
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_TIME_CREATE))
+		if ((attr->time_create.seconds != ino->ctime) ||
+		    (attr->time_create.nseconds != 0))
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_TIME_MODIFY))
+		if ((attr->time_modify.seconds != ino->mtime) ||
+		    (attr->time_modify.nseconds != 0))
+			return FALSE;
+        if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID))
+		if (attr->mounted_on_fileid != ino->ino)
+			return FALSE;
+
+	return TRUE;
+}
+
+bool_t nfs_op_verify(struct nfs_client *cli, VERIFY4args *arg,
+		     COMPOUND4res *cres, int nverify)
+{
+	struct nfs_resop4 resop;
+	VERIFY4res *res;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+	struct nfs_fattr_set fattr;
+	bool_t match;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_VERIFY;
+	res = &resop.nfs_resop4_u.opverify;
+
+	if (!fattr_decode(&arg->obj_attributes, &fattr)) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	if ((fattr.bitmap & (1ULL << FATTR4_RDATTR_ERROR)) ||
+	    (fattr.bitmap & fattr_write_only_mask)) {
+		status = NFS4ERR_INVAL;
+		goto out_free;
+	}
+
+	if (fattr.bitmap & (!(fattr_supported_mask))) {
+		status = NFS4ERR_ATTRNOTSUPP;
+		goto out_free;
+	}
+
+	ino = inode_get(cli->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out_free;
+	}
+
+	match = inode_attr_cmp(ino, &fattr);
+
+	if (nverify) {
+		if (match)
+			status = NFS4ERR_SAME;
+	} else {
+		if (!match)
+			status = NFS4ERR_NOT_SAME;
+	}
+
+
+out_free:
+	fattr_free(&fattr);
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);

@@ -226,7 +226,7 @@ static void fattr_fill_server(struct nfs_fattr_set *attr)
 	guint64 bitmap = attr->bitmap;
 
 	if (bitmap & (1ULL << FATTR4_LEASE_TIME))
-		attr->lease_time = 5 * 60;
+		attr->lease_time = srv.lease_time;
 }
 
 static void fattr_fill_fs(struct nfs_fattr_set *attr)
@@ -237,7 +237,7 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 		if (set_bitmap(fattr_supported_mask, &attr->supported_attrs))
 			return;		/* failure, OOM most likely */
 
-	attr->fh_expire_type = FH4_PERSISTENT;
+	attr->fh_expire_type = SRV_FH_EXP_TYPE;
 	attr->link_support = TRUE;
 	attr->symlink_support = TRUE;
 	attr->unique_handles = TRUE;
@@ -246,7 +246,7 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->case_preserving = TRUE;
 	attr->files_total = g_hash_table_size(srv.inode_table);
 	attr->homogeneous = TRUE;
-	attr->maxfilesize = 0xffffffffULL;
+	attr->maxfilesize = SRV_MAX_FILESIZE;
 	attr->maxlink = SRV_MAX_LINK;
 	attr->maxname = SRV_MAX_NAME;
 	attr->maxread = SRV_MAX_READ;

@@ -45,7 +45,7 @@ bool_t has_dots(utf8string *str)
 	return FALSE;
 }
 
-guint64 get_bitmap(bitmap4 *map)
+guint64 get_bitmap(const bitmap4 *map)
 {
 	guint64 v = 0;
 
@@ -101,7 +101,7 @@ static void nfs_fh_free(nfs_fh4 *fh)
 	}
 }
 
-static nfsino_t nfs_fh_decode(nfs_fh4 *fh_in)
+nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in)
 {
 	nfsino_t *fhp;
 	nfsino_t fh;
@@ -496,6 +496,10 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_lookup(cli, &arg->nfs_argop4_u.oplookup, res);
 	case OP_LOOKUPP:
 		return nfs_op_lookupp(cli, res);
+	case OP_NVERIFY:
+		return nfs_op_verify(cli,
+				(VERIFY4args *) &arg->nfs_argop4_u.opnverify,
+				res, 1);
 	case OP_PUTFH:
 		return nfs_op_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
@@ -518,6 +522,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_SETCLIENTID_CONFIRM:
 		return nfs_op_setclientid_confirm(cli,
 				&arg->nfs_argop4_u.opsetclientid_confirm, res);
+	case OP_VERIFY:
+		return nfs_op_verify(cli, &arg->nfs_argop4_u.opverify, res, 0);
 
 	case OP_CLOSE:
 	case OP_COMMIT:
@@ -526,7 +532,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_LOCK:
 	case OP_LOCKT:
 	case OP_LOCKU:
-	case OP_NVERIFY:
 	case OP_OPEN:
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
@@ -535,7 +540,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_RENEW:
 	case OP_SECINFO:
 	case OP_SETATTR:
-	case OP_VERIFY:
 	case OP_WRITE:
 	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:

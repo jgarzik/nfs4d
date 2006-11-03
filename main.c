@@ -27,6 +27,12 @@ GList *client_list = NULL;
 struct nfs_server srv;
 
 
+static void init_server(void)
+{
+	memset(&srv, 0, sizeof(srv));
+	srv.lease_time = 5 * 60;
+}
+
 static int init_sock(void)
 {
 	int sock, val;
@@ -166,7 +172,7 @@ main (int argc, char **argv)
 		return 1;
 
 	/* init globals */
-	memset(&srv, 0, sizeof(srv));
+	init_server();
 	gettimeofday(&current_time, &tz);
 
 	inode_table_init();
