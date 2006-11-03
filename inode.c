@@ -375,3 +375,64 @@ void nfs_getattr_free(GETATTR4res *res)
 	/* FIXME */
 }
 
+unsigned int inode_access(const struct nfs_client *cli,
+			  const struct nfs_inode *ino, unsigned int req_access)
+{
+	unsigned int mode = ino->mode & 0x7;
+	unsigned int rc = 0;
+
+	if (cli->uid == ino->uid)
+		mode |= (ino->mode >> 6) & 0x7;
+	if (cli->gid == ino->gid)
+		mode |= (ino->mode >> 3) & 0x7;
+
+	if ((req_access & ACCESS4_READ) && (mode & MODE4_ROTH))
+		rc |= ACCESS4_READ;
+	else if ((req_access & ACCESS4_LOOKUP) && (mode & MODE4_XOTH))
+		rc |= ACCESS4_LOOKUP;
+	else if ((req_access & ACCESS4_MODIFY) && (mode & MODE4_WOTH))
+		rc |= ACCESS4_MODIFY;
+	else if ((req_access & ACCESS4_EXTEND) && (mode & MODE4_WOTH))
+		rc |= ACCESS4_EXTEND;
+	else if ((req_access & ACCESS4_EXECUTE) && (mode & MODE4_XOTH))
+		rc |= ACCESS4_EXECUTE;
+
+	/* FIXME: check ACCESS4_DELETE */
+
+	return rc;
+}
+
+bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg,
+		     COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	ACCESS4res *res;
+	ACCESS4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_ACCESS;
+	res = &resop.nfs_resop4_u.opaccess;
+	resok = &res->ACCESS4res_u.resok4;
+
+	ino = inode_get(cli->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	resok->access = inode_access(cli, ino, arg->access);
+	resok->supported = 
+		ACCESS4_READ |
+		ACCESS4_LOOKUP |
+		ACCESS4_MODIFY |
+		ACCESS4_EXTEND |
+		/* ACCESS4_DELETE | */	/* FIXME */
+		ACCESS4_EXECUTE;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+

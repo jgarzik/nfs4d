@@ -32,6 +32,10 @@ enum fattr_types {
 struct nfs_client {
 	nfsino_t		current_fh;
 	nfsino_t		save_fh;
+
+	/* RPC credentials */
+	uint32_t		uid;
+	uint32_t		gid;
 };
 
 struct nfs_cli_state {
@@ -91,6 +95,7 @@ void inode_touch(struct nfs_inode *ino);
 bool_t inode_table_init(void);
 void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
 bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg, COMPOUND4res *cres);
 bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
 		      COMPOUND4res *cres);
 void nfs_getattr_free(GETATTR4res *res);

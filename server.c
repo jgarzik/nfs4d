@@ -456,6 +456,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		       (arg->argop > 39) ?  "<n/a>" : arg_str[arg->argop]);
 
 	switch (arg->argop) {
+	case OP_ACCESS:
+		return nfs_op_access(cli, &arg->nfs_argop4_u.opaccess, res);
 	case OP_CREATE:
 		return nfs_op_create(cli, &arg->nfs_argop4_u.opcreate, res);
 	case OP_GETATTR:
@@ -491,7 +493,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_setclientid_confirm(cli,
 				&arg->nfs_argop4_u.opsetclientid_confirm, res);
 
-	case OP_ACCESS:
 	case OP_CLOSE:
 	case OP_COMMIT:
 	case OP_DELEGPURGE:
