@@ -121,6 +121,7 @@ struct nfs_server {
 extern struct timeval current_time;
 extern GList *client_list;
 extern struct nfs_server srv;
+extern int debugging;
 
 /* inode.c */
 struct nfs_inode *inode_get(nfsino_t inum);
@@ -155,6 +156,15 @@ bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 void fattr_free(struct nfs_fattr_set *attr);
 void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
 
+/* fh.c */
+bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres);
+bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_putrootfh(struct nfs_client *cli, COMPOUND4res *cres);
+bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres);
+bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres);
+bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres);
+void nfs_getfh_free(GETFH4res *opgetfh);
+
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 bool_t valid_utf8string(utf8string *str);
@@ -169,6 +179,13 @@ gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
 guint short_clientid_hash(gconstpointer data);
 gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
 void state_free(gpointer data);
+
+/* state.c */
+bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
+			 COMPOUND4res *cres);
+bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
+				 SETCLIENTID_CONFIRM4args *arg,
+				 COMPOUND4res *cres);
 
 static inline void free_bitmap(bitmap4 *map)
 {
