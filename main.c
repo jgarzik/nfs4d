@@ -201,9 +201,11 @@ static int init_server(void)
 
 	memset(&srv, 0, sizeof(srv));
 	srv.lease_time = 5 * 60;
-	srv.client_ids = g_hash_table_new_full(blob_hash_for_key, blob_equal,
-					       NULL, clientid_free);
-	srv.clid_idx = g_hash_table_new(NULL, NULL);
+	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
+					       NULL, state_free);
+	srv.clid_idx = g_hash_table_new_full(short_clientid_hash,
+					     short_clientid_equal,
+					     g_free, NULL);
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");

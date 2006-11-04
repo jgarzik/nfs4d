@@ -52,8 +52,20 @@ struct nfs_client {
 };
 
 struct nfs_clientid {
-	nfs_client_id4		id;
+	struct blob		id;
+	verifier4		cli_verf;	/* client-supplied verifier */
+	clientid4		id_short;
+	verifier4		confirm_verf;	/* clientid confirm verifier */
+	cb_client4		callback;
+	guint32			callback_ident;
+};
+
+struct nfs_state {
+	struct nfs_clientid	*id;
+
 	unsigned long		flags;
+
+	GList			*pending;	/* unconfirmed requests */
 };
 
 struct nfs_inode {
@@ -152,9 +164,11 @@ void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 guint64 get_bitmap(const bitmap4 *map);
 int set_bitmap(guint64 map_in, bitmap4 *map_out);
 nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in);
-guint blob_hash_for_key(gconstpointer data);
-gboolean blob_equal(gconstpointer _a, gconstpointer _b);
-void clientid_free(gpointer data);
+guint clientid_hash(gconstpointer data);
+gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
+guint short_clientid_hash(gconstpointer data);
+gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
+void state_free(gpointer data);
 
 static inline void free_bitmap(bitmap4 *map)
 {
