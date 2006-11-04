@@ -13,18 +13,18 @@
 
 static int debugging = 1;
 
-/* "djb2" hash function */
+/* "djb2"-derived hash function */
 static unsigned long blob_hash(const void *_buf, size_t buflen)
 {
 	const unsigned char *buf = _buf;
-	unsigned long hash = 5381;
+	unsigned long hash = 5381UL;
 	int c;
 
 	while (buflen > 0) {
 		c = *buf++;
 		buflen--;
 
-		hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+		hash = ((hash << 5) + hash) ^ c; /* hash * 33 ^ c */
 	}
 
 	return hash;
