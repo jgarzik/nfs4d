@@ -319,27 +319,108 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static gint compare_confirm(gconstpointer _a, gconstpointer _b)
+{
+	const struct nfs_clientid *a = _a;
+	const struct nfs_clientid *b = _b;
+
+	if ((a->id_short == b->id_short) &&
+	    (!memcmp(&a->confirm_verf, &b->confirm_verf,
+	    	     sizeof(verifier4))))
+		return 0;
+
+	return 1;
+}
+
 bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
-				  SETCLIENTID_CONFIRM4args *arg,
+				  SETCLIENTID_CONFIRM4args *args,
 				  COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	SETCLIENTID_CONFIRM4res *res;
-#if 0
 	nfsstat4 status = NFS4_OK;
-#else
-	nfsstat4 status = NFS4ERR_NOTSUPP;
-#endif
+	struct nfs_state *st;
+	struct nfs_clientid *clid, *new_clid, clid_key;
+	GList *tmp;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SETCLIENTID_CONFIRM;
 	res = &resop.nfs_resop4_u.opsetclientid_confirm;
 
-	/* FIXME */
+	/* get state record from clientid4 */
+	st = g_hash_table_lookup(srv.clid_idx, &args->clientid);
+	if (!st) {
+		status = NFS4ERR_STALE_CLIENTID;
+		goto out;
+	}
 
-#if 0
+	/* filter out duplicates */
+	clid = st->id;
+	if (clid && (clid->id_short == args->clientid) &&
+	    (!memcmp(&clid->confirm_verf, &args->setclientid_confirm,
+	    	     sizeof(verifier4)))) {
+		/* duplicate, just return success */
+		goto out;
+	}
+
+	/*
+	 * find the matching unconfirmed record (if any), and
+	 * remove it from the unconfirmed list.
+	 */
+	clid_key.id_short = args->clientid;
+	memcpy(&clid_key.confirm_verf, &args->setclientid_confirm,
+		sizeof(verifier4));
+
+	tmp = g_list_find_custom(st->pending, &clid_key, compare_confirm);
+	if (!tmp) {
+		status = NFS4ERR_STALE_CLIENTID;
+		goto out;
+	}
+
+	new_clid = tmp->data;
+	st->pending = g_list_delete_link(st->pending, tmp);
+
+	/*
+	 * if old and new shorthand client ids are the same,
+	 * we are just updating the callback
+	 */
+	if (clid && (clid->id_short == new_clid->id_short)) {
+		/*
+		 * FIXME: signal <not-yet-written code> to tear down
+		 * the existing connection to the client
+		 */
+
+		goto out2;
+	}
+
+	/*
+	 * if no pre-existing state exists, we are done
+	 */
+	if (!clid)
+		goto out2;
+
+	/*
+	 * If we get this far, the client requires recovery.  Start
+	 * the process of recovering locks, leases, etc.
+	 */
+	/* FIXME: cancel client state */
+	syslog(LOG_WARNING, "FIXME: we need to cancel existing client state");
+
+out2:
+	if (clid) {
+		clientid4 *id_short = g_memdup(&clid->id_short,
+					       sizeof(clientid4));
+		if (!id_short) {
+			st->pending = g_list_prepend(st->pending, new_clid);
+			status = NFS4ERR_RESOURCE;
+			goto out;
+		}
+		g_hash_table_replace(srv.clid_idx, id_short, NULL);
+		clientid_free(clid);
+	}
+	st->id = new_clid;
+
 out:
-#endif
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
