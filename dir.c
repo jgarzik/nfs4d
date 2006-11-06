@@ -4,6 +4,27 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
+static nfsstat4 dir_curfh(const struct nfs_client *cli,
+			  struct nfs_inode **ino_out)
+{
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino = inode_get(cli->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+	if (ino->type != NF4DIR) {
+		if (ino->type == NF4LNK)
+			status = NFS4ERR_SYMLINK;
+		else
+			status = NFS4ERR_NOTDIR;
+		goto out;
+	}
+
+out:
+	return status;
+}
+
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -22,18 +43,9 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 		goto out;
 	}
 
-	ino = inode_get(cli->current_fh);
-	if (!ino) {
-		status = NFS4ERR_NOFILEHANDLE;
+	status = dir_curfh(cli, &ino);
+	if (status != NFS4_OK)
 		goto out;
-	}
-	if (ino->type != NF4DIR) {
-		if (ino->type == NF4LNK)
-			status = NFS4ERR_SYMLINK;
-		else
-			status = NFS4ERR_NOTDIR;
-		goto out;
-	}
 
 	name = copy_utf8string(&arg->objname);
 	if (!name) {
@@ -69,18 +81,9 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_LOOKUPP;
 	res = &resop.nfs_resop4_u.oplookupp;
 
-	ino = inode_get(cli->current_fh);
-	if (!ino) {
-		status = NFS4ERR_NOFILEHANDLE;
+	status = dir_curfh(cli, &ino);
+	if (status != NFS4_OK)
 		goto out;
-	}
-	if (ino->type != NF4DIR) {
-		if (ino->type == NF4LNK)
-			status = NFS4ERR_SYMLINK;
-		else
-			status = NFS4ERR_NOTDIR;
-		goto out;
-	}
 
 	if (ino->parents->len == 0) {	/* root inode, no parents */
 		status = NFS4ERR_NOENT;
@@ -213,15 +216,9 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 	}
 
 	/* reference container directory */
-	dir_ino = inode_get(cli->current_fh);
-	if (!dir_ino) {
-		status = NFS4ERR_NOFILEHANDLE;
+	status = dir_curfh(cli, &dir_ino);
+	if (status != NFS4_OK)
 		goto out;
-	}
-	if (dir_ino->type != NF4DIR) {
-		status = NFS4ERR_NOTDIR;
-		goto out;
-	}
 
 	/* copy target name */
 	name = copy_utf8string(&arg->target);
