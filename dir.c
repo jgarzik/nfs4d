@@ -409,3 +409,186 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static void entry4_free(entry4 *ent)
+{
+	g_free(ent->name.utf8string_val);
+	fattr4_free(&ent->attrs);
+	g_slice_free(entry4, ent);
+}
+
+static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
+			   guint64 bitmap, const struct nfs_dirent *de,
+			   entry4 **new_entry_out)
+{
+	nfsstat4 status = NFS4_OK;
+	entry4 *ent;
+	struct nfs_inode *ino;
+	struct nfs_fattr_set attrset;
+	bool_t encode_rc;
+
+	ent = g_slice_new0(entry4);
+	if (!ent) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	ent->cookie = hash;
+	ent->name.utf8string_len = strlen(name);
+	ent->name.utf8string_val = g_memdup(name, ent->name.utf8string_len);
+	if (!ent->name.utf8string_val) {
+		status = NFS4ERR_RESOURCE;
+		goto err_out;
+	}
+
+	memset(&attrset, 0, sizeof(attrset));
+	attrset.bitmap = bitmap;
+
+	ino = inode_get(de->ino);
+	if (!ino) {
+		if (!(bitmap & (1ULL << FATTR4_RDATTR_ERROR))) {
+			status = NFS4ERR_NOFILEHANDLE;
+			goto err_out_name;
+		}
+		bitmap = (1ULL << FATTR4_RDATTR_ERROR);
+		attrset.rdattr_error = NFS4ERR_NOFILEHANDLE;
+	} else
+		fattr_fill(ino, &attrset);
+
+	encode_rc = fattr_encode(&ent->attrs, &attrset);
+	fattr_free(&attrset);
+
+	if (!encode_rc) {
+		status = NFS4ERR_IO;
+		goto err_out_name;
+	}
+
+out:
+	return status;
+
+err_out_name:
+	g_free(ent->name.utf8string_val);
+err_out:
+	g_slice_free(entry4, ent);
+	goto out;
+}
+
+struct readdir_info {
+	unsigned long		hash;
+	unsigned long		cookie;
+	gboolean		found_cookie;
+	gboolean		full;
+
+	guint64			attr_req;
+
+	entry4			*tail;
+
+	nfsstat4		status;
+	READDIR4resok		*resok;
+
+	unsigned int		max_dir_sz;
+	unsigned int		max_reply_sz;
+	unsigned int		dir_sz;
+	unsigned int		reply_sz;
+
+	unsigned int		n_entries;
+};
+
+static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
+{
+	gchar *name = key;
+	struct nfs_dirent *de = value;
+	struct readdir_info *ri = user_data;
+	unsigned long hash = blob_hash(ri->hash, name, strlen(name));
+	entry4 *new_entry = NULL;
+	unsigned int new_dir_sz, new_reply_sz;
+
+	if (ri->status != NFS4_OK)
+		return;
+	if (ri->full)
+		return;
+
+	if (!ri->found_cookie) {
+		if (hash != ri->cookie)
+			return;
+		ri->found_cookie = TRUE;
+	}
+
+	ri->status = entry4_new(hash, name, ri->attr_req, de, &new_entry);
+	if (ri->status != NFS4_OK)
+		return;
+
+	new_dir_sz = sizeof(nfs_cookie4) + sizeof(component4) +
+		     new_entry->name.utf8string_len;
+	new_reply_sz = sizeof(entry4) + new_entry->name.utf8string_len +
+		       new_entry->attrs.attrmask.bitmap4_len +
+		       new_entry->attrs.attr_vals.attrlist4_len;
+
+	if (((ri->dir_sz + new_dir_sz) > ri->max_dir_sz) ||
+	    ((ri->reply_sz + new_reply_sz) > ri->max_reply_sz)) {
+		ri->full = TRUE;
+		entry4_free(new_entry);
+		return;
+	}
+
+	if (!ri->resok->reply.entries)
+		ri->resok->reply.entries = new_entry;
+	if (ri->tail)
+		ri->tail->nextentry = new_entry;
+	ri->tail = new_entry;
+	ri->n_entries++;
+	ri->dir_sz += new_dir_sz;
+	ri->reply_sz += new_reply_sz;
+}
+
+bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *args,
+		      COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	READDIR4res *res;
+	READDIR4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+	guint32 tmp_ino_n;
+	struct readdir_info ri;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_READDIR;
+	res = &resop.nfs_resop4_u.opreaddir;
+	resok = &res->READDIR4res_u.resok4;
+
+	if (args->cookie &&
+	    memcmp(&args->cookieverf, &srv.instance_verf, sizeof(verifier4))) {
+		status = NFS4ERR_NOT_SAME;
+		goto out;
+	}
+
+	memset(&ri, 0, sizeof(ri));
+	ri.cookie = (unsigned long) args->cookie;
+	if (!ri.cookie)
+		ri.found_cookie = TRUE;
+	ri.attr_req = get_bitmap(&args->attr_request);
+	ri.status = NFS4_OK;
+	ri.resok = resok;
+	ri.max_dir_sz = args->dircount;
+	ri.max_reply_sz = args->maxcount;
+
+	status = dir_curfh(cli, &ino);
+	if (status != NFS4_OK)
+		goto out;
+
+	memcpy(&resok->cookieverf, &srv.instance_verf, sizeof(verifier4));
+	resok->reply.eof = TRUE;
+	tmp_ino_n = GUINT32_TO_LE(ino->ino);
+	ri.hash = blob_hash(BLOB_HASH_INIT, &tmp_ino_n, sizeof(tmp_ino_n));
+
+	g_hash_table_foreach(ino->u.dir, readdir_iter, &ri);
+
+	status = ri.status;
+	if (ri.full)
+		resok->reply.eof = FALSE;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+

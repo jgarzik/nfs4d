@@ -226,6 +226,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_putpubfh(cli, res);
 	case OP_PUTROOTFH:
 		return nfs_op_putrootfh(cli, res);
+	case OP_READDIR:
+		return nfs_op_readdir(cli, &arg->nfs_argop4_u.opreaddir, res);
 	case OP_READLINK:
 		return nfs_op_readlink(cli, res);
 	case OP_REMOVE:
@@ -256,7 +258,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
 	case OP_READ:
-	case OP_READDIR:
 	case OP_RENEW:
 	case OP_SECINFO:
 	case OP_SETATTR:

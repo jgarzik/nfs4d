@@ -6,10 +6,9 @@
 #include "server.h"
 
 /* "djb2"-derived hash function */
-static unsigned long blob_hash(const void *_buf, size_t buflen)
+unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 {
 	const unsigned char *buf = _buf;
-	unsigned long hash = 5381UL;
 	int c;
 
 	while (buflen > 0) {
@@ -24,7 +23,7 @@ static unsigned long blob_hash(const void *_buf, size_t buflen)
 
 static guint blob_hash_for_key(const struct blob *b)
 {
-	return blob_hash(b->buf, b->len);
+	return blob_hash(BLOB_HASH_INIT, b->buf, b->len);
 }
 
 static gboolean blob_equal(const struct blob *a, const struct blob *b)

@@ -31,6 +31,10 @@ enum big_server_fs_settings {
 	SRV_MAX_FILESIZE	= 0xffffffffULL,
 };
 
+enum blob_hash_init_info {
+	BLOB_HASH_INIT		= 5381UL
+};
+
 enum fattr_types {
 	FATTR_TYPE_OBJ,
 	FATTR_TYPE_FS,
@@ -147,6 +151,8 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		      nfsino_t inum);
 void dirent_free(gpointer p);
+bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *arg,
+		      COMPOUND4res *cres);
 
 /* fattr.c */
 extern const uint64_t fattr_write_only_mask;
@@ -157,6 +163,7 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
 bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 void fattr_free(struct nfs_fattr_set *attr);
 void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
+void fattr4_free(fattr4 *attr);
 
 /* fh.c */
 bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres);
@@ -189,6 +196,7 @@ bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
 				 SETCLIENTID_CONFIRM4args *arg,
 				 COMPOUND4res *cres);
 void rand_verifier(verifier4 *verf);
+unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
 
 static inline void free_bitmap(bitmap4 *map)
 {

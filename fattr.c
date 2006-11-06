@@ -221,6 +221,11 @@ void fattr_free(struct nfs_fattr_set *attr)
 	/* FIXME */
 }
 
+void fattr4_free(fattr4 *attr)
+{
+	/* FIXME */
+}
+
 static void fattr_fill_server(struct nfs_fattr_set *attr)
 {
 	guint64 bitmap = attr->bitmap;
