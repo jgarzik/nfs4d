@@ -50,7 +50,7 @@ static void nrand32(void *mem, unsigned int dwords)
 	}
 }
 
-static void rand_verifier(verifier4 *verf)
+void rand_verifier(verifier4 *verf)
 {
 	nrand32(verf, 5);
 }

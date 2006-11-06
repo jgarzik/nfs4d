@@ -220,6 +220,7 @@ static int init_server(void)
 	inode_table_init();
 
 	init_rng();
+	rand_verifier(&srv.instance_verf);
 
 	sock = init_sock();
 	if (sock < 0)

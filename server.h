@@ -115,6 +115,8 @@ struct nfs_server {
 	unsigned int		lease_time;
 
 	struct drand48_data	rng;
+
+	verifier4		instance_verf;
 };
 
 /* global variables */
@@ -186,6 +188,7 @@ bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
 bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
 				 SETCLIENTID_CONFIRM4args *arg,
 				 COMPOUND4res *cres);
+void rand_verifier(verifier4 *verf);
 
 static inline void free_bitmap(bitmap4 *map)
 {
