@@ -100,7 +100,7 @@ bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 	       sizeof(struct nfs_resop4));
 	res->status = stat;
 
-	return TRUE;
+	return stat == NFS4_OK ? TRUE : FALSE;
 }
 
 static bool_t nfs_op_readlink(struct nfs_client *cli, COMPOUND4res *cres)
@@ -149,8 +149,7 @@ static bool_t nfs_op_notsupp(struct nfs_client *cli, COMPOUND4res *cres,
 	resop.resop = argop;
 	res = &resop.nfs_resop4_u.opopenattr;
 	res->status = status;
-	push_resop(cres, &resop, status);
-	return FALSE;
+	return push_resop(cres, &resop, status);
 }
 
 static const char *arg_str[] = {

@@ -174,6 +174,9 @@ bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres);
 bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres);
 void nfs_getfh_free(GETFH4res *opgetfh);
 
+/* open.c */
+bool_t nfs_op_open(struct nfs_client *cli, COMPOUND4res *cres);
+
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 bool_t valid_utf8string(utf8string *str);
