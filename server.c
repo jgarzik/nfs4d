@@ -149,7 +149,8 @@ static bool_t nfs_op_notsupp(struct nfs_client *cli, COMPOUND4res *cres,
 	resop.resop = argop;
 	res = &resop.nfs_resop4_u.opopenattr;
 	res->status = status;
-	return push_resop(cres, &resop, status);
+	push_resop(cres, &resop, status);
+	return FALSE;
 }
 
 static const char *arg_str[] = {

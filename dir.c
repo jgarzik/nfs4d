@@ -7,8 +7,12 @@
 static nfsstat4 dir_curfh(const struct nfs_client *cli,
 			  struct nfs_inode **ino_out)
 {
-	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino = inode_get(cli->current_fh);
+	nfsstat4 status;
+	struct nfs_inode *ino;
+
+	*ino_out = NULL;
+	status = NFS4_OK;
+	ino = inode_get(cli->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -20,6 +24,8 @@ static nfsstat4 dir_curfh(const struct nfs_client *cli,
 			status = NFS4ERR_NOTDIR;
 		goto out;
 	}
+
+	*ino_out = ino;
 
 out:
 	return status;

@@ -1,4 +1,5 @@
 
+#include "nfs4-ram-config.h"
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -281,6 +282,8 @@ int main (int argc, char *argv[])
 
 	if (init_server())
 		return 1;
+
+	syslog(LOG_INFO, PACKAGE_STRING " initialized");
 
 	svc_run ();
 
