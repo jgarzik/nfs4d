@@ -4,8 +4,7 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static nfsstat4 dir_curfh(const struct nfs_client *cli,
-			  struct nfs_inode **ino_out)
+nfsstat4 dir_curfh(const struct nfs_client *cli, struct nfs_inode **ino_out)
 {
 	nfsstat4 status;
 	struct nfs_inode *ino;

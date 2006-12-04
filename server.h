@@ -153,6 +153,7 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 void dirent_free(gpointer p);
 bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *arg,
 		      COMPOUND4res *cres);
+nfsstat4 dir_curfh(const struct nfs_client *cli, struct nfs_inode **ino_out);
 
 /* fattr.c */
 extern const uint64_t fattr_write_only_mask;
@@ -175,7 +176,7 @@ bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres);
 void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* open.c */
-bool_t nfs_op_open(struct nfs_client *cli, COMPOUND4res *cres);
+bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);

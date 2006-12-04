@@ -110,6 +110,55 @@ static struct nfs_inode *inode_new_symlink(gchar *linktext)
 	return ino;
 }
 
+static nfsstat4 inode_new_type(createtype4 *objtype, struct nfs_inode **ino_out)
+{
+	struct nfs_inode *new_ino;
+	nfsstat4 status;
+
+	*ino_out = NULL;
+
+	switch(objtype->type) {
+	case NF4DIR:
+		new_ino = inode_new_dir();
+		break;
+	case NF4BLK:
+	case NF4CHR:
+		new_ino = inode_new_dev(objtype->type,
+				        &objtype->createtype4_u.devdata);
+		break;
+	case NF4LNK: {
+		gchar *linktext =
+			copy_utf8string(&objtype->createtype4_u.linkdata);
+		if (!linktext) {
+			status = NFS4ERR_RESOURCE;
+			goto out;
+		}
+		new_ino = inode_new_symlink(linktext);
+		if (!new_ino)
+			g_free(linktext);
+		break;
+	}
+	case NF4SOCK:
+	case NF4FIFO:
+		new_ino = inode_new();
+		break;
+	default:
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	if (!new_ino) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	*ino_out = new_ino;
+	status = NFS4_OK;
+
+out:
+	return status;
+}
+
 bool_t inode_table_init(void)
 {
 	struct nfs_inode *root;
@@ -242,50 +291,13 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	res = &resop.nfs_resop4_u.opcreate;
 	resok = &res->CREATE4res_u.resok4;
 
-	dir_ino = inode_get(cli->current_fh);
-	if (!dir_ino) {
-		status = NFS4ERR_NOFILEHANDLE;
+	status = dir_curfh(cli, &dir_ino);
+	if (status != NFS4_OK)
 		goto out;
-	}
-	if (dir_ino->type != NF4DIR) {
-		status = NFS4ERR_NOTDIR;
-		goto out;
-	}
 
-	switch(arg->objtype.type) {
-	case NF4DIR:
-		new_ino = inode_new_dir();
-		break;
-	case NF4BLK:
-	case NF4CHR:
-		new_ino = inode_new_dev(arg->objtype.type,
-				        &arg->objtype.createtype4_u.devdata);
-		break;
-	case NF4LNK: {
-		gchar *linktext =
-			copy_utf8string(&arg->objtype.createtype4_u.linkdata);
-		if (!linktext) {
-			status = NFS4ERR_RESOURCE;
-			goto out;
-		}
-		new_ino = inode_new_symlink(linktext);
-		if (!new_ino)
-			g_free(linktext);
-		break;
-	}
-	case NF4SOCK:
-	case NF4FIFO:
-		new_ino = inode_new();
-		break;
-	default:
-		status = NFS4ERR_INVAL;
+	status = inode_new_type(&arg->objtype, &new_ino);
+	if (status != NFS4_OK)
 		goto out;
-	}
-
-	if (!new_ino) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
 
 	status = inode_apply_attrs(new_ino, &arg->createattrs, &bitmap_set);
 	if (status != NFS4_OK) {

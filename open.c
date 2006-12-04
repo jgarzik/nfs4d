@@ -1,7 +1,7 @@
 
 #include "server.h"
 
-bool_t nfs_op_open(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	OPEN4res *res;
@@ -12,6 +12,11 @@ bool_t nfs_op_open(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_OPEN;
 	res = &resop.nfs_resop4_u.opopen;
 	resok = &res->OPEN4res_u.resok4;
+
+	if (args->claim.claim != CLAIM_NULL) {
+		status = NFS4ERR_NOTSUPP;
+		goto out;
+	}
 
 	status = NFS4ERR_NOTSUPP;
 

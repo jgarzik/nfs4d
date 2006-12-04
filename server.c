@@ -220,6 +220,8 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 		return nfs_op_verify(cli,
 				(VERIFY4args *) &arg->nfs_argop4_u.opnverify,
 				res, 1);
+	case OP_OPEN:
+		return nfs_op_open(cli, &arg->nfs_argop4_u.opopen, res);
 	case OP_PUTFH:
 		return nfs_op_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
@@ -254,7 +256,6 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_LOCK:
 	case OP_LOCKT:
 	case OP_LOCKU:
-	case OP_OPEN:
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
 	case OP_READ:
