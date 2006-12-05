@@ -68,6 +68,17 @@ out:
 	return ino;
 }
 
+struct nfs_inode *inode_new_file(void)
+{
+	struct nfs_inode *ino = inode_new();
+	if (!ino)
+		return NULL;
+
+	ino->type = NF4REG;
+
+	return ino;
+}
+
 static struct nfs_inode *inode_new_dir(void)
 {
 	struct nfs_inode *ino = inode_new();
@@ -277,6 +288,46 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 	return NFS4_OK;
 }
 
+nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
+		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
+		   change_info4 *cinfo)
+{
+	uint64_t bitmap_set;
+	nfsstat4 status;
+
+	status = inode_apply_attrs(new_ino, attr, &bitmap_set);
+	if (status != NFS4_OK) {
+		inode_free(new_ino);
+		goto out;
+	}
+
+	if (set_bitmap(bitmap_set, attrset)) {
+		inode_free(new_ino);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(new_ino->ino),
+			    new_ino);
+
+	cinfo->atomic = TRUE;
+	cinfo->before =
+	cinfo->after = dir_ino->version;
+
+	status = dir_add(dir_ino, name, new_ino->ino);
+	if (status != NFS4_OK) {
+		inode_unlink(new_ino, 0);
+		free_bitmap(attrset);
+		goto out;
+	}
+
+	g_array_append_val(new_ino->parents, dir_ino->ino);
+	cinfo->after = dir_ino->version;
+
+out:
+	return status;
+}
+
 bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -284,7 +335,6 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	CREATE4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *new_ino;
-	uint64_t bitmap_set;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CREATE;
@@ -299,34 +349,10 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	if (status != NFS4_OK)
 		goto out;
 
-	status = inode_apply_attrs(new_ino, &arg->createattrs, &bitmap_set);
-	if (status != NFS4_OK) {
-		inode_free(new_ino);
+	status = inode_add(dir_ino, new_ino, &arg->createattrs,
+			   &arg->objname, &resok->attrset, &resok->cinfo);
+	if (status != NFS4_OK)
 		goto out;
-	}
-
-	if (set_bitmap(bitmap_set, &resok->attrset)) {
-		inode_free(new_ino);
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(new_ino->ino),
-			    new_ino);
-
-	resok->cinfo.atomic = TRUE;
-	resok->cinfo.before =
-	resok->cinfo.after = dir_ino->version;
-
-	status = dir_add(dir_ino, &arg->objname, new_ino->ino);
-	if (status != NFS4_OK) {
-		inode_unlink(new_ino, 0);
-		free_bitmap(&resok->attrset);
-		goto out;
-	}
-
-	g_array_append_val(new_ino->parents, dir_ino->ino);
-	resok->cinfo.after = dir_ino->version;
 
 	cli->current_fh = new_ino->ino;
 

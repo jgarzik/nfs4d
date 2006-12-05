@@ -142,6 +142,10 @@ bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
 void nfs_getattr_free(GETATTR4res *res);
 bool_t nfs_op_verify(struct nfs_client *cli, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify);
+struct nfs_inode *inode_new_file(void);
+nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
+		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
+		   change_info4 *cinfo);
 
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres);
