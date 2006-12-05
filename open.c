@@ -86,6 +86,31 @@ bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres)
 		goto out;
 	}
 
+	/*
+	 * create file, if necessary
+	 */
+	if (creating) {
+		ino = inode_new_file();
+		if (!ino) {
+			status = NFS4ERR_RESOURCE;
+			goto out;
+		}
+
+		status = inode_add(dir_ino, ino, 
+		   &args->openhow.openflag4_u.how.createhow4_u.createattrs,
+		   &args->claim.open_claim4_u.file,
+		   &resok->attrset, &resok->cinfo);
+		if (status != NFS4_OK)
+			goto out;
+	}
+
+	ino->share_access |= args->share_access;
+	ino->share_deny |= args->share_deny;
+
+	/* FIXME: create stateid */
+
+	resok->delegation.delegation_type = OPEN_DELEGATE_NONE;
+
 	status = NFS4ERR_NOTSUPP;
 
 out:
