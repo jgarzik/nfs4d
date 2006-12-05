@@ -154,6 +154,8 @@ void dirent_free(gpointer p);
 bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *arg,
 		      COMPOUND4res *cres);
 nfsstat4 dir_curfh(const struct nfs_client *cli, struct nfs_inode **ino_out);
+nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
+		    struct nfs_dirent **dirent_out);
 
 /* fattr.c */
 extern const uint64_t fattr_write_only_mask;

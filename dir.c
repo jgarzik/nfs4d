@@ -30,6 +30,40 @@ out:
 	return status;
 }
 
+nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
+		    struct nfs_dirent **dirent_out)
+{
+	struct nfs_dirent *dirent;
+	gchar *name;
+
+	if (dirent_out)
+		*dirent_out = NULL;
+
+	if (dir_ino->type != NF4DIR)
+		return NFS4ERR_NOTDIR;
+	if (!valid_utf8string(str))
+		return NFS4ERR_INVAL;
+	if (has_dots(str))
+		return NFS4ERR_BADNAME;
+
+	name = copy_utf8string(str);
+	if (!name)
+		return NFS4ERR_RESOURCE;
+
+	g_assert(dir_ino->u.dir != NULL);
+
+	dirent = g_hash_table_lookup(dir_ino->u.dir, name);
+
+	g_free(name);
+
+	if (!dirent)
+		return NFS4ERR_NOENT;
+
+	if (dirent_out)
+		*dirent_out = dirent;
+	return NFS4_OK;
+}
+
 bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -37,39 +71,21 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_dirent *dirent;
-	gchar *name;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOOKUP;
 	res = &resop.nfs_resop4_u.oplookup;
 
-	if (!valid_utf8string(&arg->objname)) {
-		status = NFS4ERR_INVAL;
-		goto out;
-	}
-
 	status = dir_curfh(cli, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
-	name = copy_utf8string(&arg->objname);
-	if (!name) {
-		status = NFS4ERR_RESOURCE;
+	status = dir_lookup(ino, &arg->objname, &dirent);
+	if (status != NFS4_OK)
 		goto out;
-	}
-
-	g_assert(ino->u.dir != NULL);
-
-	dirent = g_hash_table_lookup(ino->u.dir, name);
-	if (!dirent) {
-		status = NFS4ERR_NOENT;
-		goto out_name;
-	}
 
 	cli->current_fh = dirent->ino;
 
-out_name:
-	g_free(name);
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
@@ -114,26 +130,18 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 {
 	struct nfs_dirent *dirent;
 	gchar *name;
-	enum nfsstat4 status = NFS4_OK;
+	enum nfsstat4 status = NFS4_OK, lu_stat;
 
-	if (dir_ino->type != NF4DIR)
-		return NFS4ERR_NOTDIR;
-	if (!valid_utf8string(name_in))
-		return NFS4ERR_INVAL;
-	if (has_dots(name_in))
-		return NFS4ERR_BADNAME;
-
-	g_assert(dir_ino->u.dir != NULL);
+	lu_stat = dir_lookup(dir_ino, name_in, NULL);
+	if (status != NFS4ERR_NOENT) {
+		if (status == NFS4_OK)
+			status = NFS4ERR_EXIST;
+		return status;
+	}
 
 	name = copy_utf8string(name_in);
 	if (!name)
 		return NFS4ERR_RESOURCE;
-
-	dirent = g_hash_table_lookup(dir_ino->u.dir, name);
-	if (dirent) {
-		status = NFS4ERR_EXIST;
-		goto out_name;
-	}
 
 	dirent = g_slice_new(struct nfs_dirent);
 	if (!dirent) {
