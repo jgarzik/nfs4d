@@ -67,8 +67,6 @@ struct nfs_clientid {
 struct nfs_state {
 	struct nfs_clientid	*id;
 
-	unsigned long		flags;
-
 	GList			*pending;	/* unconfirmed requests */
 };
 
@@ -92,6 +90,9 @@ struct nfs_inode {
 		gchar		*linktext;	/* state for a symlink */
 		specdata4	devdata;	/* block/chrdev info */
 	} u;
+
+	uint32_t		share_access;
+	uint32_t		share_deny;
 };
 
 #define FATTR_DEFINE(a,b,c) \
