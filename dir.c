@@ -133,9 +133,11 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 	enum nfsstat4 status = NFS4_OK, lu_stat;
 
 	lu_stat = dir_lookup(dir_ino, name_in, NULL);
-	if (status != NFS4ERR_NOENT) {
-		if (status == NFS4_OK)
+	if (lu_stat != NFS4ERR_NOENT) {
+		if (lu_stat == NFS4_OK)
 			status = NFS4ERR_EXIST;
+		else
+			status = lu_stat;
 		return status;
 	}
 
