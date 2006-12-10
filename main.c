@@ -22,7 +22,6 @@
 
 
 enum {
-	NFS_PORT		= 2049,
 	LISTEN_SIZE		= 100,
 };
 
@@ -30,6 +29,7 @@ struct timeval current_time;
 GList *client_list = NULL;
 struct nfs_server srv;
 static gboolean opt_foreground;
+static unsigned int opt_nfs_port = 2049;
 
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
@@ -37,6 +37,8 @@ static const char doc[] =
 static struct argp_option options[] = {
 	{ "foreground", 'f', NULL, 0,
 	  "Run daemon in foreground" },
+	{ "port", 'p', "PORT", 0,
+	  "Bind to TCP port PORT (def. 2049)" },
 
 	{ }
 };
@@ -97,7 +99,7 @@ static int init_sock(void)
 
 	memset(&saddr, 0, sizeof(saddr));
 	saddr.sin_family = AF_INET;
-	saddr.sin_port = htons(NFS_PORT);
+	saddr.sin_port = htons(opt_nfs_port);
 	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
 		slerror("bind");
@@ -249,9 +251,20 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	case 'f':
 		opt_foreground = TRUE;
 		break;
+	case 'p':
+		if (atoi(arg) > 0 && atoi(arg) < 65536)
+			opt_nfs_port = atoi(arg);
+		else {
+			fprintf(stderr, "invalid NFS port %s\n", arg);
+			argp_usage(state);
+		}
+		break;
 	
 	case ARGP_KEY_ARG:
 		argp_usage(state);	/* too many args */
+		break;
+
+	case ARGP_KEY_END:
 		break;
 
 	default:
