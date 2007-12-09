@@ -6,6 +6,8 @@
 #include <glib.h>
 #include "nfs4_prot.h"
 
+struct nfs_client;
+
 typedef uint32_t nfsino_t;
 
 enum {
@@ -55,6 +57,19 @@ struct nfs_cxn {
 	uint32_t		gid;
 };
 
+struct nfs_state {
+	struct nfs_client	*cli;
+
+	uint32_t		id;
+
+	char			*owner;
+
+	nfsino_t		ino;
+
+	uint32_t		share_ac;
+	uint32_t		share_dn;
+};
+
 struct nfs_clientid {
 	struct blob		id;
 	verifier4		cli_verf;	/* client-supplied verifier */
@@ -90,9 +105,6 @@ struct nfs_inode {
 		gchar		*linktext;	/* state for a symlink */
 		specdata4	devdata;	/* block/chrdev info */
 	} u;
-
-	uint32_t		share_access;
-	uint32_t		share_deny;
 };
 
 #define FATTR_DEFINE(a,b,c) \
@@ -116,6 +128,8 @@ struct nfs_server {
 	GHashTable		*client_ids;
 
 	GHashTable		*clid_idx;
+
+	GHashTable		*state;
 
 	unsigned int		lease_time;
 
@@ -199,16 +213,18 @@ guint clientid_hash(gconstpointer data);
 gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
 guint short_clientid_hash(gconstpointer data);
 gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
-void client_free(gpointer data);
 
 /* state.c */
-bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
+extern void client_free(gpointer data);
+extern void state_free(gpointer data);
+extern uint32_t gen_stateid(void);
+extern bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			 COMPOUND4res *cres);
-bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
+extern bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				 SETCLIENTID_CONFIRM4args *arg,
 				 COMPOUND4res *cres);
-void rand_verifier(verifier4 *verf);
-unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
+extern void rand_verifier(verifier4 *verf);
+extern unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
 
 static inline void free_bitmap(bitmap4 *map)
 {

@@ -220,13 +220,15 @@ static int init_server(void)
 	srv.clid_idx = g_hash_table_new_full(short_clientid_hash,
 					     short_clientid_equal,
 					     g_free, NULL);
+	srv.state = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					  NULL, state_free);
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
 		return -1;
 	}
 
-	if (!srv.client_ids || !srv.clid_idx) {
+	if (!srv.client_ids || !srv.clid_idx || !srv.state) {
 		syslog(LOG_ERR, "OOM in init_server()");
 		return -1;
 	}

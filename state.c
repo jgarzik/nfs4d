@@ -54,6 +54,25 @@ void rand_verifier(verifier4 *verf)
 	nrand32(verf, 5);
 }
 
+uint32_t gen_stateid(void)
+{
+	int loop = 1000000;
+	uint32_t tmp = 0;
+
+	do {
+		if (G_UNLIKELY(loop == 0)) {
+			syslog(LOG_ERR, "gen_stateid: 1,000,000 collisions");
+			return 0;
+		}
+
+		loop--;
+
+		nrand32(&tmp, 1);
+	} while (g_hash_table_lookup(srv.state, GUINT_TO_POINTER(tmp)) != NULL);
+
+	return tmp;
+}
+
 static void gen_clientid4(clientid4 *id)
 {
 	int loop = 1000000;
@@ -109,9 +128,23 @@ static void clientid_free(struct nfs_clientid *id)
 	g_slice_free(struct nfs_clientid, id);
 }
 
+void state_free(gpointer data)
+{
+	struct nfs_state *st = data;
+
+	if (!st)
+		return;
+
+	if (st->owner)
+		g_free(st->owner);
+}
+
 void client_free(gpointer data)
 {
 	struct nfs_client *cli = data;
+
+	if (!cli)
+		return;
 
 	clientid_free(cli->id);
 
@@ -200,7 +233,7 @@ err_out:
 	return -ENOMEM;
 }
 
-static int state_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
+static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 		     struct nfs_clientid **clid_out)
 {
 	struct nfs_client *cli;
@@ -290,7 +323,7 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	cli = g_hash_table_lookup(srv.client_ids, &clid_key);
 
 	if (!cli) {
-		rc = state_new(cxn, args, &clid);
+		rc = client_new(cxn, args, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
 			goto out;

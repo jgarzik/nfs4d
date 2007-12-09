@@ -22,6 +22,25 @@ static void print_open_args(OPEN4args *args)
 	       name_open_claim_type4[args->claim.claim]);
 }
 
+struct conflict_fe_state {
+	OPEN4args *args;
+	nfsino_t ino;
+	gboolean match;
+};
+
+static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct conflict_fe_state *cfs = user_data;
+
+	if (st->ino != cfs->ino)
+		return;
+
+	if ((cfs->args->share_access & st->share_dn) ||
+	    (cfs->args->share_deny & st->share_ac))
+		cfs->match = TRUE;
+}
+
 bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -31,6 +50,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	struct nfs_inode *dir_ino, *ino = NULL;
 	struct nfs_dirent *de;
 	struct nfs_client *cli;
+	struct nfs_state *st;
 	int creating;
 
 	if (debugging)
@@ -94,11 +114,15 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 		goto out;
 	}
 
-	if (ino &&
-	    ((args->share_access & ino->share_deny) ||
-	     (args->share_deny & ino->share_access))) {
-		status = NFS4ERR_DENIED;
-		goto out;
+	if (ino) {
+		struct conflict_fe_state cfs = { args, ino->ino, FALSE };
+
+		g_hash_table_foreach(srv.state, state_sh_conflict, &cfs);
+
+		if (cfs.match) {
+			status = NFS4ERR_DENIED;
+			goto out;
+		}
 	}
 
 	/*
@@ -128,14 +152,25 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 			goto out;
 	}
 
-	ino->share_access |= args->share_access;
-	ino->share_deny |= args->share_deny;
+	st = g_slice_new0(struct nfs_state);
+	st->cli = cli;
+	st->id = gen_stateid();
+	st->owner = g_strndup(args->owner.owner.owner_val,
+			      args->owner.owner.owner_len);
+	st->ino = ino->ino;
+	st->share_ac = args->share_access;
+	st->share_dn = args->share_deny;
 
-	/* FIXME: create stateid */
+	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
+	resok->stateid.seqid = GUINT32_TO_LE(st->id);
+	memset(&resok->stateid.other, 0, sizeof(resok->stateid.other));
+	memcpy(&resok->stateid.other, &resok->stateid.seqid,
+	       sizeof(resok->stateid.seqid));
+	resok->rflags = OPEN4_RESULT_LOCKTYPE_POSIX;
 	resok->delegation.delegation_type = OPEN_DELEGATE_NONE;
 
-	status = NFS4ERR_NOTSUPP;
+	status = NFS4_OK;
 
 out:
 	res->status = status;
