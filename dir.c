@@ -515,6 +515,18 @@ err_out:
 	goto out;
 }
 
+void nfs_readdir_free(READDIR4res *_res)
+{
+	READDIR4resok *res = &_res->READDIR4res_u.resok4;
+	entry4 *tmp;
+
+	while (res->reply.entries) {
+		tmp = res->reply.entries;
+		res->reply.entries = res->reply.entries->nextentry;
+		entry4_free(tmp);
+	}
+}
+
 struct readdir_info {
 	unsigned long		hash;
 	unsigned long		cookie;

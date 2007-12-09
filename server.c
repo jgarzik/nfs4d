@@ -320,6 +320,11 @@ out:
 
 static void nfs_free(nfs_resop4 *res)
 {
+	if (!res)
+		return;
+
+	/* FIXME: need OPEN, others here too */
+
 	switch(res->resop) {
 	case OP_CREATE:
 		free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
@@ -329,6 +334,9 @@ static void nfs_free(nfs_resop4 *res)
 		break;
 	case OP_GETFH:
 		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
+		break;
+	case OP_READDIR:
+		nfs_readdir_free(&res->nfs_resop4_u.opreaddir);
 		break;
 	default:
 		/* nothing to free */
@@ -341,11 +349,15 @@ int nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
 {
 	unsigned int i;
 
+	if (!res)
+		goto out;
+
 	for (i = 0; i < res->resarray.resarray_len; i++)
 		nfs_free(&res->resarray.resarray_val[i]);
 
 	free(res->resarray.resarray_val);
 
+out:
 	return TRUE;
 }
 

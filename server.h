@@ -179,6 +179,7 @@ bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *arg,
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
 nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 		    struct nfs_dirent **dirent_out);
+void nfs_readdir_free(READDIR4res *res);
 
 /* fattr.c */
 extern const uint64_t fattr_write_only_mask;
