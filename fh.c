@@ -47,7 +47,7 @@ void nfs_getfh_free(GETFH4res *opgetfh)
 	nfs_fh_free(&opgetfh->GETFH4res_u.resok4.object);
 }
 
-bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	GETFH4res *res;
@@ -63,21 +63,21 @@ bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 	resok = &res->GETFH4res_u.resok4;
 
 	if (debugging)
-		syslog(LOG_INFO, "CURRENT_FH == %u", cli->current_fh);
+		syslog(LOG_INFO, "CURRENT_FH == %u", cxn->current_fh);
 
-	if (!inode_get(cli->current_fh)) {
+	if (!inode_get(cxn->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	nfs_fh_set(&resok->object, cli->current_fh);
+	nfs_fh_set(&resok->object, cxn->current_fh);
 
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res *cres)
+bool_t nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -99,14 +99,14 @@ bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res *cres)
 	if (debugging)
 		syslog(LOG_INFO, "op PUTFH (%u)", fh);
 
-	cli->current_fh = fh;
+	cxn->current_fh = fh;
 
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_putrootfh(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -119,13 +119,13 @@ bool_t nfs_op_putrootfh(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_PUTROOTFH;
 	res = &resop.nfs_resop4_u.opputfh;
 
-	cli->current_fh = INO_ROOT;
+	cxn->current_fh = INO_ROOT;
 
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -138,13 +138,13 @@ bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_PUTPUBFH;
 	res = &resop.nfs_resop4_u.opputfh;
 
-	cli->current_fh = INO_ROOT;
+	cxn->current_fh = INO_ROOT;
 
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	RESTOREFH4res *res;
@@ -157,19 +157,19 @@ bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_RESTOREFH;
 	res = &resop.nfs_resop4_u.oprestorefh;
 
-	if (!inode_get(cli->save_fh)) {
+	if (!inode_get(cxn->save_fh)) {
 		status = NFS4ERR_RESTOREFH;
 		goto out;
 	}
 
-	cli->current_fh = cli->save_fh;
+	cxn->current_fh = cxn->save_fh;
 
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	SAVEFH4res *res;
@@ -182,12 +182,12 @@ bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_SAVEFH;
 	res = &resop.nfs_resop4_u.opsavefh;
 
-	if (!inode_get(cli->current_fh)) {
+	if (!inode_get(cxn->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	cli->save_fh = cli->current_fh;
+	cxn->save_fh = cxn->current_fh;
 
 out:
 	res->status = status;

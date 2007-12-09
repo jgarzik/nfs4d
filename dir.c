@@ -5,14 +5,14 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-nfsstat4 dir_curfh(const struct nfs_client *cli, struct nfs_inode **ino_out)
+nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
 {
 	nfsstat4 status;
 	struct nfs_inode *ino;
 
 	*ino_out = NULL;
 	status = NFS4_OK;
-	ino = inode_get(cli->current_fh);
+	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -65,7 +65,7 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 	return NFS4_OK;
 }
 
-bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres)
+bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOOKUP4res *res;
@@ -82,7 +82,7 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 	resop.resop = OP_LOOKUP;
 	res = &resop.nfs_resop4_u.oplookup;
 
-	status = dir_curfh(cli, &ino);
+	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -90,14 +90,14 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 	if (status != NFS4_OK)
 		goto out;
 
-	cli->current_fh = dirent->ino;
+	cxn->current_fh = dirent->ino;
 
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
+bool_t nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOOKUPP4res *res;
@@ -111,7 +111,7 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 	resop.resop = OP_LOOKUPP;
 	res = &resop.nfs_resop4_u.oplookupp;
 
-	status = dir_curfh(cli, &ino);
+	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -120,7 +120,7 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 		goto out;
 	}
 
-	cli->current_fh = g_array_index(ino->parents, nfsino_t, 0);
+	cxn->current_fh = g_array_index(ino->parents, nfsino_t, 0);
 
 out:
 	res->status = status;
@@ -172,7 +172,7 @@ out:
 	return status;
 }
 
-bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres)
+bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LINK4res *res;
@@ -190,18 +190,18 @@ bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.oplink;
 	resok = &res->LINK4res_u.resok4;
 
-	if (cli->current_fh == cli->save_fh) {
+	if (cxn->current_fh == cxn->save_fh) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
-	dir_ino = inode_get(cli->current_fh);
+	dir_ino = inode_get(cxn->current_fh);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	src_ino = inode_get(cli->save_fh);
+	src_ino = inode_get(cxn->save_fh);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -211,7 +211,7 @@ bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres)
 	resok->cinfo.before =
 	resok->cinfo.after = dir_ino->version;
 
-	status = dir_add(dir_ino, &arg->newname, cli->save_fh);
+	status = dir_add(dir_ino, &arg->newname, cxn->save_fh);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -224,7 +224,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cres)
+bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	REMOVE4res *res;
@@ -250,7 +250,7 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 	}
 
 	/* reference container directory */
-	status = dir_curfh(cli, &dir_ino);
+	status = dir_curfh(cxn, &dir_ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -307,7 +307,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cres)
+bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	RENAME4res *res;
@@ -344,8 +344,8 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 	/* reference source, target directories.
 	 * NOTE: src_dir and target_dir may point to the same object
 	 */
-	src_dir = inode_get(cli->save_fh);
-	target_dir = inode_get(cli->current_fh);
+	src_dir = inode_get(cxn->save_fh);
+	target_dir = inode_get(cxn->current_fh);
 	if (!src_dir || !target_dir) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -581,7 +581,7 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	ri->reply_sz += new_reply_sz;
 }
 
-bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *args,
+bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
 		      COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -616,7 +616,7 @@ bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *args,
 	ri.max_dir_sz = args->dircount;
 	ri.max_reply_sz = args->maxcount;
 
-	status = dir_curfh(cli, &ino);
+	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 

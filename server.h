@@ -46,7 +46,7 @@ struct blob {
 	void			*buf;
 };
 
-struct nfs_client {
+struct nfs_cxn {
 	nfsino_t		current_fh;
 	nfsino_t		save_fh;
 
@@ -135,12 +135,12 @@ struct nfs_inode *inode_get(nfsino_t inum);
 void inode_touch(struct nfs_inode *ino);
 bool_t inode_table_init(void);
 void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
-bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
+bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres);
 void nfs_getattr_free(GETATTR4res *res);
-bool_t nfs_op_verify(struct nfs_client *cli, VERIFY4args *arg,
+bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify);
 struct nfs_inode *inode_new_file(void);
 nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
@@ -148,17 +148,17 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   change_info4 *cinfo);
 
 /* dir.c */
-bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres);
-bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres);
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		      nfsino_t inum);
 void dirent_free(gpointer p);
-bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *arg,
+bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *arg,
 		      COMPOUND4res *cres);
-nfsstat4 dir_curfh(const struct nfs_client *cli, struct nfs_inode **ino_out);
+nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
 nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 		    struct nfs_dirent **dirent_out);
 
@@ -175,16 +175,16 @@ extern void fattr4_free(fattr4 *attr);
 extern void print_fattr(const char *pfx, fattr4 *attr);
 
 /* fh.c */
-bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres);
-bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_putrootfh(struct nfs_client *cli, COMPOUND4res *cres);
-bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres);
-bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres);
-bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres);
+bool_t nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool_t nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres);
+bool_t nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool_t nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool_t nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool_t nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
 void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* open.c */
-bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres);
+bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
@@ -202,9 +202,9 @@ gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
 void state_free(gpointer data);
 
 /* state.c */
-bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
+bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			 COMPOUND4res *cres);
-bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
+bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				 SETCLIENTID_CONFIRM4args *arg,
 				 COMPOUND4res *cres);
 void rand_verifier(verifier4 *verf);

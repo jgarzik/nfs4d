@@ -153,7 +153,7 @@ gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b)
 	return (*a == *b) ? TRUE : FALSE;
 }
 
-static int clientid_new(struct nfs_state *st, struct nfs_client *cli,
+static int clientid_new(struct nfs_state *st, struct nfs_cxn *cxn,
 			SETCLIENTID4args *args, struct nfs_clientid **clid_out)
 {
 	struct nfs_clientid *clid;
@@ -200,7 +200,7 @@ err_out:
 	return -ENOMEM;
 }
 
-static int state_new(struct nfs_client *cli, SETCLIENTID4args *args,
+static int state_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 		     struct nfs_clientid **clid_out)
 {
 	struct nfs_state *st;
@@ -211,7 +211,7 @@ static int state_new(struct nfs_client *cli, SETCLIENTID4args *args,
 	if (!st)
 		goto err_out;
 
-	rc = clientid_new(st, cli, args, &clid);
+	rc = clientid_new(st, cxn, args, &clid);
 	if (rc)
 		goto err_out_st;
 	
@@ -257,7 +257,7 @@ static gboolean callback_equal(struct nfs_state *st, cb_client4 *cb,
 	return TRUE;
 }
 
-bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
+bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			  COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -290,7 +290,7 @@ bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
 	st = g_hash_table_lookup(srv.client_ids, &clid_key);
 
 	if (!st) {
-		rc = state_new(cli, args, &clid);
+		rc = state_new(cxn, args, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -303,7 +303,7 @@ bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
 		 (!callback_equal(st, &args->callback,
 		 		  args->callback_ident))) {
 
-		rc = clientid_new(st, cli, args, &clid);
+		rc = clientid_new(st, cxn, args, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -341,7 +341,7 @@ static gint compare_confirm(gconstpointer _a, gconstpointer _b)
 	return 1;
 }
 
-bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
+bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				  SETCLIENTID_CONFIRM4args *args,
 				  COMPOUND4res *cres)
 {

@@ -22,7 +22,7 @@ static void print_open_args(OPEN4args *args)
 	       name_open_claim_type4[args->claim.claim]);
 }
 
-bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres)
+bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	OPEN4res *res;
@@ -48,7 +48,7 @@ bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres)
 	}
 
 	/* get directory handle */
-	status = dir_curfh(cli, &dir_ino);
+	status = dir_curfh(cxn, &dir_ino);
 	if (status != NFS4_OK)
 		goto out;
 

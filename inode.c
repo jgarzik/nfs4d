@@ -372,7 +372,7 @@ static void print_create_args(CREATE4args *arg)
 	print_fattr("op CREATE attr", &arg->createattrs);
 }
 
-bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres)
+bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	CREATE4res *res;
@@ -388,7 +388,7 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	res = &resop.nfs_resop4_u.opcreate;
 	resok = &res->CREATE4res_u.resok4;
 
-	status = dir_curfh(cli, &dir_ino);
+	status = dir_curfh(cxn, &dir_ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -401,14 +401,14 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	if (status != NFS4_OK)
 		goto out;
 
-	cli->current_fh = new_ino->ino;
+	cxn->current_fh = new_ino->ino;
 
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
+bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -423,7 +423,7 @@ bool_t nfs_op_getattr(struct nfs_client *cli, GETATTR4args *arg,
 	res = &resop.nfs_resop4_u.opgetattr;
 	resok = &res->GETATTR4res_u.resok4;
 
-	ino = inode_get(cli->current_fh);
+	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -450,15 +450,15 @@ void nfs_getattr_free(GETATTR4res *res)
 	/* FIXME */
 }
 
-unsigned int inode_access(const struct nfs_client *cli,
+unsigned int inode_access(const struct nfs_cxn *cxn,
 			  const struct nfs_inode *ino, unsigned int req_access)
 {
 	unsigned int mode = ino->mode & 0x7;
 	unsigned int rc = 0;
 
-	if (cli->uid == ino->uid)
+	if (cxn->uid == ino->uid)
 		mode |= (ino->mode >> 6) & 0x7;
-	if (cli->gid == ino->gid)
+	if (cxn->gid == ino->gid)
 		mode |= (ino->mode >> 3) & 0x7;
 
 	if ((req_access & ACCESS4_READ) && (mode & MODE4_ROTH))
@@ -477,7 +477,7 @@ unsigned int inode_access(const struct nfs_client *cli,
 	return rc;
 }
 
-bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg,
+bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
 		     COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -494,13 +494,13 @@ bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg,
 	res = &resop.nfs_resop4_u.opaccess;
 	resok = &res->ACCESS4res_u.resok4;
 
-	ino = inode_get(cli->current_fh);
+	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	resok->access = inode_access(cli, ino, arg->access);
+	resok->access = inode_access(cxn, ino, arg->access);
 	resok->supported = 
 		ACCESS4_READ |
 		ACCESS4_LOOKUP |
@@ -634,7 +634,7 @@ static bool_t inode_attr_cmp(const struct nfs_inode *ino,
 	return TRUE;
 }
 
-bool_t nfs_op_verify(struct nfs_client *cli, VERIFY4args *arg,
+bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify)
 {
 	struct nfs_resop4 resop;
@@ -664,7 +664,7 @@ bool_t nfs_op_verify(struct nfs_client *cli, VERIFY4args *arg,
 		goto out_free;
 	}
 
-	ino = inode_get(cli->current_fh);
+	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out_free;

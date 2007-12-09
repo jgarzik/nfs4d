@@ -72,16 +72,16 @@ int set_bitmap(guint64 map_in, bitmap4 *map_out)
 	return 0;
 }
 
-static struct nfs_client *cli_init(struct svc_req *rqstp)
+static struct nfs_cxn *cli_init(struct svc_req *rqstp)
 {
-	struct nfs_client *cli = g_slice_new0(struct nfs_client);
+	struct nfs_cxn *cxn = g_slice_new0(struct nfs_cxn);
 
-	return cli;
+	return cxn;
 }
 
-static void cli_free(struct nfs_client *cli)
+static void cli_free(struct nfs_cxn *cxn)
 {
-	g_slice_free(struct nfs_client, cli);
+	g_slice_free(struct nfs_cxn, cxn);
 }
 
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
@@ -103,7 +103,7 @@ bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 	return stat == NFS4_OK ? TRUE : FALSE;
 }
 
-static bool_t nfs_op_readlink(struct nfs_client *cli, COMPOUND4res *cres)
+static bool_t nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	READLINK4res *res;
@@ -120,7 +120,7 @@ static bool_t nfs_op_readlink(struct nfs_client *cli, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.opreadlink;
 	resok = &res->READLINK4res_u.resok4;
 
-	ino = inode_get(cli->current_fh);
+	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -141,7 +141,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_op_notsupp(struct nfs_client *cli, COMPOUND4res *cres,
+static bool_t nfs_op_notsupp(struct nfs_cxn *cxn, COMPOUND4res *cres,
 			     nfs_opnum4 argop)
 {
 	struct nfs_resop4 resop;
@@ -198,55 +198,55 @@ static const char *arg_str[] = {
 	"RELEASE_LOCKOWNER",
 };
 
-static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
+static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 {
 	switch (arg->argop) {
 	case OP_ACCESS:
-		return nfs_op_access(cli, &arg->nfs_argop4_u.opaccess, res);
+		return nfs_op_access(cxn, &arg->nfs_argop4_u.opaccess, res);
 	case OP_CREATE:
-		return nfs_op_create(cli, &arg->nfs_argop4_u.opcreate, res);
+		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, res);
 	case OP_GETATTR:
-		return nfs_op_getattr(cli, &arg->nfs_argop4_u.opgetattr, res);
+		return nfs_op_getattr(cxn, &arg->nfs_argop4_u.opgetattr, res);
 	case OP_GETFH:
-		return nfs_op_getfh(cli, res);
+		return nfs_op_getfh(cxn, res);
 	case OP_LINK:
-		return nfs_op_link(cli, &arg->nfs_argop4_u.oplink, res);
+		return nfs_op_link(cxn, &arg->nfs_argop4_u.oplink, res);
 	case OP_LOOKUP:
-		return nfs_op_lookup(cli, &arg->nfs_argop4_u.oplookup, res);
+		return nfs_op_lookup(cxn, &arg->nfs_argop4_u.oplookup, res);
 	case OP_LOOKUPP:
-		return nfs_op_lookupp(cli, res);
+		return nfs_op_lookupp(cxn, res);
 	case OP_NVERIFY:
-		return nfs_op_verify(cli,
+		return nfs_op_verify(cxn,
 				(VERIFY4args *) &arg->nfs_argop4_u.opnverify,
 				res, 1);
 	case OP_OPEN:
-		return nfs_op_open(cli, &arg->nfs_argop4_u.opopen, res);
+		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, res);
 	case OP_PUTFH:
-		return nfs_op_putfh(cli, &arg->nfs_argop4_u.opputfh, res);
+		return nfs_op_putfh(cxn, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
-		return nfs_op_putpubfh(cli, res);
+		return nfs_op_putpubfh(cxn, res);
 	case OP_PUTROOTFH:
-		return nfs_op_putrootfh(cli, res);
+		return nfs_op_putrootfh(cxn, res);
 	case OP_READDIR:
-		return nfs_op_readdir(cli, &arg->nfs_argop4_u.opreaddir, res);
+		return nfs_op_readdir(cxn, &arg->nfs_argop4_u.opreaddir, res);
 	case OP_READLINK:
-		return nfs_op_readlink(cli, res);
+		return nfs_op_readlink(cxn, res);
 	case OP_REMOVE:
-		return nfs_op_remove(cli, &arg->nfs_argop4_u.opremove, res);
+		return nfs_op_remove(cxn, &arg->nfs_argop4_u.opremove, res);
 	case OP_RENAME:
-		return nfs_op_rename(cli, &arg->nfs_argop4_u.oprename, res);
+		return nfs_op_rename(cxn, &arg->nfs_argop4_u.oprename, res);
 	case OP_RESTOREFH:
-		return nfs_op_restorefh(cli, res);
+		return nfs_op_restorefh(cxn, res);
 	case OP_SAVEFH:
-		return nfs_op_savefh(cli, res);
+		return nfs_op_savefh(cxn, res);
 	case OP_SETCLIENTID:
-		return nfs_op_setclientid(cli,
+		return nfs_op_setclientid(cxn,
 					&arg->nfs_argop4_u.opsetclientid, res);
 	case OP_SETCLIENTID_CONFIRM:
-		return nfs_op_setclientid_confirm(cli,
+		return nfs_op_setclientid_confirm(cxn,
 				&arg->nfs_argop4_u.opsetclientid_confirm, res);
 	case OP_VERIFY:
-		return nfs_op_verify(cli, &arg->nfs_argop4_u.opverify, res, 0);
+		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, res, 0);
 
 	case OP_CLOSE:
 	case OP_COMMIT:
@@ -269,7 +269,7 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 			       (arg->argop > 39) ?  "<n/a>" :
 			       	arg_str[arg->argop]);
 
-		return nfs_op_notsupp(cli, res, arg->argop);
+		return nfs_op_notsupp(cxn, res, arg->argop);
 	default:
 		return FALSE;
 	}
@@ -280,7 +280,7 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 			       struct svc_req *rqstp)
 {
-	struct nfs_client *cli;
+	struct nfs_cxn *cxn;
 	unsigned int i;
 
 	memset(res, 0, sizeof(*res));
@@ -292,14 +292,14 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 		goto out;
 	}
 
-	cli = cli_init(rqstp);
-	if (!cli) {
+	cxn = cli_init(rqstp);
+	if (!cxn) {
 		res->status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
 	for (i = 0; i < arg->argarray.argarray_len; i++)
-		if (!nfs_arg(cli, &arg->argarray.argarray_val[i], res)) {
+		if (!nfs_arg(cxn, &arg->argarray.argarray_val[i], res)) {
 			syslog(LOG_WARNING, "compound failed early");
 			break;
 		}
@@ -309,7 +309,7 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 		       (i == arg->argarray.argarray_len) ? i : i + 1,
 		       arg->argarray.argarray_len);
 
-	cli_free(cli);
+	cli_free(cxn);
 out:
 	return TRUE;
 }
