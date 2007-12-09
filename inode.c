@@ -50,6 +50,9 @@ static void inode_free(struct nfs_inode *ino)
 		break;
 	}
 
+	if (ino->data)
+		free(ino->data);
+
 	g_slice_free(struct nfs_inode, ino);
 }
 

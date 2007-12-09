@@ -9,7 +9,7 @@ sbin_PROGRAMS	= nfs4_ramd
 nfs4_ramd_SOURCES = nfs4_prot.h server.h fattr.h	\
 		    xdr.c main.c server.c		\
 		    dir.c fh.c fattr.c inode.c open.c	\
-		    state.c
+		    state.c data.c
 nfs4_ramd_LDADD = @GLIB_LIBS@ 		# @GSSRPC_LIBS@
 
 EXTRA_DIST	= autogen.sh nfs4_prot.x TODO

@@ -177,3 +177,40 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	CLOSE4res *res;
+	nfsstat4 status = NFS4_OK;
+	uint32_t id;
+
+	if (debugging)
+		syslog(LOG_INFO, "op CLOSE (SEQ:%u ID:%u)",
+		       arg->seqid,
+		       GUINT32_FROM_LE(arg->open_stateid.seqid));
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_CLOSE;
+	res = &resop.nfs_resop4_u.opclose;
+
+	id = GUINT32_FROM_LE(arg->open_stateid.seqid);
+	if (id) {
+		struct nfs_state *st;
+		
+		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
+		if (!st) {
+			status = NFS4ERR_STALE_STATEID;
+			goto out;
+		}
+
+		g_hash_table_remove(srv.state, GUINT_TO_POINTER(id));
+	}
+
+	memcpy(&res->CLOSE4res_u.open_stateid,
+	       &arg->open_stateid, sizeof(arg->open_stateid));
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+

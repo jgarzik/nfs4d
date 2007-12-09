@@ -91,6 +91,7 @@ struct nfs_inode {
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
 
+	void			*data;
 	uint64_t		size;
 
 	uint64_t		ctime;		/* creation time */
@@ -161,6 +162,9 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
 		   change_info4 *cinfo);
 
+/* data.c */
+bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres);
+
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres);
 bool_t nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres);
@@ -199,6 +203,7 @@ void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* open.c */
 bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
+bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
