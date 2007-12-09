@@ -64,7 +64,7 @@ struct nfs_clientid {
 	guint32			callback_ident;
 };
 
-struct nfs_state {
+struct nfs_client {
 	struct nfs_clientid	*id;
 
 	GList			*pending;	/* unconfirmed requests */

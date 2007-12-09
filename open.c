@@ -30,7 +30,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK, lu_stat;
 	struct nfs_inode *dir_ino, *ino = NULL;
 	struct nfs_dirent *de;
-	struct nfs_state *st;
+	struct nfs_client *st;
 	int creating;
 
 	if (debugging)

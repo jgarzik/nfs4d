@@ -111,7 +111,7 @@ static void clientid_free(struct nfs_clientid *id)
 
 void state_free(gpointer data)
 {
-	struct nfs_state *st = data;
+	struct nfs_client *st = data;
 
 	clientid_free(st->id);
 
@@ -124,7 +124,7 @@ void state_free(gpointer data)
 		g_list_free(st->pending);
 	}
 
-	g_slice_free(struct nfs_state, st);
+	g_slice_free(struct nfs_client, st);
 }
 
 guint clientid_hash(gconstpointer key)
@@ -153,7 +153,7 @@ gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b)
 	return (*a == *b) ? TRUE : FALSE;
 }
 
-static int clientid_new(struct nfs_state *st, struct nfs_cxn *cxn,
+static int clientid_new(struct nfs_client *st, struct nfs_cxn *cxn,
 			SETCLIENTID4args *args, struct nfs_clientid **clid_out)
 {
 	struct nfs_clientid *clid;
@@ -203,11 +203,11 @@ err_out:
 static int state_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 		     struct nfs_clientid **clid_out)
 {
-	struct nfs_state *st;
+	struct nfs_client *st;
 	struct nfs_clientid *clid = NULL;
 	int rc = -ENOMEM;
 
-	st = g_slice_new0(struct nfs_state);
+	st = g_slice_new0(struct nfs_client);
 	if (!st)
 		goto err_out;
 
@@ -225,12 +225,12 @@ static int state_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	return 0;
 
 err_out_st:
-	g_slice_free(struct nfs_state, st);
+	g_slice_free(struct nfs_client, st);
 err_out:
 	return rc;
 }
 
-static gboolean callback_equal(struct nfs_state *st, cb_client4 *cb,
+static gboolean callback_equal(struct nfs_client *st, cb_client4 *cb,
 			       uint32_t cb_ident)
 {
 	struct nfs_clientid *clid;
@@ -264,7 +264,7 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	SETCLIENTID4res *res;
 	SETCLIENTID4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_state *st;
+	struct nfs_client *st;
 	int rc;
 	struct nfs_clientid *clid = NULL, clid_key;
 
@@ -348,7 +348,7 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	struct nfs_resop4 resop;
 	SETCLIENTID_CONFIRM4res *res;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_state *st;
+	struct nfs_client *st;
 	struct nfs_clientid *clid, *new_clid, clid_key;
 	GList *tmp;
 
