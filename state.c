@@ -96,26 +96,26 @@ static int copy_cb_client4(cb_client4 *dest, const cb_client4 *src)
 
 	dest->cb_program = src->cb_program;
 
-	dest->cb_location.r_netid = g_strdup(src->cb_location.r_netid);
+	dest->cb_location.r_netid = strdup(src->cb_location.r_netid);
 	if (!dest->cb_location.r_netid)
 		goto err_out;
 
-	dest->cb_location.r_addr = g_strdup(src->cb_location.r_addr);
+	dest->cb_location.r_addr = strdup(src->cb_location.r_addr);
 	if (!dest->cb_location.r_addr)
 		goto err_out_1;
 
 	return 0;
 
 err_out_1:
-	g_free(dest->cb_location.r_netid);
+	free(dest->cb_location.r_netid);
 err_out:
 	return rc;
 }
 
 static void free_cb_client4(cb_client4 *cbc)
 {
-	g_free(cbc->cb_location.r_netid);
-	g_free(cbc->cb_location.r_addr);
+	free(cbc->cb_location.r_netid);
+	free(cbc->cb_location.r_addr);
 }
 
 static void clientid_free(struct nfs_clientid *id)
@@ -123,9 +123,9 @@ static void clientid_free(struct nfs_clientid *id)
 	if (!id)
 		return;
 	
-	g_free(id->id.buf);
+	free(id->id.buf);
 	free_cb_client4(&id->callback);
-	g_slice_free(struct nfs_clientid, id);
+	free(id);
 }
 
 void state_free(gpointer data)
@@ -136,7 +136,7 @@ void state_free(gpointer data)
 		return;
 
 	if (st->owner)
-		g_free(st->owner);
+		free(st->owner);
 }
 
 void client_free(gpointer data)
@@ -157,7 +157,7 @@ void client_free(gpointer data)
 		g_list_free(cli->pending);
 	}
 
-	g_slice_free(struct nfs_client, cli);
+	free(cli);
 }
 
 guint clientid_hash(gconstpointer key)
@@ -192,15 +192,16 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 	struct nfs_clientid *clid;
 	clientid4 *short_clid;
 
-	clid = g_slice_new0(struct nfs_clientid);
+	clid = calloc(1, sizeof(struct nfs_clientid));
 	if (!clid)
 		goto err_out;
 
 	/* copy client id */
 	clid->id.len = args->client.id.id_len;
-	clid->id.buf = g_memdup(args->client.id.id_val, clid->id.len);
+	clid->id.buf = malloc(clid->id.len);
 	if (!clid->id.buf)
 		goto err_out_clid;
+	memcpy(clid->id.buf, args->client.id.id_val, clid->id.len);
 
 	/* copy client verifier */
 	memcpy(&clid->cli_verf, &args->client.verifier, sizeof(verifier4));
@@ -214,9 +215,10 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 		goto err_out_clid_buf;
 	clid->callback_ident = args->callback_ident;
 
-	short_clid = g_memdup(&clid->id_short, sizeof(clientid4));
+	short_clid = malloc(sizeof(clientid4));
 	if (!short_clid)
 		goto err_out_cb_client4;
+	memcpy(short_clid, &clid->id_short, sizeof(clientid4));
 
 	g_hash_table_insert(srv.clid_idx, short_clid, cli);
 
@@ -226,9 +228,9 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 err_out_cb_client4:
 	free_cb_client4(&clid->callback);
 err_out_clid_buf:
-	g_free(clid->id.buf);
+	free(clid->id.buf);
 err_out_clid:
-	g_slice_free(struct nfs_clientid, clid);
+	free(clid);
 err_out:
 	return -ENOMEM;
 }
@@ -240,7 +242,7 @@ static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	struct nfs_clientid *clid = NULL;
 	int rc = -ENOMEM;
 
-	cli = g_slice_new0(struct nfs_client);
+	cli = calloc(1, sizeof(struct nfs_client));
 	if (!cli)
 		goto err_out;
 
@@ -258,7 +260,7 @@ static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	return 0;
 
 err_out_st:
-	g_slice_free(struct nfs_client, cli);
+	free(cli);
 err_out:
 	return rc;
 }
@@ -454,13 +456,14 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 
 out2:
 	if (clid) {
-		clientid4 *id_short = g_memdup(&clid->id_short,
-					       sizeof(clientid4));
+		clientid4 *id_short = malloc(sizeof(clientid4));
 		if (!id_short) {
 			cli->pending = g_list_prepend(cli->pending, new_clid);
 			status = NFS4ERR_RESOURCE;
 			goto out;
 		}
+		memcpy(id_short, &clid->id_short, sizeof(clientid4));
+
 		g_hash_table_replace(srv.clid_idx, id_short, NULL);
 		clientid_free(clid);
 	}

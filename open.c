@@ -1,3 +1,6 @@
+
+#define _GNU_SOURCE
+#include <string.h>
 #include <syslog.h>
 #include "server.h"
 
@@ -152,11 +155,11 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 			goto out;
 	}
 
-	st = g_slice_new0(struct nfs_state);
+	st = calloc(1, sizeof(struct nfs_state));
 	st->cli = cli;
 	st->id = gen_stateid();
-	st->owner = g_strndup(args->owner.owner.owner_val,
-			      args->owner.owner.owner_len);
+	st->owner = strndup(args->owner.owner.owner_val,
+			    args->owner.owner.owner_len);
 	st->ino = ino->ino;
 	st->share_ac = args->share_access;
 	st->share_dn = args->share_deny;

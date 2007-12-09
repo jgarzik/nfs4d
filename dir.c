@@ -1,7 +1,9 @@
 
+#define _GNU_SOURCE
 #include <string.h>
 #include <glib.h>
 #include <syslog.h>
+#include <string.h>
 #include "server.h"
 #include "nfs4_prot.h"
 
@@ -55,7 +57,7 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 
 	dirent = g_hash_table_lookup(dir_ino->u.dir, name);
 
-	g_free(name);
+	free(name);
 
 	if (!dirent)
 		return NFS4ERR_NOENT;
@@ -131,7 +133,7 @@ void dirent_free(gpointer p)
 {
 	struct nfs_dirent *dirent = p;
 
-	g_slice_free(struct nfs_dirent, dirent);
+	free(dirent);
 }
 
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
@@ -154,7 +156,7 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 	if (!name)
 		return NFS4ERR_RESOURCE;
 
-	dirent = g_slice_new(struct nfs_dirent);
+	dirent = calloc(1, sizeof(struct nfs_dirent));
 	if (!dirent) {
 		status = NFS4ERR_RESOURCE;
 		goto out_name;
@@ -167,7 +169,7 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 	goto out;
 
 out_name:
-	g_free(name);
+	free(name);
 out:
 	return status;
 }
@@ -301,7 +303,7 @@ bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 	inode_unlink(target_ino, dir_ino->ino);
 
 out_name:
-	g_free(name);
+	free(name);
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
@@ -418,7 +420,7 @@ bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 		}
 	}
 
-	new_dirent = g_slice_new(struct nfs_dirent);
+	new_dirent = calloc(1, sizeof(struct nfs_dirent));
 	if (!new_dirent) {
 		status = NFS4ERR_RESOURCE;
 		goto out_name;
@@ -443,8 +445,8 @@ bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 	resok->target_cinfo.after = target_dir->version;
 
 out_name:
-	g_free(old_name);
-	g_free(new_name);
+	free(old_name);
+	free(new_name);
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
@@ -452,9 +454,9 @@ out:
 
 static void entry4_free(entry4 *ent)
 {
-	g_free(ent->name.utf8string_val);
+	free(ent->name.utf8string_val);
 	fattr4_free(&ent->attrs);
-	g_slice_free(entry4, ent);
+	free(ent);
 }
 
 static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
@@ -467,7 +469,7 @@ static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
 	struct nfs_fattr_set attrset;
 	bool_t encode_rc;
 
-	ent = g_slice_new0(entry4);
+	ent = calloc(1, sizeof(*ent));
 	if (!ent) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
@@ -475,7 +477,7 @@ static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
 
 	ent->cookie = hash;
 	ent->name.utf8string_len = strlen(name);
-	ent->name.utf8string_val = g_memdup(name, ent->name.utf8string_len);
+	ent->name.utf8string_val = strndup(name, ent->name.utf8string_len);
 	if (!ent->name.utf8string_val) {
 		status = NFS4ERR_RESOURCE;
 		goto err_out;
@@ -507,9 +509,9 @@ out:
 	return status;
 
 err_out_name:
-	g_free(ent->name.utf8string_val);
+	free(ent->name.utf8string_val);
 err_out:
-	g_slice_free(entry4, ent);
+	free(ent);
 	goto out;
 }
 
@@ -592,8 +594,14 @@ bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
 	guint32 tmp_ino_n;
 	struct readdir_info ri;
 
-	if (debugging)
-		syslog(LOG_INFO, "op READDIR");
+	if (debugging) {
+		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u)",
+		       (unsigned long long) args->cookie,
+		       args->dircount,
+		       args->maxcount);
+		print_fattr_bitmap("op READDIR",
+				   get_bitmap(&args->attr_request));
+	}
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_READDIR;

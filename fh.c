@@ -6,7 +6,7 @@
 
 void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
 {
-	nfsino_t *fh_val = g_slice_new(nfsino_t);
+	nfsino_t *fh_val = calloc(1, sizeof(nfsino_t));
 	*fh_val = GUINT32_TO_BE(fh_int);
 
 	fh->nfs_fh4_len = sizeof(nfsino_t);
@@ -17,7 +17,7 @@ static void nfs_fh_free(nfs_fh4 *fh)
 {
 	if (fh) {
 		nfsino_t *fh_val = (void *) fh->nfs_fh4_val;
-		g_slice_free(nfsino_t, fh_val);
+		free(fh_val);
 		fh->nfs_fh4_val = NULL;
 	}
 }

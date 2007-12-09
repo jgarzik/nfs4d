@@ -219,7 +219,7 @@ static int init_server(void)
 					       NULL, client_free);
 	srv.clid_idx = g_hash_table_new_full(short_clientid_hash,
 					     short_clientid_equal,
-					     g_free, NULL);
+					     free, NULL);
 	srv.state = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					  NULL, state_free);
 

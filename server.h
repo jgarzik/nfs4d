@@ -191,6 +191,7 @@ extern void fattr_free(struct nfs_fattr_set *attr);
 extern void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
 extern void fattr4_free(fattr4 *attr);
 extern void print_fattr(const char *pfx, fattr4 *attr);
+extern void print_fattr_bitmap(const char *pfx, uint64_t bitmap);
 
 /* fh.c */
 bool_t nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
@@ -208,7 +209,7 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 /* server.c */
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 bool_t valid_utf8string(utf8string *str);
-gchar *copy_utf8string(utf8string *str);
+char *copy_utf8string(utf8string *str);
 bool_t has_dots(utf8string *str);
 void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 guint64 get_bitmap(const bitmap4 *map);
@@ -233,7 +234,7 @@ extern unsigned long blob_hash(unsigned long hash, const void *_buf, size_t bufl
 
 static inline void free_bitmap(bitmap4 *map)
 {
-	g_free(map->bitmap4_val);
+	free(map->bitmap4_val);
 	map->bitmap4_len = 0;
 	map->bitmap4_val = NULL;
 }

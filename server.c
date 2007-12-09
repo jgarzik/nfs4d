@@ -4,9 +4,11 @@
  * as a guideline for developing your own functions.
  */
 
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <string.h>
 #include <errno.h>
 #include <glib.h>
 #include "nfs4_prot.h"
@@ -28,9 +30,9 @@ bool_t valid_utf8string(utf8string *str)
 	return TRUE;
 }
 
-gchar *copy_utf8string(utf8string *str)
+char *copy_utf8string(utf8string *str)
 {
-	return g_strndup(str->utf8string_val, str->utf8string_len);
+	return strndup(str->utf8string_val, str->utf8string_len);
 }
 
 bool_t has_dots(utf8string *str)
@@ -60,7 +62,7 @@ guint64 get_bitmap(const bitmap4 *map)
 int set_bitmap(guint64 map_in, bitmap4 *map_out)
 {
 	map_out->bitmap4_len = 2;
-	map_out->bitmap4_val = g_new(uint32_t, 2);
+	map_out->bitmap4_val = calloc(2, sizeof(uint32_t));
 	if (!map_out->bitmap4_val) {
 		map_out->bitmap4_len = 0;
 		return -1;
@@ -74,14 +76,14 @@ int set_bitmap(guint64 map_in, bitmap4 *map_out)
 
 static struct nfs_cxn *cli_init(struct svc_req *rqstp)
 {
-	struct nfs_cxn *cxn = g_slice_new0(struct nfs_cxn);
+	struct nfs_cxn *cxn = calloc(1, sizeof(struct nfs_cxn));
 
 	return cxn;
 }
 
 static void cli_free(struct nfs_cxn *cxn)
 {
-	g_slice_free(struct nfs_cxn, cxn);
+	free(cxn);
 }
 
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
@@ -320,7 +322,7 @@ static void nfs_free(nfs_resop4 *res)
 {
 	switch(res->resop) {
 	case OP_CREATE:
-		g_free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
+		free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
 		break;
 	case OP_GETATTR:
 		nfs_getattr_free(&res->nfs_resop4_u.opgetattr);

@@ -43,7 +43,7 @@ static void inode_free(struct nfs_inode *ino)
 			g_hash_table_destroy(ino->u.dir);
 		break;
 	case NF4LNK:
-		g_free(ino->u.linktext);
+		free(ino->u.linktext);
 		break;
 	default:
 		/* do nothing */
@@ -53,12 +53,12 @@ static void inode_free(struct nfs_inode *ino)
 	if (ino->data)
 		free(ino->data);
 
-	g_slice_free(struct nfs_inode, ino);
+	free(ino);
 }
 
 static struct nfs_inode *inode_new(void)
 {
-	struct nfs_inode *ino = g_slice_new0(struct nfs_inode);
+	struct nfs_inode *ino = calloc(1, sizeof(struct nfs_inode));
 	if (!ino)
 		goto out;
 
@@ -79,7 +79,7 @@ static struct nfs_inode *inode_new(void)
 	goto out;
 
 out_ino:
-	g_slice_free(struct nfs_inode, ino);
+	free(ino);
 out:
 	return ino;
 }
@@ -104,7 +104,7 @@ static struct nfs_inode *inode_new_dir(void)
 	ino->type = NF4DIR;
 
 	ino->u.dir = g_hash_table_new_full(g_str_hash, g_str_equal,
-					   g_free, dirent_free);
+					   free, dirent_free);
 	if (!ino->u.dir) {
 		inode_free(ino);
 		return NULL;
@@ -162,7 +162,7 @@ static nfsstat4 inode_new_type(createtype4 *objtype, struct nfs_inode **ino_out)
 		}
 		new_ino = inode_new_symlink(linktext);
 		if (!new_ino)
-			g_free(linktext);
+			free(linktext);
 		break;
 	}
 	case NF4SOCK:
@@ -237,7 +237,7 @@ static int int_from_utf8string(utf8string *str_in)
 	rc = atoi(s);
 
 out:
-	g_free(s);
+	free(s);
 	return rc;
 }
 

@@ -162,7 +162,7 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 	guint64 bitmap = attr->bitmap;
 	size_t buflen = raw_fattr_size(bitmap, attr);
 
-	buf = g_malloc0(buflen);
+	buf = calloc(1, buflen);
 	if (!buf)
 		return FALSE;
 
@@ -180,7 +180,7 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 	return TRUE;
 
 out:
-	g_free(buf);
+	free(buf);
 	xdr_destroy(&xdr);
 	return FALSE;
 }
@@ -309,18 +309,9 @@ void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 		strcat(buf, " ");			\
 	}
 
-void print_fattr(const char *pfx, fattr4 *attr)
+void print_fattr_bitmap(const char *pfx, uint64_t bitmap)
 {
-	struct nfs_fattr_set as;
-	guint64 bitmap;
 	char buf[4096];
-
-	if (!fattr_decode(attr, &as)) {
-		syslog(LOG_WARNING, "%s: attribute decode failed", pfx);
-		return;
-	}
-
-	bitmap = as.bitmap;
 
 	sprintf(buf, "%s: ", pfx);
 
@@ -330,4 +321,17 @@ void print_fattr(const char *pfx, fattr4 *attr)
 }
 
 #undef FATTR_DEFINE
+
+void print_fattr(const char *pfx, fattr4 *attr)
+{
+	struct nfs_fattr_set as;
+
+	if (!fattr_decode(attr, &as)) {
+		syslog(LOG_WARNING, "%s: attribute decode failed", pfx);
+		return;
+	}
+
+	print_fattr_bitmap(pfx, as.bitmap);
+}
+
 
