@@ -12,5 +12,5 @@ nfs4_ramd_SOURCES = nfs4_prot.h server.h fattr.h	\
 		    state.c data.c
 nfs4_ramd_LDADD = @GLIB_LIBS@ 		# @GSSRPC_LIBS@
 
-EXTRA_DIST	= autogen.sh nfs4_prot.x TODO
+EXTRA_DIST	= autogen.sh nfs4_prot.x
 
