@@ -109,22 +109,22 @@ static void clientid_free(struct nfs_clientid *id)
 	g_slice_free(struct nfs_clientid, id);
 }
 
-void state_free(gpointer data)
+void client_free(gpointer data)
 {
-	struct nfs_client *st = data;
+	struct nfs_client *cli = data;
 
-	clientid_free(st->id);
+	clientid_free(cli->id);
 
-	if (st->pending) {
-		GList *tmp = st->pending;
+	if (cli->pending) {
+		GList *tmp = cli->pending;
 		while (tmp) {
 			clientid_free(tmp->data);
 			tmp = tmp->next;
 		}
-		g_list_free(st->pending);
+		g_list_free(cli->pending);
 	}
 
-	g_slice_free(struct nfs_client, st);
+	g_slice_free(struct nfs_client, cli);
 }
 
 guint clientid_hash(gconstpointer key)
@@ -153,7 +153,7 @@ gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b)
 	return (*a == *b) ? TRUE : FALSE;
 }
 
-static int clientid_new(struct nfs_client *st, struct nfs_cxn *cxn,
+static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 			SETCLIENTID4args *args, struct nfs_clientid **clid_out)
 {
 	struct nfs_clientid *clid;
@@ -185,7 +185,7 @@ static int clientid_new(struct nfs_client *st, struct nfs_cxn *cxn,
 	if (!short_clid)
 		goto err_out_cb_client4;
 
-	g_hash_table_insert(srv.clid_idx, short_clid, st);
+	g_hash_table_insert(srv.clid_idx, short_clid, cli);
 
 	*clid_out = clid;
 	return 0;
@@ -203,44 +203,44 @@ err_out:
 static int state_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 		     struct nfs_clientid **clid_out)
 {
-	struct nfs_client *st;
+	struct nfs_client *cli;
 	struct nfs_clientid *clid = NULL;
 	int rc = -ENOMEM;
 
-	st = g_slice_new0(struct nfs_client);
-	if (!st)
+	cli = g_slice_new0(struct nfs_client);
+	if (!cli)
 		goto err_out;
 
-	rc = clientid_new(st, cxn, args, &clid);
+	rc = clientid_new(cli, cxn, args, &clid);
 	if (rc)
 		goto err_out_st;
 	
 	/* add to state's client-id pending list */
-	st->pending = g_list_prepend(st->pending, clid);
+	cli->pending = g_list_prepend(cli->pending, clid);
 
 	/* add to global list of client ids */
-	g_hash_table_insert(srv.client_ids, clid, st);
+	g_hash_table_insert(srv.client_ids, clid, cli);
 
 	*clid_out = clid;
 	return 0;
 
 err_out_st:
-	g_slice_free(struct nfs_client, st);
+	g_slice_free(struct nfs_client, cli);
 err_out:
 	return rc;
 }
 
-static gboolean callback_equal(struct nfs_client *st, cb_client4 *cb,
+static gboolean callback_equal(struct nfs_client *cli, cb_client4 *cb,
 			       uint32_t cb_ident)
 {
 	struct nfs_clientid *clid;
 
-	if (!st)
+	if (!cli)
 		return FALSE;
-	if (!st->id)
+	if (!cli->id)
 		return FALSE;
 
-	clid = st->id;
+	clid = cli->id;
 	if (clid->callback_ident != cb_ident)
 		return FALSE;
 	if (clid->callback.cb_program != cb->cb_program)
@@ -264,7 +264,7 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	SETCLIENTID4res *res;
 	SETCLIENTID4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_client *st;
+	struct nfs_client *cli;
 	int rc;
 	struct nfs_clientid *clid = NULL, clid_key;
 
@@ -287,9 +287,9 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	memset(&clid_key, 0, sizeof(clid_key));
 	clid_key.id.len = args->client.id.id_len;
 	clid_key.id.buf = args->client.id.id_val;
-	st = g_hash_table_lookup(srv.client_ids, &clid_key);
+	cli = g_hash_table_lookup(srv.client_ids, &clid_key);
 
-	if (!st) {
+	if (!cli) {
 		rc = state_new(cxn, args, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
@@ -297,24 +297,24 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 		}
 	}
 
-	else if ((!st->id) ||
-		 (memcmp(&st->id->cli_verf, &args->client.verifier,
+	else if ((!cli->id) ||
+		 (memcmp(&cli->id->cli_verf, &args->client.verifier,
 		 	 sizeof(verifier4))) ||
-		 (!callback_equal(st, &args->callback,
+		 (!callback_equal(cli, &args->callback,
 		 		  args->callback_ident))) {
 
-		rc = clientid_new(st, cxn, args, &clid);
+		rc = clientid_new(cli, cxn, args, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
 		}
 
 		/* add to state's client-id pending list */
-		st->pending = g_list_prepend(st->pending, clid);
+		cli->pending = g_list_prepend(cli->pending, clid);
 	}
 
 	else {
-		clid = st->id;
+		clid = cli->id;
 	}
 
 	g_assert(clid != NULL);
@@ -348,7 +348,7 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	struct nfs_resop4 resop;
 	SETCLIENTID_CONFIRM4res *res;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_client *st;
+	struct nfs_client *cli;
 	struct nfs_clientid *clid, *new_clid, clid_key;
 	GList *tmp;
 
@@ -361,14 +361,14 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	res = &resop.nfs_resop4_u.opsetclientid_confirm;
 
 	/* get state record from clientid4 */
-	st = g_hash_table_lookup(srv.clid_idx, &args->clientid);
-	if (!st) {
+	cli = g_hash_table_lookup(srv.clid_idx, &args->clientid);
+	if (!cli) {
 		status = NFS4ERR_STALE_CLIENTID;
 		goto out;
 	}
 
 	/* filter out duplicates */
-	clid = st->id;
+	clid = cli->id;
 	if (clid && (clid->id_short == args->clientid) &&
 	    (!memcmp(&clid->confirm_verf, &args->setclientid_confirm,
 	    	     sizeof(verifier4)))) {
@@ -384,14 +384,14 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	memcpy(&clid_key.confirm_verf, &args->setclientid_confirm,
 		sizeof(verifier4));
 
-	tmp = g_list_find_custom(st->pending, &clid_key, compare_confirm);
+	tmp = g_list_find_custom(cli->pending, &clid_key, compare_confirm);
 	if (!tmp) {
 		status = NFS4ERR_STALE_CLIENTID;
 		goto out;
 	}
 
 	new_clid = tmp->data;
-	st->pending = g_list_delete_link(st->pending, tmp);
+	cli->pending = g_list_delete_link(cli->pending, tmp);
 
 	/*
 	 * if old and new shorthand client ids are the same,
@@ -424,14 +424,14 @@ out2:
 		clientid4 *id_short = g_memdup(&clid->id_short,
 					       sizeof(clientid4));
 		if (!id_short) {
-			st->pending = g_list_prepend(st->pending, new_clid);
+			cli->pending = g_list_prepend(cli->pending, new_clid);
 			status = NFS4ERR_RESOURCE;
 			goto out;
 		}
 		g_hash_table_replace(srv.clid_idx, id_short, NULL);
 		clientid_free(clid);
 	}
-	st->id = new_clid;
+	cli->id = new_clid;
 
 out:
 	res->status = status;

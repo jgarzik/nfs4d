@@ -199,7 +199,7 @@ guint clientid_hash(gconstpointer data);
 gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
 guint short_clientid_hash(gconstpointer data);
 gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
-void state_free(gpointer data);
+void client_free(gpointer data);
 
 /* state.c */
 bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,

@@ -216,7 +216,7 @@ static int init_server(void)
 	memset(&srv, 0, sizeof(srv));
 	srv.lease_time = 5 * 60;
 	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
-					       NULL, state_free);
+					       NULL, client_free);
 	srv.clid_idx = g_hash_table_new_full(short_clientid_hash,
 					     short_clientid_equal,
 					     g_free, NULL);

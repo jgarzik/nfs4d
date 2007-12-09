@@ -30,7 +30,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK, lu_stat;
 	struct nfs_inode *dir_ino, *ino = NULL;
 	struct nfs_dirent *de;
-	struct nfs_client *st;
+	struct nfs_client *cli;
 	int creating;
 
 	if (debugging)
@@ -104,8 +104,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	/*
 	 * look up shorthand client id (clientid4)
 	 */
-	st = g_hash_table_lookup(srv.clid_idx, &args->owner.clientid);
-	if (!st) {
+	cli = g_hash_table_lookup(srv.clid_idx, &args->owner.clientid);
+	if (!cli) {
 		status = NFS4ERR_BADOWNER;
 		goto out;
 	}
