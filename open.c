@@ -1,5 +1,26 @@
-
+#include <syslog.h>
 #include "server.h"
+
+static const char *name_open_claim_type4[] = {
+	[CLAIM_NULL] = "NULL",
+	[CLAIM_PREVIOUS] = "PREVIOUS",
+	[CLAIM_DELEGATE_CUR] = "DELEGATE_CUR",
+	[CLAIM_DELEGATE_PREV] = "DELEGATE_PREV",
+};
+
+static void print_open_args(OPEN4args *args)
+{
+	syslog(LOG_INFO, "op OPEN (SEQ:%u SHAC:%x SHDN:%x OCID:%Lu ON:%.*s "
+	       "HOW:%s CLM:%s)",
+	       args->seqid,
+	       args->share_access,
+	       args->share_deny,
+	       (unsigned long long) args->owner.clientid,
+	       args->owner.owner.owner_len,
+	       args->owner.owner.owner_val,
+	       args->openhow.opentype == OPEN4_CREATE ? "CR" : "NOC",
+	       name_open_claim_type4[args->claim.claim]);
+}
 
 bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres)
 {
@@ -11,6 +32,9 @@ bool_t nfs_op_open(struct nfs_client *cli, OPEN4args *args, COMPOUND4res *cres)
 	struct nfs_dirent *de;
 	struct nfs_state *st;
 	int creating;
+
+	if (debugging)
+		print_open_args(args);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_OPEN;

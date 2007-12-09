@@ -54,6 +54,9 @@ bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres)
 	GETFH4resok *resok;
 	nfsstat4 status = NFS4_OK;
 
+	if (debugging)
+		syslog(LOG_INFO, "op GETFH");
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_GETFH;
 	res = &resop.nfs_resop4_u.opgetfh;
@@ -87,9 +90,14 @@ bool_t nfs_op_putfh(struct nfs_client *cli, PUTFH4args *arg, COMPOUND4res *cres)
 
 	fh = nfs_fh_decode(&arg->object);
 	if (!fh) {
+		if (debugging)
+			syslog(LOG_INFO, "op PUTFH (BAD)");
 		status = NFS4ERR_BADHANDLE;
 		goto out;
 	}
+
+	if (debugging)
+		syslog(LOG_INFO, "op PUTFH (%u)", fh);
 
 	cli->current_fh = fh;
 
@@ -103,6 +111,9 @@ bool_t nfs_op_putrootfh(struct nfs_client *cli, COMPOUND4res *cres)
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
 	nfsstat4 status = NFS4_OK;
+
+	if (debugging)
+		syslog(LOG_INFO, "op PUTROOTFH");
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_PUTROOTFH;
@@ -120,6 +131,9 @@ bool_t nfs_op_putpubfh(struct nfs_client *cli, COMPOUND4res *cres)
 	PUTFH4res *res;
 	nfsstat4 status = NFS4_OK;
 
+	if (debugging)
+		syslog(LOG_INFO, "op PUTPUBFH");
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_PUTPUBFH;
 	res = &resop.nfs_resop4_u.opputfh;
@@ -135,6 +149,9 @@ bool_t nfs_op_restorefh(struct nfs_client *cli, COMPOUND4res *cres)
 	struct nfs_resop4 resop;
 	RESTOREFH4res *res;
 	nfsstat4 status = NFS4_OK;
+
+	if (debugging)
+		syslog(LOG_INFO, "op RESTOREFH");
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_RESTOREFH;
@@ -157,6 +174,9 @@ bool_t nfs_op_savefh(struct nfs_client *cli, COMPOUND4res *cres)
 	struct nfs_resop4 resop;
 	SAVEFH4res *res;
 	nfsstat4 status = NFS4_OK;
+
+	if (debugging)
+		syslog(LOG_INFO, "op SAVEFH");
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SAVEFH;

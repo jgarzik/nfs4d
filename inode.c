@@ -1,11 +1,24 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <syslog.h>
 #include <glib.h>
 #include "server.h"
 #include "nfs4_prot.h"
 
 static nfsino_t next_ino = INO_RESERVED_LAST + 1;
+
+static const char *name_nfs_ftype4[] = {
+	[NF4REG] = "NF4REG",
+	[NF4DIR] = "NF4DIR",
+	[NF4BLK] = "NF4BLK",
+	[NF4CHR] = "NF4CHR",
+	[NF4LNK] = "NF4LNK",
+	[NF4SOCK] = "NF4SOCK",
+	[NF4FIFO] = "NF4FIFO",
+	[NF4ATTRDIR] = "NF4ATTRDIR",
+	[NF4NAMEDATTR] = "NF4NAMEDATTR",
+};
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
@@ -328,6 +341,37 @@ out:
 	return status;
 }
 
+static void print_create_args(CREATE4args *arg)
+{
+	switch (arg->objtype.type) {
+	case NF4BLK:
+	case NF4CHR:
+		syslog(LOG_INFO, "op CREATE (%s, %.*s, %u %u)", 
+		       name_nfs_ftype4[arg->objtype.type],
+		       arg->objname.utf8string_len,
+		       arg->objname.utf8string_val,
+		       arg->objtype.createtype4_u.devdata.specdata1,
+		       arg->objtype.createtype4_u.devdata.specdata2);
+		break;
+	case NF4LNK:
+		syslog(LOG_INFO, "op CREATE (%s, %.*s, %.*s)", 
+		       name_nfs_ftype4[arg->objtype.type],
+		       arg->objname.utf8string_len,
+		       arg->objname.utf8string_val,
+		       arg->objtype.createtype4_u.linkdata.utf8string_len,
+		       arg->objtype.createtype4_u.linkdata.utf8string_val);
+		break;
+	default:
+		syslog(LOG_INFO, "op CREATE (%s, %.*s)", 
+		       name_nfs_ftype4[arg->objtype.type],
+		       arg->objname.utf8string_len,
+		       arg->objname.utf8string_val);
+		break;
+	}
+
+	print_fattr("op CREATE attr", &arg->createattrs);
+}
+
 bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -335,6 +379,9 @@ bool_t nfs_op_create(struct nfs_client *cli, CREATE4args *arg, COMPOUND4res *cre
 	CREATE4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *new_ino;
+
+	if (debugging)
+		print_create_args(arg);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CREATE;
@@ -438,6 +485,9 @@ bool_t nfs_op_access(struct nfs_client *cli, ACCESS4args *arg,
 	ACCESS4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
+
+	if (debugging)
+		syslog(LOG_INFO, "op ACCESS (0x%x)", arg->access);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_ACCESS;

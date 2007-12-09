@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -274,6 +275,12 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	return 0;
 }
 
+static void term_signal(int signal)
+{
+	syslog(LOG_INFO, "got termination signal");
+	exit(1);
+}
+
 int main (int argc, char *argv[])
 {
 	error_t rc;
@@ -285,6 +292,10 @@ int main (int argc, char *argv[])
 		fprintf(stderr, "argp_parse failed: %s\n", strerror(rc));
 		return 1;
 	}
+
+	signal(SIGHUP, SIG_IGN);
+	signal(SIGINT, term_signal);
+	signal(SIGTERM, term_signal);
 
 	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
 

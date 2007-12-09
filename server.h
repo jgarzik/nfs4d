@@ -167,11 +167,12 @@ extern const uint64_t fattr_write_only_mask;
 extern const uint64_t fattr_read_write_mask;
 extern const uint64_t fattr_read_only_mask;
 extern const uint64_t fattr_supported_mask;
-bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
-bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
-void fattr_free(struct nfs_fattr_set *attr);
-void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
-void fattr4_free(fattr4 *attr);
+extern bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
+extern bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
+extern void fattr_free(struct nfs_fattr_set *attr);
+extern void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
+extern void fattr4_free(fattr4 *attr);
+extern void print_fattr(const char *pfx, fattr4 *attr);
 
 /* fh.c */
 bool_t nfs_op_getfh(struct nfs_client *cli, COMPOUND4res *cres);

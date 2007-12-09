@@ -268,6 +268,16 @@ bool_t nfs_op_setclientid(struct nfs_client *cli, SETCLIENTID4args *args,
 	int rc;
 	struct nfs_clientid *clid = NULL, clid_key;
 
+	if (debugging)
+		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
+		       "PROG:%u NET:%s ADDR:%s CBID:%u)",
+		       args->client.id.id_len,
+		       args->client.id.id_val,
+		       args->callback.cb_program,
+		       args->callback.cb_location.r_netid,
+		       args->callback.cb_location.r_addr,
+		       args->callback_ident);
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SETCLIENTID;
 	res = &resop.nfs_resop4_u.opsetclientid;
@@ -341,6 +351,10 @@ bool_t nfs_op_setclientid_confirm(struct nfs_client *cli,
 	struct nfs_state *st;
 	struct nfs_clientid *clid, *new_clid, clid_key;
 	GList *tmp;
+
+	if (debugging)
+		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lu)",
+		       (unsigned long long) args->clientid);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SETCLIENTID_CONFIRM;

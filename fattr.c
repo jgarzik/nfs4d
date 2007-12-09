@@ -1,5 +1,6 @@
 #include <rpc/xdr.h>
 #include <glib.h>
+#include <syslog.h>
 #include "nfs4_prot.h"
 #include "server.h"
 
@@ -301,3 +302,32 @@ void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 	fattr_fill_fs(attr);
 	fattr_fill_obj(ino, attr);
 }
+
+#define FATTR_DEFINE(a,b,c)				\
+	if (bitmap & ( 1ULL << FATTR4_##a )) {		\
+		strcat(buf, #a);			\
+		strcat(buf, " ");			\
+	}
+
+void print_fattr(const char *pfx, fattr4 *attr)
+{
+	struct nfs_fattr_set as;
+	guint64 bitmap;
+	char buf[4096];
+
+	if (!fattr_decode(attr, &as)) {
+		syslog(LOG_WARNING, "%s: attribute decode failed", pfx);
+		return;
+	}
+
+	bitmap = as.bitmap;
+
+	sprintf(buf, "%s: ", pfx);
+
+#include "fattr.h"
+
+	syslog(LOG_INFO, buf);
+}
+
+#undef FATTR_DEFINE
+

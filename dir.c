@@ -1,6 +1,7 @@
 
 #include <string.h>
 #include <glib.h>
+#include <syslog.h>
 #include "server.h"
 #include "nfs4_prot.h"
 
@@ -72,6 +73,11 @@ bool_t nfs_op_lookup(struct nfs_client *cli, LOOKUP4args *arg, COMPOUND4res *cre
 	struct nfs_inode *ino;
 	struct nfs_dirent *dirent;
 
+	if (debugging)
+		syslog(LOG_INFO, "op LOOKUP (%.*s)",
+		       arg->objname.utf8string_len,
+		       arg->objname.utf8string_val);
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOOKUP;
 	res = &resop.nfs_resop4_u.oplookup;
@@ -97,6 +103,9 @@ bool_t nfs_op_lookupp(struct nfs_client *cli, COMPOUND4res *cres)
 	LOOKUPP4res *res;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
+
+	if (debugging)
+		syslog(LOG_INFO, "op LOOKUPP");
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOOKUPP;
@@ -171,6 +180,11 @@ bool_t nfs_op_link(struct nfs_client *cli, LINK4args *arg, COMPOUND4res *cres)
 	nfsstat4 status;
 	struct nfs_inode *dir_ino, *src_ino;
 
+	if (debugging)
+		syslog(LOG_INFO, "op LINK (%.*s)",
+		       arg->newname.utf8string_len,
+		       arg->newname.utf8string_val);
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LINK;
 	res = &resop.nfs_resop4_u.oplink;
@@ -219,6 +233,11 @@ bool_t nfs_op_remove(struct nfs_client *cli, REMOVE4args *arg, COMPOUND4res *cre
 	struct nfs_inode *dir_ino, *target_ino;
 	struct nfs_dirent *dirent;
 	gchar *name;
+
+	if (debugging)
+		syslog(LOG_INFO, "op REMOVE (%.*s)",
+		       arg->target.utf8string_len,
+		       arg->target.utf8string_val);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_REMOVE;
@@ -298,6 +317,13 @@ bool_t nfs_op_rename(struct nfs_client *cli, RENAME4args *arg, COMPOUND4res *cre
 	struct nfs_inode *old_file;
 	struct nfs_dirent *old_dirent, *new_dirent;
 	gchar *old_name, *new_name;
+
+	if (debugging)
+		syslog(LOG_INFO, "op REMOVE (OLD:%.*s, NEW:%.*s)",
+		       arg->oldname.utf8string_len,
+		       arg->oldname.utf8string_val,
+		       arg->newname.utf8string_len,
+		       arg->newname.utf8string_val);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_RENAME;
@@ -565,6 +591,9 @@ bool_t nfs_op_readdir(struct nfs_client *cli, READDIR4args *args,
 	struct nfs_inode *ino;
 	guint32 tmp_ino_n;
 	struct readdir_info ri;
+
+	if (debugging)
+		syslog(LOG_INFO, "op READDIR");
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_READDIR;

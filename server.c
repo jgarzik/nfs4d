@@ -112,6 +112,9 @@ static bool_t nfs_op_readlink(struct nfs_client *cli, COMPOUND4res *cres)
 	struct nfs_inode *ino;
 	gchar *linktext;
 
+	if (debugging)
+		syslog(LOG_INFO, "op READLINK");
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_READLINK;
 	res = &resop.nfs_resop4_u.opreadlink;
@@ -197,10 +200,6 @@ static const char *arg_str[] = {
 
 static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res)
 {
-	if (debugging)
-		syslog(LOG_INFO, "compound op %s",
-		       (arg->argop > 39) ?  "<n/a>" : arg_str[arg->argop]);
-
 	switch (arg->argop) {
 	case OP_ACCESS:
 		return nfs_op_access(cli, &arg->nfs_argop4_u.opaccess, res);
@@ -265,6 +264,11 @@ static bool_t nfs_arg(struct nfs_client *cli, nfs_argop4 *arg, COMPOUND4res *res
 	case OP_WRITE:
 	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
+		if (debugging)
+			syslog(LOG_INFO, "compound op %s",
+			       (arg->argop > 39) ?  "<n/a>" :
+			       	arg_str[arg->argop]);
+
 		return nfs_op_notsupp(cli, res, arg->argop);
 	default:
 		return FALSE;
@@ -294,9 +298,6 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 		goto out;
 	}
 
-	if (debugging)
-		syslog(LOG_INFO, "compound start");
-
 	for (i = 0; i < arg->argarray.argarray_len; i++)
 		if (!nfs_arg(cli, &arg->argarray.argarray_val[i], res)) {
 			syslog(LOG_WARNING, "compound failed early");
@@ -304,7 +305,9 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 		}
 
 	if (debugging)
-		syslog(LOG_INFO, "compound stop");
+		syslog(LOG_INFO, "arg list end (%u of %u args)",
+		       (i == arg->argarray.argarray_len) ? i : i + 1,
+		       arg->argarray.argarray_len);
 
 	cli_free(cli);
 out:
