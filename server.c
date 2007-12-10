@@ -131,10 +131,15 @@ guint64 get_bitmap(const bitmap4 *map)
 {
 	guint64 v = 0;
 
+	if (!map || !map->bitmap4_val || !map->bitmap4_len)
+		goto out;
+
 	if (map->bitmap4_len > 0)
 		v |= map->bitmap4_val[0];
 	if (map->bitmap4_len > 1)
 		v |= ((guint64)map->bitmap4_val[1]) << 32;
+
+out:
 	return v;
 }
 

@@ -129,7 +129,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 		g_hash_table_foreach(srv.state, state_sh_conflict, &cfs);
 
 		if (cfs.match) {
-			status = NFS4ERR_DENIED;
+			status = NFS4ERR_SHARE_DENIED;
 			goto out;
 		}
 	}
