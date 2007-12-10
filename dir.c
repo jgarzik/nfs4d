@@ -192,8 +192,8 @@ bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.oplink;
 	resok = &res->LINK4res_u.resok4;
 
-	if (cxn->current_fh == cxn->save_fh) {
-		status = NFS4ERR_INVAL;
+	if (!cxn->current_fh || !cxn->save_fh) {
+		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
@@ -203,9 +203,21 @@ bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
+	/* make sure target is a directory */
+	if (dir_ino->type != NF4DIR) {
+		status = NFS4ERR_NOTDIR;
+		goto out;
+	}
+
 	src_ino = inode_get(cxn->save_fh);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	/* make sure source is -not- a directory */
+	if (src_ino->type == NF4DIR) {
+		status = NFS4ERR_ISDIR;
 		goto out;
 	}
 
@@ -506,12 +518,14 @@ static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
 	}
 
 out:
+	*new_entry_out = ent;
 	return status;
 
 err_out_name:
 	free(ent->name.utf8string_val);
 err_out:
 	free(ent);
+	ent = NULL;
 	goto out;
 }
 
