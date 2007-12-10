@@ -140,17 +140,22 @@ guint64 get_bitmap(const bitmap4 *map)
 	return v;
 }
 
-int set_bitmap(guint64 map_in, bitmap4 *map_out)
+void __set_bitmap(guint64 map_in, bitmap4 *map_out)
 {
 	map_out->bitmap4_len = 2;
+	map_out->bitmap4_val[0] = map_in;
+	map_out->bitmap4_val[1] = (map_in >> 32);
+}
+
+int set_bitmap(guint64 map_in, bitmap4 *map_out)
+{
 	map_out->bitmap4_val = calloc(2, sizeof(uint32_t));
 	if (!map_out->bitmap4_val) {
 		map_out->bitmap4_len = 0;
 		return -1;
 	}
 
-	map_out->bitmap4_val[0] = map_in;
-	map_out->bitmap4_val[1] = (map_in >> 32);
+	__set_bitmap(map_in, map_out);
 
 	return 0;
 }
@@ -324,6 +329,8 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_restorefh(cxn, res);
 	case OP_SAVEFH:
 		return nfs_op_savefh(cxn, res);
+	case OP_SETATTR:
+		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, res);
 	case OP_SETCLIENTID:
 		return nfs_op_setclientid(cxn,
 					&arg->nfs_argop4_u.opsetclientid, res);
@@ -346,7 +353,6 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 	case OP_READ:
 	case OP_RENEW:
 	case OP_SECINFO:
-	case OP_SETATTR:
 	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
 		if (debugging)

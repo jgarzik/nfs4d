@@ -154,6 +154,8 @@ bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
 bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
 bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres);
+bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
+		      COMPOUND4res *cres);
 void nfs_getattr_free(GETATTR4res *res);
 bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify);
@@ -210,18 +212,19 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 /* server.c */
 extern const char *name_nfs_ftype4[];
 
-bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
-bool_t valid_utf8string(utf8string *str);
-char *copy_utf8string(utf8string *str);
-bool_t has_dots(utf8string *str);
-void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
-guint64 get_bitmap(const bitmap4 *map);
-int set_bitmap(guint64 map_in, bitmap4 *map_out);
-nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in);
-guint clientid_hash(gconstpointer data);
-gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
-guint short_clientid_hash(gconstpointer data);
-gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
+extern bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
+extern bool_t valid_utf8string(utf8string *str);
+extern char *copy_utf8string(utf8string *str);
+extern bool_t has_dots(utf8string *str);
+extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
+extern guint64 get_bitmap(const bitmap4 *map);
+extern void __set_bitmap(guint64 map_in, bitmap4 *map_out);
+extern int set_bitmap(guint64 map_in, bitmap4 *map_out);
+extern nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in);
+extern guint clientid_hash(gconstpointer data);
+extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
+extern guint short_clientid_hash(gconstpointer data);
+extern gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
 
 /* state.c */
 extern void client_free(gpointer data);

@@ -235,17 +235,46 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 	struct nfs_fattr_set fattr;
 	uint64_t bitmap_set = 0;
 	uint64_t notsupp_mask = !fattr_supported_mask;
+	enum nfsstat4 status = NFS4_OK;
 
 	if (!fattr_decode(raw_attr, &fattr))
 		return NFS4ERR_INVAL;
 
-	if (fattr.bitmap & fattr_read_only_mask)
-		return NFS4ERR_INVAL;
-	if (fattr.bitmap & notsupp_mask)
-		return NFS4ERR_NOTSUPP;
+	if (fattr.bitmap & fattr_read_only_mask) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+	if (fattr.bitmap & notsupp_mask) {
+		status = NFS4ERR_NOTSUPP;
+		goto out;
+	}
 
-	if (fattr.bitmap & (1ULL << FATTR4_SIZE)) /* TODO: truncate */
-		return NFS4ERR_NOTSUPP;
+	if (fattr.bitmap & (1ULL << FATTR4_SIZE)) {
+		uint64_t zero = 0, new_size = fattr.size;
+		void *mem;
+
+		if (new_size == ino->size)
+			goto size_done;
+
+		mem = realloc(ino->data, new_size);
+		if (!new_size) {
+			ino->data = NULL;
+			goto size_done;
+		}
+		if (!mem) {
+			status = NFS4ERR_NOSPC;
+			goto out;
+		}
+
+		if (new_size > ino->size)
+			zero = new_size - ino->size;
+
+		ino->data = mem;
+		memset(ino->data + ino->size, 0, zero);
+
+size_done:
+		ino->size = new_size;
+	}
 
 	if (fattr.bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
 		if (fattr.time_access_set.set_it == SET_TO_CLIENT_TIME4)
@@ -271,25 +300,30 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_OWNER)) {
 		int x = int_from_utf8string(&fattr.owner);
-		if (x < 0)
-			return NFS4ERR_INVAL;
+		if (x < 0) {
+			status = NFS4ERR_INVAL;
+			goto out;
+		}
 
 		ino->uid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
 		int x = int_from_utf8string(&fattr.owner);
-		if (x < 0)
-			return NFS4ERR_INVAL;
+		if (x < 0) {
+			status = NFS4ERR_INVAL;
+			goto out;
+		}
 
 		ino->gid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER_GROUP);
 	}
 
+out:
 	fattr_free(&fattr);
 
 	*bitmap_set_out = bitmap_set;
-	return NFS4_OK;
+	return status;
 }
 
 nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
@@ -434,6 +468,49 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
+}
+
+bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
+		      COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	SETATTR4res *res;
+	struct nfs_inode *ino;
+	nfsstat4 status = NFS4_OK;
+	uint64_t bitmap_set;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_SETATTR;
+	res = &resop.nfs_resop4_u.opsetattr;
+
+	res->attrsset.bitmap4_val = calloc(2, sizeof(uint32_t));
+	if (!res->attrsset.bitmap4_val) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+	res->attrsset.bitmap4_len = 2;
+
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto err_out;
+	}
+
+	status = inode_apply_attrs(ino, &arg->obj_attributes, &bitmap_set);
+	if (status != NFS4_OK)
+		goto err_out;
+
+	__set_bitmap(bitmap_set, &res->attrsset);
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+
+err_out:
+	free(res->attrsset.bitmap4_val);
+	res->attrsset.bitmap4_val = NULL;
+	res->attrsset.bitmap4_len = 0;
+	goto out;
 }
 
 void nfs_getattr_free(GETATTR4res *res)
