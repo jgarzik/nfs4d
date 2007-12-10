@@ -13,7 +13,11 @@ static const char *name_open_claim_type4[] = {
 
 static void print_open_args(OPEN4args *args)
 {
-	syslog(LOG_INFO, "op OPEN (SEQ:%u SHAC:%x SHDN:%x OCID:%Lu ON:%.*s "
+	syslog(LOG_INFO, "op OPEN (NAME:%.*s)",
+	       args->claim.open_claim4_u.file.utf8string_len,
+	       args->claim.open_claim4_u.file.utf8string_val);
+
+	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x OCID:%Lu ON:%.*s "
 	       "HOW:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
@@ -174,6 +178,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	resok->delegation.delegation_type = OPEN_DELEGATE_NONE;
 
 	status = NFS4_OK;
+	cxn->current_fh = ino->ino;
 
 out:
 	res->status = status;

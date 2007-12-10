@@ -47,6 +47,14 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
+	/* we only support writing to regular files */
+	if (ino->type != NF4REG) {
+		syslog(LOG_INFO, "trying to write to file of type %s",
+		       name_nfs_ftype4[ino->type]);
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
 	new_size = arg->offset + arg->data.data_len;
 
 	/* write fits entirely within existing data buffer */
