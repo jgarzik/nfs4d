@@ -317,6 +317,8 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_putpubfh(cxn, res);
 	case OP_PUTROOTFH:
 		return nfs_op_putrootfh(cxn, res);
+	case OP_READ:
+		return nfs_op_read(cxn, &arg->nfs_argop4_u.opread, res);
 	case OP_READDIR:
 		return nfs_op_readdir(cxn, &arg->nfs_argop4_u.opreaddir, res);
 	case OP_READLINK:
@@ -350,7 +352,6 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 	case OP_LOCKU:
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
-	case OP_READ:
 	case OP_RENEW:
 	case OP_SECINFO:
 	case OP_RELEASE_LOCKOWNER:
@@ -429,8 +430,14 @@ static void nfs_free(nfs_resop4 *res)
 	case OP_GETFH:
 		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
 		break;
+	case OP_READ:
+		free(res->nfs_resop4_u.opread.READ4res_u.resok4.data.data_val);
+		break;
 	case OP_READDIR:
 		nfs_readdir_free(&res->nfs_resop4_u.opreaddir);
+		break;
+	case OP_SETATTR:
+		free(res->nfs_resop4_u.opsetattr.attrsset.bitmap4_val);
 		break;
 	default:
 		/* nothing to free */
