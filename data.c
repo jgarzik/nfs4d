@@ -8,6 +8,24 @@ static const char *name_stable_how4[] = {
 	[FILE_SYNC4] = "FILE_SYNC4",
 };
 
+struct state_search {
+	gboolean match;
+	nfsino_t ino;
+	uint32_t share_dn;
+	struct nfs_state *st;
+};
+
+static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct state_search *ss = user_data;
+
+	if ((st->ino == ss->ino) && (st->share_dn & ss->share_dn)) {
+		ss->match = TRUE;
+		ss->st = st;
+	}
+}
+
 bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -19,9 +37,10 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	struct nfs_inode *ino;
 	uint64_t new_size;
 	void *mem;
+	struct state_search ss;
 
 	if (debugging)
-		syslog(LOG_INFO, "op WRITE (ID:%u OFS:%Lu ST:%s LEN:%u)",
+		syslog(LOG_INFO, "op WRITE (ID:%x OFS:%Lu ST:%s LEN:%u)",
 		       id,
 		       (unsigned long long) arg->offset,
 		       name_stable_how4[arg->stable],
@@ -33,7 +52,7 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.opwrite;
 	resok = &res->WRITE4res_u.resok4;
 
-	if (id) {
+	if (id && (id != 0xffffffffU)) {
 		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
 		if (!st) {
 			status = NFS4ERR_STALE_STATEID;
@@ -51,9 +70,27 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	if (ino->type != NF4REG) {
 		syslog(LOG_INFO, "trying to write to file of type %s",
 		       name_nfs_ftype4[ino->type]);
-		status = NFS4ERR_INVAL;
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
 		goto out;
 	}
+
+	/* search for conflicting share reservation (deny write) */
+	ss.match = FALSE;
+	ss.ino = ino->ino;
+	ss.share_dn = OPEN4_SHARE_DENY_WRITE;
+
+	g_hash_table_foreach(srv.state, state_search_iter, &ss);
+
+	if ((ss.match) && (st != ss.st)) {
+		status = NFS4ERR_LOCKED;
+		goto out;
+	}
+
+	if (arg->data.data_len == 0)
+		goto out;
 
 	new_size = arg->offset + arg->data.data_len;
 
@@ -94,9 +131,10 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	struct nfs_inode *ino;
 	uint64_t read_size;
 	void *mem;
+	struct state_search ss;
 
 	if (debugging)
-		syslog(LOG_INFO, "op READ (ID:%u OFS:%Lu LEN:%u)",
+		syslog(LOG_INFO, "op READ (ID:%x OFS:%Lu LEN:%u)",
 		       id,
 		       (unsigned long long) arg->offset,
 		       arg->count);
@@ -114,7 +152,7 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	}
 	memset(mem, 0, arg->count);
 
-	if (id) {
+	if (id && (id != 0xffffffffU)) {
 		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
 		if (!st) {
 			status = NFS4ERR_STALE_STATEID;
@@ -132,8 +170,23 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	if (ino->type != NF4REG) {
 		syslog(LOG_INFO, "trying to read to file of type %s",
 		       name_nfs_ftype4[ino->type]);
-		status = NFS4ERR_INVAL;
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
 		goto out_mem;
+	}
+
+	/* search for conflicting share reservation (deny read) */
+	ss.match = FALSE;
+	ss.ino = ino->ino;
+	ss.share_dn = OPEN4_SHARE_DENY_READ;
+
+	g_hash_table_foreach(srv.state, state_search_iter, &ss);
+
+	if ((ss.match) && (st != ss.st)) {
+		status = NFS4ERR_LOCKED;
+		goto out;
 	}
 
 	if (arg->offset >= ino->size) {

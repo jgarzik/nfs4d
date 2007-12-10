@@ -231,6 +231,7 @@ extern gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);
 extern uint32_t gen_stateid(void);
+extern bool_t valid_stateid(const stateid4 *sid);
 extern bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			 COMPOUND4res *cres);
 extern bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,

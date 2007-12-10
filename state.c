@@ -73,6 +73,19 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
+bool_t valid_stateid(const stateid4 *sid)
+{
+	stateid4 sid_verf;
+
+	if ((sid->seqid == 0) || (sid->seqid == 0xffffffffU))
+		return TRUE;
+
+	memcpy(&sid_verf.other, &sid->seqid, sizeof(sid->seqid));
+	memcpy(&sid_verf.other + 4, srv.instance_verf, 8);
+
+	return (memcmp(&sid_verf.other, &sid->other, sizeof(sid->other)) == 0);
+}
+
 static void gen_clientid4(clientid4 *id)
 {
 	int loop = 1000000;
@@ -388,7 +401,7 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	GList *tmp;
 
 	if (debugging)
-		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lu)",
+		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lx)",
 		       (unsigned long long) args->clientid);
 
 	memset(&resop, 0, sizeof(resop));

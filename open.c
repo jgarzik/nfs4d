@@ -17,7 +17,7 @@ static void print_open_args(OPEN4args *args)
 	       args->claim.open_claim4_u.file.utf8string_len,
 	       args->claim.open_claim4_u.file.utf8string_val);
 
-	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x OCID:%Lu ON:%.*s "
+	syslog(LOG_INFO, "   OPEN (SEQ:%x SHAC:%x SHDN:%x OCID:%Lx ON:%.*s "
 	       "HOW:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
@@ -180,6 +180,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	status = NFS4_OK;
 	cxn->current_fh = ino->ino;
 
+	syslog(LOG_INFO, "   OPEN -> (SEQ:%x)", st->id);
+
 out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
@@ -193,7 +195,7 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	uint32_t id;
 
 	if (debugging)
-		syslog(LOG_INFO, "op CLOSE (SEQ:%u ID:%u)",
+		syslog(LOG_INFO, "op CLOSE (SEQ:%x ID:%x)",
 		       arg->seqid,
 		       GUINT32_FROM_LE(arg->open_stateid.seqid));
 
