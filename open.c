@@ -159,6 +159,15 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 			goto out;
 	}
 
+	/* FIXME: undo file creation, if this test fails? */
+	if (ino->type != NF4REG) {
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
+		goto out;
+	}
+
 	st = calloc(1, sizeof(struct nfs_state));
 	st->cli = cli;
 	st->id = gen_stateid();
@@ -202,6 +211,11 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CLOSE;
 	res = &resop.nfs_resop4_u.opclose;
+
+	if (!cxn->current_fh) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
 
 	id = GUINT32_FROM_LE(arg->open_stateid.seqid);
 	if (id) {

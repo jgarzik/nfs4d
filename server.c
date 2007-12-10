@@ -214,7 +214,7 @@ static bool_t nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
 		goto out;
 	}
 	if (ino->type != NF4LNK) {
-		status = NFS4ERR_NOFILEHANDLE;
+		status = NFS4ERR_INVAL;
 		goto out;
 	}
 

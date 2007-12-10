@@ -221,7 +221,7 @@ extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 extern guint64 get_bitmap(const bitmap4 *map);
 extern void __set_bitmap(guint64 map_in, bitmap4 *map_out);
 extern int set_bitmap(guint64 map_in, bitmap4 *map_out);
-extern nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in);
+extern int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
 extern guint short_clientid_hash(gconstpointer data);

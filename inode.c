@@ -253,6 +253,15 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 		uint64_t zero = 0, new_size = fattr.size;
 		void *mem;
 
+		/* only permit size attribute manip on files */
+		if (ino->type != NF4REG) {
+			if (ino->type == NF4DIR)
+				status = NFS4ERR_ISDIR;
+			else
+				status = NFS4ERR_INVAL;
+			goto out;
+		}
+
 		if (new_size == ino->size)
 			goto size_done;
 
@@ -417,6 +426,11 @@ bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
 	if (status != NFS4_OK)
 		goto out;
 
+	if (dir_ino->type != NF4DIR) {
+		status = NFS4ERR_NOTDIR;
+		goto out;
+	}
+
 	status = inode_new_type(&arg->objtype, &new_ino);
 	if (status != NFS4_OK)
 		goto out;
@@ -457,6 +471,13 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 	memset(&attrset, 0, sizeof(attrset));
 
 	attrset.bitmap = get_bitmap(&arg->attr_request);
+
+	/* GETATTR not permitted to process write-only attrs */
+	if (attrset.bitmap & ((1ULL << FATTR4_TIME_ACCESS_SET) |
+			      (1ULL << FATTR4_TIME_MODIFY_SET))) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
 
 	fattr_fill(ino, &attrset);
 
@@ -531,7 +552,8 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 
 	if ((req_access & ACCESS4_READ) && (mode & MODE4_ROTH))
 		rc |= ACCESS4_READ;
-	else if ((req_access & ACCESS4_LOOKUP) && (mode & MODE4_XOTH))
+	else if ((req_access & ACCESS4_LOOKUP) && (mode & MODE4_XOTH) &&
+		 (ino->type == NF4DIR))
 		rc |= ACCESS4_LOOKUP;
 	else if ((req_access & ACCESS4_MODIFY) && (mode & MODE4_WOTH))
 		rc |= ACCESS4_MODIFY;
@@ -576,6 +598,13 @@ bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
 		ACCESS4_EXTEND |
 		/* ACCESS4_DELETE | */	/* FIXME */
 		ACCESS4_EXECUTE;
+
+	resok->supported &= resok->access;
+
+	if (debugging)
+		syslog(LOG_INFO, "   ACCESS -> (ACC:%x SUP:%x)",
+		       resok->access,
+		       resok->supported);
 
 out:
 	res->status = status;
@@ -670,9 +699,13 @@ static bool_t inode_attr_cmp(const struct nfs_inode *ino,
         if (bitmap & (1ULL << FATTR4_FSID))
 		if ((attr->fsid.major != 1) || (attr->fsid.minor != 0))
 			return FALSE;
-        if (bitmap & (1ULL << FATTR4_FILEHANDLE))
-		if (nfs_fh_decode(&attr->filehandle) != ino->ino)
+        if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
+		nfsino_t fh = 0;
+		if (nfs_fh_decode(&attr->filehandle, &fh) <= 0)
 			return FALSE;
+		if (fh != ino->ino)
+			return FALSE;
+	}
         if (bitmap & (1ULL << FATTR4_FILEID))
 		if (attr->fileid != ino->ino)
 			return FALSE;

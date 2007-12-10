@@ -38,19 +38,23 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	uint64_t new_size;
 	void *mem;
 	struct state_search ss;
+	unsigned int data_len = arg->data.data_len;
 
 	if (debugging)
 		syslog(LOG_INFO, "op WRITE (ID:%x OFS:%Lu ST:%s LEN:%u)",
 		       id,
 		       (unsigned long long) arg->offset,
 		       name_stable_how4[arg->stable],
-		       arg->data.data_len);
+		       data_len);
 
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_WRITE;
 	res = &resop.nfs_resop4_u.opwrite;
 	resok = &res->WRITE4res_u.resok4;
+
+	if (data_len > SRV_MAX_WRITE)
+		data_len = SRV_MAX_WRITE;
 
 	if (id && (id != 0xffffffffU)) {
 		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
@@ -89,15 +93,14 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	if (arg->data.data_len == 0)
+	if (data_len == 0)
 		goto out;
 
-	new_size = arg->offset + arg->data.data_len;
+	new_size = arg->offset + data_len;
 
 	/* write fits entirely within existing data buffer */
 	if (new_size <= ino->size) {
-		memcpy(ino->data + arg->offset, arg->data.data_val,
-		       arg->data.data_len);
+		memcpy(ino->data + arg->offset, arg->data.data_val, data_len);
 	}
 
 	/* new size is larger than old size, enlarge buffer */
@@ -111,9 +114,13 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		ino->data = mem;
 		ino->size = new_size;
 
-		memcpy(ino->data + arg->offset, arg->data.data_val,
-		       arg->data.data_len);
+		memcpy(ino->data + arg->offset, arg->data.data_val, data_len);
 	}
+
+	resok->count = data_len;
+	resok->committed = FILE_SYNC4;
+
+	/* FIXME: write verifier */
 
 out:
 	res->status = status;
@@ -144,6 +151,9 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	resop.resop = OP_READ;
 	res = &resop.nfs_resop4_u.opread;
 	resok = &res->READ4res_u.resok4;
+
+	if (arg->count > SRV_MAX_READ)
+		arg->count = SRV_MAX_READ;
 
 	mem = malloc(arg->count);
 	if (!mem) {

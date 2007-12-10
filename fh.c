@@ -22,7 +22,7 @@ static void nfs_fh_free(nfs_fh4 *fh)
 	}
 }
 
-nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in)
+int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out)
 {
 	nfsino_t *fhp;
 	nfsino_t fh;
@@ -37,9 +37,10 @@ nfsino_t nfs_fh_decode(const nfs_fh4 *fh_in)
 	fh = GUINT32_FROM_BE(*fhp);
 
 	if (!inode_get(fh))
-		return 0;
+		return -1;
 
-	return fh;
+	*fh_out = fh;
+	return 1;
 }
 
 void nfs_getfh_free(GETFH4res *opgetfh)
@@ -82,26 +83,24 @@ bool_t nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
 	nfsstat4 status = NFS4_OK;
-	nfsino_t fh;
+	nfsino_t fh = 0;
+	int rc;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_PUTFH;
 	res = &resop.nfs_resop4_u.opputfh;
 
-	fh = nfs_fh_decode(&arg->object);
-	if (!fh) {
-		if (debugging)
-			syslog(LOG_INFO, "op PUTFH (BAD)");
+	rc = nfs_fh_decode(&arg->object, &fh);
+	if (rc == 0)
 		status = NFS4ERR_BADHANDLE;
-		goto out;
-	}
+	else if (rc < 0)
+		status = NFS4ERR_STALE;
+	else
+		cxn->current_fh = fh;
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTFH (%u)", fh);
 
-	cxn->current_fh = fh;
-
-out:
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }

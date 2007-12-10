@@ -20,10 +20,7 @@ nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
 		goto out;
 	}
 	if (ino->type != NF4DIR) {
-		if (ino->type == NF4LNK)
-			status = NFS4ERR_SYMLINK;
-		else
-			status = NFS4ERR_NOTDIR;
+		status = NFS4ERR_NOTDIR;
 		goto out;
 	}
 
@@ -276,6 +273,10 @@ bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
+	if (has_dots(&arg->target)) {
+		status = NFS4ERR_BADNAME;
+		goto out;
+	}
 
 	/* reference container directory */
 	status = dir_curfh(cxn, &dir_ino);
@@ -306,7 +307,7 @@ bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 	/* prevent removal of non-empty dirs */
 	if ((target_ino->type == NF4DIR) &&
 	    (g_hash_table_size(target_ino->u.dir) > 0)) {
-		status = NFS4ERR_INVAL;
+		status = NFS4ERR_NOTEMPTY;
 		goto out_name;
 	}
 
