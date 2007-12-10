@@ -178,10 +178,9 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 		syslog(LOG_ERR, "unable to free arguments");
 		exit (1);
 	}
-	if (!nfs4_program_4_freeresult (transp, _xdr_result, &result))
-		syslog(LOG_ERR, "unable to free results");
-
-	return;
+	if (rqstp->rq_proc == NFSPROC4_COMPOUND)
+		if (!nfs4_program_4_freeresult (transp, _xdr_result, &result))
+			syslog(LOG_ERR, "unable to free results");
 }
 
 /* Linux is missing this prototype */
