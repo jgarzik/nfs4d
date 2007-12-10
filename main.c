@@ -28,6 +28,7 @@ enum {
 
 struct timeval current_time;
 GList *client_list = NULL;
+int debugging = 0;
 struct nfs_server srv;
 static gboolean opt_foreground;
 static unsigned int opt_nfs_port = 2049;
@@ -36,6 +37,8 @@ static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
 
 static struct argp_option options[] = {
+	{ "debug", 'd', NULL, 0,
+	  "Enable debug output" },
 	{ "foreground", 'f', NULL, 0,
 	  "Run daemon in foreground" },
 	{ "port", 'p', "PORT", 0,
@@ -231,6 +234,9 @@ static int init_server(void)
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
 	switch (key) {
+	case 'd':
+		debugging = 1;
+		break;
 	case 'f':
 		opt_foreground = TRUE;
 		break;

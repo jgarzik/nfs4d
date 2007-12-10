@@ -13,6 +13,9 @@ static const char *name_open_claim_type4[] = {
 
 static void print_open_args(OPEN4args *args)
 {
+	if (!debugging)
+		return;
+
 	syslog(LOG_INFO, "op OPEN ('%.*s')",
 	       args->claim.open_claim4_u.file.utf8string_len,
 	       args->claim.open_claim4_u.file.utf8string_val);
@@ -60,8 +63,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	struct nfs_state *st;
 	int creating;
 
-	if (debugging)
-		print_open_args(args);
+	print_open_args(args);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_OPEN;
@@ -191,7 +193,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	status = NFS4_OK;
 	cxn->current_fh = ino->ino;
 
-	syslog(LOG_INFO, "   OPEN -> (SEQ:%x)", st->id);
+	if (debugging)
+		syslog(LOG_INFO, "   OPEN -> (SEQ:%x)", st->id);
 
 out:
 	res->status = status;

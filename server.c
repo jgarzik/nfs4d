@@ -14,8 +14,6 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
-int debugging = 1;
-
 const char *name_nfs_ftype4[] = {
 	[NF4REG] = "NF4REG",
 	[NF4DIR] = "NF4DIR",
