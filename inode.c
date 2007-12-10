@@ -8,18 +8,6 @@
 
 static nfsino_t next_ino = INO_RESERVED_LAST + 1;
 
-static const char *name_nfs_ftype4[] = {
-	[NF4REG] = "NF4REG",
-	[NF4DIR] = "NF4DIR",
-	[NF4BLK] = "NF4BLK",
-	[NF4CHR] = "NF4CHR",
-	[NF4LNK] = "NF4LNK",
-	[NF4SOCK] = "NF4SOCK",
-	[NF4FIFO] = "NF4FIFO",
-	[NF4ATTRDIR] = "NF4ATTRDIR",
-	[NF4NAMEDATTR] = "NF4NAMEDATTR",
-};
-
 struct nfs_inode *inode_get(nfsino_t inum)
 {
 	g_assert(srv.inode_table != NULL);

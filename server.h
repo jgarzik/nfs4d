@@ -208,6 +208,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
 bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 
 /* server.c */
+extern const char *name_nfs_ftype4[];
+
 bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 bool_t valid_utf8string(utf8string *str);
 char *copy_utf8string(utf8string *str);
