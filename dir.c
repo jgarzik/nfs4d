@@ -84,6 +84,11 @@ bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 	resop.resop = OP_LOOKUP;
 	res = &resop.nfs_resop4_u.oplookup;
 
+	if (arg->objname.utf8string_len > SRV_MAX_NAME) {
+		status = NFS4ERR_NAMETOOLONG;
+		goto out;
+	}
+
 	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
@@ -196,6 +201,10 @@ bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
+	if (arg->newname.utf8string_len > SRV_MAX_NAME) {
+		status = NFS4ERR_NAMETOOLONG;
+		goto out;
+	}
 
 	dir_ino = inode_get(cxn->current_fh);
 	if (!dir_ino) {
@@ -257,6 +266,11 @@ bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 	resop.resop = OP_REMOVE;
 	res = &resop.nfs_resop4_u.opremove;
 	resok = &res->REMOVE4res_u.resok4;
+
+	if (arg->target.utf8string_len > SRV_MAX_NAME) {
+		status = NFS4ERR_NAMETOOLONG;
+		goto out;
+	}
 
 	if (!valid_utf8string(&arg->target)) {
 		status = NFS4ERR_INVAL;
