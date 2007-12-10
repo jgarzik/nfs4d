@@ -534,11 +534,6 @@ err_out:
 	goto out;
 }
 
-void nfs_getattr_free(GETATTR4res *res)
-{
-	/* FIXME */
-}
-
 unsigned int inode_access(const struct nfs_cxn *cxn,
 			  const struct nfs_inode *ino, unsigned int req_access)
 {

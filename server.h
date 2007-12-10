@@ -156,7 +156,6 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres);
 bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 		      COMPOUND4res *cres);
-void nfs_getattr_free(GETATTR4res *res);
 bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify);
 struct nfs_inode *inode_new_file(void);

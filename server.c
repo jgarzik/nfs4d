@@ -425,16 +425,22 @@ static void nfs_free(nfs_resop4 *res)
 		free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
 		break;
 	case OP_GETATTR:
-		nfs_getattr_free(&res->nfs_resop4_u.opgetattr);
+		fattr4_free(&res->nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes);
 		break;
 	case OP_GETFH:
 		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
+		break;
+	case OP_OPEN:
+		free(res->nfs_resop4_u.opopen.OPEN4res_u.resok4.attrset.bitmap4_val);
 		break;
 	case OP_READ:
 		free(res->nfs_resop4_u.opread.READ4res_u.resok4.data.data_val);
 		break;
 	case OP_READDIR:
 		nfs_readdir_free(&res->nfs_resop4_u.opreaddir);
+		break;
+	case OP_READLINK:
+		free(res->nfs_resop4_u.opreadlink.READLINK4res_u.resok4.link.utf8string_val);
 		break;
 	case OP_SETATTR:
 		free(res->nfs_resop4_u.opsetattr.attrsset.bitmap4_val);

@@ -452,7 +452,20 @@ void fattr_free(struct nfs_fattr_set *attr)
 
 void fattr4_free(fattr4 *attr)
 {
-	/* FIXME */
+	if (!attr)
+		return;
+
+	if (attr->attrmask.bitmap4_val) {
+		free(attr->attrmask.bitmap4_val);
+		attr->attrmask.bitmap4_val = NULL;
+		attr->attrmask.bitmap4_len = 0;
+	}
+
+	if (attr->attr_vals.attrlist4_val) {
+		free(attr->attr_vals.attrlist4_val);
+		attr->attr_vals.attrlist4_val = NULL;
+		attr->attr_vals.attrlist4_len = 0;
+	}
 }
 
 static void fattr_fill_server(struct nfs_fattr_set *attr)
