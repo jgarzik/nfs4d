@@ -380,7 +380,7 @@ static void print_create_args(CREATE4args *arg)
 	switch (arg->objtype.type) {
 	case NF4BLK:
 	case NF4CHR:
-		syslog(LOG_INFO, "op CREATE (%s, %.*s, %u %u)", 
+		syslog(LOG_INFO, "op CREATE (%s, '%.*s', %u %u)",
 		       name_nfs_ftype4[arg->objtype.type],
 		       arg->objname.utf8string_len,
 		       arg->objname.utf8string_val,
@@ -388,7 +388,7 @@ static void print_create_args(CREATE4args *arg)
 		       arg->objtype.createtype4_u.devdata.specdata2);
 		break;
 	case NF4LNK:
-		syslog(LOG_INFO, "op CREATE (%s, %.*s, %.*s)", 
+		syslog(LOG_INFO, "op CREATE (%s, '%.*s', '%.*s')",
 		       name_nfs_ftype4[arg->objtype.type],
 		       arg->objname.utf8string_len,
 		       arg->objname.utf8string_val,
@@ -396,7 +396,7 @@ static void print_create_args(CREATE4args *arg)
 		       arg->objtype.createtype4_u.linkdata.utf8string_val);
 		break;
 	default:
-		syslog(LOG_INFO, "op CREATE (%s, %.*s)", 
+		syslog(LOG_INFO, "op CREATE (%s, '%.*s')",
 		       name_nfs_ftype4[arg->objtype.type],
 		       arg->objname.utf8string_len,
 		       arg->objname.utf8string_val);
@@ -559,7 +559,8 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 		rc |= ACCESS4_MODIFY;
 	else if ((req_access & ACCESS4_EXTEND) && (mode & MODE4_WOTH))
 		rc |= ACCESS4_EXTEND;
-	else if ((req_access & ACCESS4_EXECUTE) && (mode & MODE4_XOTH))
+	else if ((req_access & ACCESS4_EXECUTE) && (mode & MODE4_XOTH) &&
+		 (ino->type != NF4DIR))
 		rc |= ACCESS4_EXECUTE;
 
 	/* FIXME: check ACCESS4_DELETE */
@@ -591,7 +592,7 @@ bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
 	}
 
 	resok->access = inode_access(cxn, ino, arg->access);
-	resok->supported = 
+	resok->supported =
 		ACCESS4_READ |
 		ACCESS4_LOOKUP |
 		ACCESS4_MODIFY |

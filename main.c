@@ -67,7 +67,7 @@ static void init_rng(void)
 	bytes = read(fd, &v, sizeof(v));
 	if (bytes < 0)
 		slerror("/dev/random read");
-		
+
 	close(fd);
 
 	if (bytes < sizeof(v))
@@ -261,7 +261,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			argp_usage(state);
 		}
 		break;
-	
+
 	case ARGP_KEY_ARG:
 		argp_usage(state);	/* too many args */
 		break;

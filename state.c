@@ -11,6 +11,9 @@ unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 	const unsigned char *buf = _buf;
 	int c;
 
+	if (!buf)
+		return hash;
+
 	while (buflen > 0) {
 		c = *buf++;
 		buflen--;
@@ -23,6 +26,8 @@ unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 
 static guint blob_hash_for_key(const struct blob *b)
 {
+	if (!b)
+		return BLOB_HASH_INIT;
 	return blob_hash(BLOB_HASH_INIT, b->buf, b->len);
 }
 
@@ -135,7 +140,7 @@ static void clientid_free(struct nfs_clientid *id)
 {
 	if (!id)
 		return;
-	
+
 	free(id->id.buf);
 	free_cb_client4(&id->callback);
 	free(id);
@@ -262,7 +267,7 @@ static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	rc = clientid_new(cli, cxn, args, &clid);
 	if (rc)
 		goto err_out_st;
-	
+
 	/* add to state's client-id pending list */
 	cli->pending = g_list_prepend(cli->pending, clid);
 
@@ -301,7 +306,7 @@ static gboolean callback_equal(struct nfs_client *cli, cb_client4 *cb,
 	if (strcmp(clid->callback.cb_location.r_addr,
 		   cb->cb_location.r_addr))
 		return FALSE;
-	
+
 	return TRUE;
 }
 

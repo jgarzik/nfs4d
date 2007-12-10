@@ -541,6 +541,9 @@ void print_fattr_bitmap(const char *pfx, uint64_t bitmap)
 {
 	char buf[4096];
 
+	if (!bitmap)
+		return;
+
 	sprintf(buf, "%s: ", pfx);
 
 #include "fattr.h"

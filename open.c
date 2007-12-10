@@ -13,7 +13,7 @@ static const char *name_open_claim_type4[] = {
 
 static void print_open_args(OPEN4args *args)
 {
-	syslog(LOG_INFO, "op OPEN (NAME:%.*s)",
+	syslog(LOG_INFO, "op OPEN ('%.*s')",
 	       args->claim.open_claim4_u.file.utf8string_len,
 	       args->claim.open_claim4_u.file.utf8string_val);
 
@@ -151,7 +151,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 			goto out;
 		}
 
-		status = inode_add(dir_ino, ino, 
+		status = inode_add(dir_ino, ino,
 		   &args->openhow.openflag4_u.how.createhow4_u.createattrs,
 		   &args->claim.open_claim4_u.file,
 		   &resok->attrset, &resok->cinfo);
@@ -163,6 +163,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	if (ino->type != NF4REG) {
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
+		else if (ino->type == NF4LNK)
+			status = NFS4ERR_SYMLINK;
 		else
 			status = NFS4ERR_INVAL;
 		goto out;
@@ -220,7 +222,7 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	id = GUINT32_FROM_LE(arg->open_stateid.seqid);
 	if (id) {
 		struct nfs_state *st;
-		
+
 		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
 		if (!st) {
 			status = NFS4ERR_STALE_STATEID;

@@ -71,11 +71,7 @@ bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_dirent *dirent;
-
-	if (debugging)
-		syslog(LOG_INFO, "op LOOKUP (%.*s)",
-		       arg->objname.utf8string_len,
-		       arg->objname.utf8string_val);
+	gboolean printed = FALSE;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOOKUP;
@@ -96,7 +92,22 @@ bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 
 	cxn->current_fh = dirent->ino;
 
+	if (debugging) {
+		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
+		       arg->objname.utf8string_len,
+		       arg->objname.utf8string_val,
+		       cxn->current_fh);
+		printed = TRUE;
+	}
+
 out:
+	if (!printed) {
+		if (debugging)
+			syslog(LOG_INFO, "op LOOKUP ('%.*s')",
+			       arg->objname.utf8string_len,
+			       arg->objname.utf8string_val);
+	}
+
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
@@ -255,7 +266,7 @@ bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 	gchar *name;
 
 	if (debugging)
-		syslog(LOG_INFO, "op REMOVE (%.*s)",
+		syslog(LOG_INFO, "op REMOVE ('%.*s')",
 		       arg->target.utf8string_len,
 		       arg->target.utf8string_val);
 
@@ -510,6 +521,10 @@ static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
 		goto err_out;
 	}
 
+	if (debugging)
+		syslog(LOG_INFO, "   READDIR entry: '%s'",
+		       ent->name.utf8string_val);
+
 	memset(&attrset, 0, sizeof(attrset));
 	attrset.bitmap = bitmap;
 
@@ -636,10 +651,15 @@ bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
 	struct readdir_info ri;
 
 	if (debugging) {
-		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u)",
+		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u MAP:%x %x)",
 		       (unsigned long long) args->cookie,
 		       args->dircount,
-		       args->maxcount);
+		       args->maxcount,
+		       args->attr_request.bitmap4_len > 0 ?
+				args->attr_request.bitmap4_val[0] : 0,
+		       args->attr_request.bitmap4_len > 1 ?
+				args->attr_request.bitmap4_val[1] : 0);
+
 		print_fattr_bitmap("op READDIR",
 				   get_bitmap(&args->attr_request));
 	}
