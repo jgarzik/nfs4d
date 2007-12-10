@@ -115,18 +115,6 @@ static int init_sock(void)
 	return sock;
 }
 
-static enum auth_stat check_auth(struct svc_req *rqstp)
-{
-	switch (rqstp->rq_cred.oa_flavor) {
-	case AUTH_SYS:
-		return AUTH_OK;
-	default:
-		return AUTH_TOOWEAK;
-	}
-
-	return AUTH_FAILED;	/* never reached; kill warning */
-}
-
 static void
 nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 {
@@ -135,7 +123,6 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 	bool_t retval;
 	xdrproc_t _xdr_argument, _xdr_result;
 	bool_t (*local)(char *, void *, struct svc_req *);
-	enum auth_stat auth_stat;
 	struct timezone tz = { 0, 0 };
 
 	switch (rqstp->rq_proc) {
@@ -163,13 +150,7 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 
 	gettimeofday(&current_time, &tz);
 
-	auth_stat = check_auth(rqstp);
-	if (auth_stat != AUTH_OK) {
-		retval = FALSE;
-		svcerr_auth(transp, auth_stat);
-	} else
-		retval = (bool_t) (*local)((char *)&argument,
-					   (void *)&result, rqstp);
+	retval = (bool_t) (*local)((char *)&argument, (void *)&result, rqstp);
 
 	if (retval > 0 && !svc_sendreply(transp, (xdrproc_t) _xdr_result, (char *)&result)) {
 		svcerr_systemerr (transp);

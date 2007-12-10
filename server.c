@@ -160,11 +160,75 @@ int set_bitmap(guint64 map_in, bitmap4 *map_out)
 	return 0;
 }
 
-static struct nfs_cxn *cli_init(struct svc_req *rqstp)
+int cxn_getuid(const struct nfs_cxn *cxn)
+{
+	switch (cxn->auth.type) {
+	case auth_none:
+		return SRV_UID_NOBODY;
+	case auth_unix:
+		if (cxn->auth.u.up)
+			return cxn->auth.u.up->aup_uid;
+		break;
+	}
+
+	return -EINVAL;
+}
+
+int cxn_getgid(const struct nfs_cxn *cxn)
+{
+	switch (cxn->auth.type) {
+	case auth_none:
+		return SRV_GID_NOBODY;
+	case auth_unix:
+		if (cxn->auth.u.up)
+			return cxn->auth.u.up->aup_gid;
+		break;
+	}
+
+	return -EINVAL;
+}
+
+static nfsstat4 cli_init(struct svc_req *rqstp, struct nfs_cxn **cxn_out)
 {
 	struct nfs_cxn *cxn = calloc(1, sizeof(struct nfs_cxn));
+	nfsstat4 status = NFS4_OK;
 
-	return cxn;
+	if (!cxn) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	switch (rqstp->rq_cred.oa_flavor) {
+	case AUTH_NONE:
+		syslog(LOG_INFO, "AUTH_NONE");
+		cxn->auth.type = auth_none;
+		break;
+	
+	case AUTH_SYS:
+		if (!rqstp->rq_cred.oa_base || !rqstp->rq_cred.oa_length) {
+			syslog(LOG_INFO, "AUTH_SYS null");
+			status = NFS4ERR_DENIED;
+			goto err_out;
+		}
+
+		cxn->auth.type = auth_unix;
+		cxn->auth.u.up =
+			(struct authunix_parms *) rqstp->rq_cred.oa_base;
+		break;
+
+	default:
+		syslog(LOG_INFO, "AUTH unknown");
+		status = NFS4ERR_DENIED;
+		goto err_out;
+	}
+
+out:
+	*cxn_out = cxn;
+	return status;
+
+err_out:
+	free(cxn);
+	goto out;
 }
 
 static void cli_free(struct nfs_cxn *cxn)
@@ -225,6 +289,59 @@ static bool_t nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
 	resok->link.utf8string_val = linktext;
 
 out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+static bool_t nfs_op_secinfo(struct nfs_cxn *cxn, SECINFO4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	SECINFO4res *res;
+	SECINFO4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	secinfo4 *val;
+	gboolean printed = FALSE;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_SECINFO;
+	res = &resop.nfs_resop4_u.opsecinfo;
+	resok = &res->SECINFO4res_u.resok4;
+
+	if (!cxn->current_fh) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	val = calloc(1, sizeof(secinfo4));
+	if (!val) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	switch (cxn->auth.type) {
+	case auth_none:
+		val->flavor = AUTH_NONE;
+		break;
+	case auth_unix:
+		val->flavor = AUTH_SYS;
+		break;
+	}
+
+	resok->SECINFO4resok_len = 1;
+	resok->SECINFO4resok_val = val;
+
+	if (debugging) {
+		syslog(LOG_INFO, "op SECINFO -> AUTH_%s",
+		       (val->flavor == AUTH_NONE) ? "NONE" : "SYS");
+		printed = TRUE;
+	}
+
+out:
+	if (!printed) {
+		if (debugging)
+			syslog(LOG_INFO, "op SECINFO");
+	}
+
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }
@@ -331,6 +448,8 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_restorefh(cxn, res);
 	case OP_SAVEFH:
 		return nfs_op_savefh(cxn, res);
+	case OP_SECINFO:
+		return nfs_op_secinfo(cxn, &arg->nfs_argop4_u.opsecinfo, res);
 	case OP_SETATTR:
 		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, res);
 	case OP_SETCLIENTID:
@@ -353,7 +472,6 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
 	case OP_RENEW:
-	case OP_SECINFO:
 	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
 		if (debugging)
@@ -390,11 +508,9 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 		goto out;
 	}
 
-	cxn = cli_init(rqstp);
-	if (!cxn) {
-		res->status = NFS4ERR_RESOURCE;
+	res->status = cli_init(rqstp, &cxn);
+	if (res->status != NFS4_OK)
 		goto out;
-	}
 
 	for (i = 0; i < arg->argarray.argarray_len; i++)
 		if (!nfs_arg(cxn, &arg->argarray.argarray_val[i], res)) {
@@ -441,6 +557,9 @@ static void nfs_free(nfs_resop4 *res)
 		break;
 	case OP_READLINK:
 		free(res->nfs_resop4_u.opreadlink.READLINK4res_u.resok4.link.utf8string_val);
+		break;
+	case OP_SECINFO:
+		free(res->nfs_resop4_u.opsecinfo.SECINFO4res_u.resok4.SECINFO4resok_val);
 		break;
 	case OP_SETATTR:
 		free(res->nfs_resop4_u.opsetattr.attrsset.bitmap4_val);

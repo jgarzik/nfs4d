@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <sys/time.h>
 #include <glib.h>
+#include <rpc/auth.h>
 #include "nfs4_prot.h"
 
 struct nfs_client;
@@ -23,6 +24,9 @@ enum server_limits {
 	SRV_MAX_NAME		= 512,		/* max pathname length */
 	SRV_MAX_READ		= 1024 * 128,	/* max contig. read */
 	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
+
+	SRV_UID_NOBODY		= 65537,	/* arbitrary >64K number */
+	SRV_GID_NOBODY		= 65537,	/* arbitrary >64K number */
 };
 
 enum server_fs_settings {
@@ -48,13 +52,24 @@ struct blob {
 	void			*buf;
 };
 
+enum cxn_auth_type {
+	auth_none,
+	auth_unix
+};
+
+struct cxn_auth {
+	enum cxn_auth_type		type;
+
+	union {
+		struct authunix_parms	*up;
+	} u;
+};
+
 struct nfs_cxn {
 	nfsino_t		current_fh;
 	nfsino_t		save_fh;
 
-	/* RPC credentials */
-	uint32_t		uid;
-	uint32_t		gid;
+	struct cxn_auth		auth;		/* RPC creds */
 };
 
 struct nfs_state {
@@ -211,6 +226,8 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 
 /* server.c */
 extern const char *name_nfs_ftype4[];
+extern int cxn_getuid(const struct nfs_cxn *cxn);
+extern int cxn_getgid(const struct nfs_cxn *cxn);
 
 extern bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 extern bool_t valid_utf8string(utf8string *str);

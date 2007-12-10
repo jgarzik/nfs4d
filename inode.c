@@ -539,10 +539,16 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 {
 	unsigned int mode = ino->mode & 0x7;
 	unsigned int rc = 0;
+	int uid, gid;
 
-	if (cxn->uid == ino->uid)
+	uid = cxn_getuid(cxn);
+	gid = cxn_getgid(cxn);
+	if ((uid < 0) || (gid < 0))
+		return 0;
+
+	if (uid == ino->uid)
 		mode |= (ino->mode >> 6) & 0x7;
-	if (cxn->gid == ino->gid)
+	if (gid == ino->gid)
 		mode |= (ino->mode >> 3) & 0x7;
 
 	if ((req_access & ACCESS4_READ) && (mode & MODE4_ROTH))
