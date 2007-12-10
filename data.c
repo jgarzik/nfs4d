@@ -62,6 +62,11 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 			status = NFS4ERR_STALE_STATEID;
 			goto out;
 		}
+
+		if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
+			status = NFS4ERR_OPENMODE;
+			goto out;
+		}
 	}
 
 	ino = inode_get(cxn->current_fh);
@@ -167,6 +172,11 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 		if (!st) {
 			status = NFS4ERR_STALE_STATEID;
 			goto out_mem;
+		}
+
+		if (!(st->share_ac & OPEN4_SHARE_ACCESS_READ)) {
+			status = NFS4ERR_OPENMODE;
+			goto out;
 		}
 	}
 
