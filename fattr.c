@@ -115,30 +115,26 @@ const uint64_t fattr_supported_mask =
 #define WRITE32(val)					\
 	do {						\
 		GROW_ATTR_BUF(4);			\
-		*p = GUINT32_TO_BE(val);		\
-		p++;					\
+		*p++ = GUINT32_TO_BE(val);		\
 		buflen -= 4;				\
 	} while (0)
 
 #define WRITE64(val)					\
 	do {						\
 		GROW_ATTR_BUF(8);			\
-		*(uint64_t *)p = GUINT64_TO_BE(val);	\
-		p++;					\
+		*p++ = GUINT32_TO_BE(val);		\
+		*p++ = GUINT32_TO_BE((val) >> 32);	\
 		buflen -= 8;				\
 	} while (0)
 
 #define WRITEMEM(membuf, memlen)			\
 	do {						\
 		unsigned int ql = XDR_QUADLEN(memlen);	\
-		unsigned int pad = (ql << 2) - memlen;	\
-		char *ptmp = (char *) p;		\
-		GROW_ATTR_BUF(ql);			\
-		memcpy(ptmp, membuf, memlen);		\
-		memset(ptmp + memlen, 0, pad);		\
-		ptmp += ql;				\
-		buflen -= ql;				\
-		p = (uint32_t *) ptmp;			\
+		GROW_ATTR_BUF((ql + 1) * 4);		\
+		*(p + ql - 1) = 0;			\
+		memcpy(p, membuf, memlen);		\
+		p += ql;				\
+		buflen -= (ql * 4);			\
 	} while (0)
 
 static void encode_utf8(utf8string *s, uint32_t **base_out,
@@ -222,6 +218,8 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 	if (!buf)
 		return FALSE;
 	buflen = alloc_len;
+
+	memset(buf, 0xffffffff, alloc_len);
 
 	p = buf;
 
