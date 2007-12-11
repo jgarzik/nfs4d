@@ -427,6 +427,8 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_access(cxn, &arg->nfs_argop4_u.opaccess, res);
 	case OP_CLOSE:
 		return nfs_op_close(cxn, &arg->nfs_argop4_u.opclose, res);
+	case OP_COMMIT:
+		return nfs_op_commit(cxn, &arg->nfs_argop4_u.opcommit, res);
 	case OP_CREATE:
 		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, res);
 	case OP_GETATTR:
@@ -480,7 +482,6 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 	case OP_VERIFY:
 		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, res, 0);
 
-	case OP_COMMIT:
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
 	case OP_LOCK:

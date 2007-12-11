@@ -201,6 +201,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   change_info4 *cinfo);
 
 /* data.c */
+extern bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);
 extern bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres);
 extern bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres);
 

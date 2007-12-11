@@ -26,6 +26,51 @@ static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
 	}
 }
 
+bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	COMMIT4res *res;
+	COMMIT4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_COMMIT;
+	res = &resop.nfs_resop4_u.opcommit;
+	resok = &res->COMMIT4res_u.resok4;
+
+	if (debugging)
+		syslog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%u)",
+		       (unsigned long long) arg->offset,
+		       arg->count);
+
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	/* we only support writing to regular files */
+	if (ino->type != NF4REG) {
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	if ((uint64_t) arg->count > ~(uint64_t)arg->offset) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	memcpy(&resok->writeverf, srv.instance_verf, sizeof(srv.instance_verf));
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -47,7 +92,6 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		       (unsigned long long) arg->offset,
 		       name_stable_how4[arg->stable],
 		       data_len);
-
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_WRITE;
