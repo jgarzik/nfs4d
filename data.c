@@ -381,6 +381,18 @@ bool_t nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
+	/* we only support reading from regular files */
+	if (ino->type != NF4REG) {
+		if (debugging)
+			syslog(LOG_INFO, "trying to lock file of type %s",
+			       name_nfs_ftype4[ino->type]);
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
+		goto out;
+	}
+
 	find_locks(ino->ino, arg->locktype, arg->offset, arg->length, &locks);
 
 	if (locks == NULL)

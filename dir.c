@@ -42,7 +42,10 @@ nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
 		goto out;
 	}
 	if (ino->type != NF4DIR) {
-		status = NFS4ERR_NOTDIR;
+		if (ino->type == NF4LNK)
+			status = NFS4ERR_SYMLINK;
+		else
+			status = NFS4ERR_NOTDIR;
 		goto out;
 	}
 
@@ -61,8 +64,13 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 	if (dirent_out)
 		*dirent_out = NULL;
 
-	if (dir_ino->type != NF4DIR)
+	if (!dir_ino->mode)
+		return NFS4ERR_ACCESS;
+	if (dir_ino->type != NF4DIR) {
+		if (dir_ino->type == NF4LNK)
+			return NFS4ERR_SYMLINK;
 		return NFS4ERR_NOTDIR;
+	}
 	if (!valid_utf8string(str))
 		return NFS4ERR_INVAL;
 	if (has_dots(str))
