@@ -1,18 +1,27 @@
 
+#define _GNU_SOURCE
+#include <string.h>
 #include <syslog.h>
 #include "server.h"
 
 static const char *name_stable_how4[] = {
-	[UNSTABLE4] = "UNSTABLE4",
-	[DATA_SYNC4] = "DATA_SYNC4",
-	[FILE_SYNC4] = "FILE_SYNC4",
+	[UNSTABLE4]		= "UNSTABLE4",
+	[DATA_SYNC4]		= "DATA_SYNC4",
+	[FILE_SYNC4]		= "FILE_SYNC4",
+};
+
+static const char *name_lock_type4[] = {
+	[READ_LT]		= "READ_LT",
+	[WRITE_LT]		= "WRITE_LT",
+	[READW_LT]		= "READW_LT",
+	[WRITEW_LT]		= "WRITEW_LT",
 };
 
 struct state_search {
-	gboolean match;
-	nfsino_t ino;
-	uint32_t share_dn;
-	struct nfs_state *st;
+	gboolean		match;
+	nfsino_t		ino;
+	uint32_t		share_dn;
+	struct nfs_state	*st;
 };
 
 static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
@@ -120,8 +129,9 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 
 	/* we only support writing to regular files */
 	if (ino->type != NF4REG) {
-		syslog(LOG_INFO, "trying to write to file of type %s",
-		       name_nfs_ftype4[ino->type]);
+		if (debugging)
+			syslog(LOG_INFO, "trying to write to file of type %s",
+			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
 		else
@@ -276,3 +286,271 @@ out_mem:
 	free(mem);
 	goto out;
 }
+
+static bool_t ranges_intersect(uint64_t a_ofs, uint64_t a_len,
+			       uint64_t b_ofs, uint64_t b_len)
+{
+	if (a_ofs < b_ofs) {
+		if ((a_ofs + a_len) < b_ofs)
+			return FALSE;
+	} else {
+		if ((b_ofs + b_len) < a_ofs)
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+struct state_search_lock {
+	nfsino_t ino;
+	nfs_lock_type4 type;
+	offset4 ofs;
+	length4 len;
+
+	GList *list;
+};
+
+static void state_search_lock(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct state_search_lock *ss = user_data;
+
+	if (st->ino != ss->ino)
+		return;
+	if (!(st->flags & stfl_lock))
+		return;
+
+	if (!ranges_intersect(st->lock_ofs, st->lock_len, ss->ofs, ss->len))
+		return;
+
+	if (st->locktype != ss->type)
+		return;
+
+	ss->list = g_list_append(ss->list, st);
+}
+
+static void find_locks(nfsino_t ino, nfs_lock_type4 type, offset4 ofs,
+		       length4 len, GList **list_out)
+{
+	struct state_search_lock ss = { ino, type, ofs, len };
+
+	g_hash_table_foreach(srv.state, state_search_lock, &ss);
+
+	*list_out = ss.list;
+}
+
+static void fill_lock_denied(LOCK4denied *denied, GList *locks)
+{
+	GList *tmp = locks;
+	struct nfs_state *st;
+
+	while (tmp) {
+		st = tmp->data;
+
+		denied->offset = st->lock_ofs;
+		denied->length = st->lock_len;
+		denied->locktype = st->locktype;
+
+		/* FIXME: fill in lock_owner */
+
+		tmp = tmp->next;
+	}
+}
+
+bool_t nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	LOCKT4res *res;
+	nfsstat4 status = NFS4_OK;
+	GList *locks = NULL;
+	struct nfs_inode *ino;
+
+	if (debugging)
+		syslog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%lu)",
+		       name_lock_type4[arg->locktype],
+		       (unsigned long long) arg->offset,
+		       (unsigned long) arg->length);
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_LOCKT;
+	res = &resop.nfs_resop4_u.oplockt;
+
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	find_locks(ino->ino, arg->locktype, arg->offset, arg->length, &locks);
+
+	if (locks == NULL)
+		goto out;
+
+	fill_lock_denied(&res->LOCKT4res_u.denied, locks);
+
+	g_list_free(locks);
+
+	status = NFS4ERR_DENIED;
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	LOCK4res *res;
+	LOCK4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_inode *ino;
+	struct nfs_state *st;
+	struct nfs_client *cli;
+	struct nfs_stateid *sid;
+	GList *locks = NULL;
+	uint32_t seqid;
+
+	if (debugging)
+		syslog(LOG_INFO, "op LOCK (TYP:%s REC:%s OFS:%Lu LEN:%lu)",
+		       name_lock_type4[arg->locktype],
+		       arg->reclaim ? "YES" : "NO",
+		       (unsigned long long) arg->offset,
+		       (unsigned long) arg->length);
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_LOCK;
+	res = &resop.nfs_resop4_u.oplock;
+	resok = &res->LOCK4res_u.resok4;
+
+	if (arg->locker.new_lock_owner)
+		seqid = arg->locker.locker4_u.open_owner.lock_seqid;
+	else
+		seqid = arg->locker.locker4_u.lock_owner.lock_seqid;
+
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	/* we only support reading from regular files */
+	if (ino->type != NF4REG) {
+		if (debugging)
+			syslog(LOG_INFO, "trying to lock file of type %s",
+			       name_nfs_ftype4[ino->type]);
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	find_locks(ino->ino, arg->locktype, arg->offset, arg->length, &locks);
+
+	if (locks) {
+		fill_lock_denied(&res->LOCK4res_u.denied, locks);
+		g_list_free(locks);
+		status = NFS4ERR_DENIED;
+		goto out;
+	}
+
+	/* FIXME: lock update not supported yet */
+	if (!arg->locker.new_lock_owner) {
+		status = NFS4ERR_NOTSUPP;
+		goto out;
+	}
+
+	/*
+	 * look up shorthand client id (clientid4) for new lock owner
+	 */
+	cli = g_hash_table_lookup(srv.clid_idx,
+		&arg->locker.locker4_u.open_owner.lock_owner.clientid);
+	if (!cli) {
+		status = NFS4ERR_BADOWNER;
+		goto out;
+	}
+	if (!cli->id) {
+		status = NFS4ERR_STALE_CLIENTID;
+		goto out;
+	}
+
+	st = calloc(1, sizeof(struct nfs_state));
+	if (!st) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	st->cli = cli;
+	st->flags = stfl_lock;
+	st->id = gen_stateid();
+	st->owner =
+	  strndup(arg->locker.locker4_u.open_owner.lock_owner.owner.owner_val,
+	          arg->locker.locker4_u.open_owner.lock_owner.owner.owner_len);
+
+	st->ino = ino->ino;
+
+	st->locktype = arg->locktype;
+	st->lock_ofs = arg->offset;
+	st->lock_len = arg->length;
+
+	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
+
+	sid = (struct nfs_stateid *) &resok->lock_stateid;
+	sid->seqid = seqid + 1;
+	sid->id = GUINT32_TO_LE(st->id);
+	memcpy(&sid->server_verf, &srv.instance_verf,
+	       sizeof(srv.instance_verf));
+
+	status = NFS4_OK;
+
+	if (debugging)
+		syslog(LOG_INFO, "   LOCK -> (SEQ:%u ID:%x)",
+		       sid->seqid, st->id);
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
+bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	LOCKU4res *res;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->lock_stateid;
+	uint32_t id = GUINT32_FROM_LE(sid->id);
+	struct nfs_state *st = NULL;
+	
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_LOCKU;
+	res = &resop.nfs_resop4_u.oplocku;
+
+	if (debugging)
+		syslog(LOG_INFO, "op UNLOCK (TYP:%s SEQ:%u OFS:%Lu LEN:%lu ID:%x)",
+		       name_lock_type4[arg->locktype],
+		       arg->seqid,
+		       (unsigned long long) arg->offset,
+		       (unsigned long) arg->length,
+		       id);
+
+	status = stateid_lookup(id, &st);
+	if (status != NFS4_OK)
+		goto out;
+
+	/* FIXME SECURITY: make sure we are the lock owner!!!!! */
+
+	if ((arg->offset != st->lock_ofs) || (arg->length != st->lock_len)) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	state_trash(st);
+
+	memcpy(&res->LOCKU4res_u.lock_stateid, &arg->lock_stateid,
+	       sizeof(arg->lock_stateid));
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+

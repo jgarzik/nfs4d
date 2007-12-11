@@ -81,6 +81,7 @@ struct nfs_cxn {
 
 enum nfs_state_flags {
 	stfl_dead		= (1 << 0),
+	stfl_lock		= (1 << 1),
 };
 
 struct nfs_state {
@@ -96,6 +97,10 @@ struct nfs_state {
 
 	uint32_t		share_ac;
 	uint32_t		share_dn;
+
+	nfs_lock_type4		locktype;
+	uint64_t		lock_ofs;
+	uint64_t		lock_len;
 };
 
 /* overlays stateid4 with our own info in place of 'other' */
@@ -204,6 +209,9 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 extern bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);
 extern bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres);
 extern bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres);
+extern bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres);
+extern bool_t nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres);
+extern bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres);
 
 /* dir.c */
 bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres);

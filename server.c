@@ -424,6 +424,12 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_getfh(cxn, res);
 	case OP_LINK:
 		return nfs_op_link(cxn, &arg->nfs_argop4_u.oplink, res);
+	case OP_LOCK:
+		return nfs_op_lock(cxn, &arg->nfs_argop4_u.oplock, res);
+	case OP_LOCKT:
+		return nfs_op_testlock(cxn, &arg->nfs_argop4_u.oplockt, res);
+	case OP_LOCKU:
+		return nfs_op_unlock(cxn, &arg->nfs_argop4_u.oplocku, res);
 	case OP_LOOKUP:
 		return nfs_op_lookup(cxn, &arg->nfs_argop4_u.oplookup, res);
 	case OP_LOOKUPP:
@@ -471,9 +477,6 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
-	case OP_LOCK:
-	case OP_LOCKT:
-	case OP_LOCKU:
 	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
 	case OP_RENEW:
@@ -561,6 +564,12 @@ static void nfs_free(nfs_resop4 *res)
 	case OP_GETFH:
 		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
 		break;
+
+	case OP_LOCK:
+	case OP_LOCKT:
+		/* FIXME */
+		break;
+
 	case OP_OPEN:
 		free(res->nfs_resop4_u.opopen.OPEN4res_u.resok4.attrset.bitmap4_val);
 		break;
