@@ -44,7 +44,7 @@ static void inode_free(struct nfs_inode *ino)
 	free(ino);
 }
 
-static struct nfs_inode *inode_new(void)
+static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 {
 	struct nfs_inode *ino = calloc(1, sizeof(struct nfs_inode));
 	if (!ino)
@@ -54,15 +54,18 @@ static struct nfs_inode *inode_new(void)
 	if (!ino->parents)
 		goto out_ino;
 
+	ino->ino = next_ino++;
+
 	ino->version = 1ULL;
 	ino->ctime =
 	ino->atime =
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
-	ino->uid = 99999999;
-	ino->gid = 99999999;
 
-	ino->ino = next_ino++;
+	if (cxn) {
+		ino->uid = cxn_getuid(cxn);
+		ino->gid = cxn_getgid(cxn);
+	}
 
 	goto out;
 
@@ -72,9 +75,9 @@ out:
 	return ino;
 }
 
-struct nfs_inode *inode_new_file(void)
+struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)
 {
-	struct nfs_inode *ino = inode_new();
+	struct nfs_inode *ino = inode_new(cxn);
 	if (!ino)
 		return NULL;
 
@@ -83,9 +86,9 @@ struct nfs_inode *inode_new_file(void)
 	return ino;
 }
 
-static struct nfs_inode *inode_new_dir(void)
+static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 {
-	struct nfs_inode *ino = inode_new();
+	struct nfs_inode *ino = inode_new(cxn);
 	if (!ino)
 		return NULL;
 
@@ -101,9 +104,10 @@ static struct nfs_inode *inode_new_dir(void)
 	return ino;
 }
 
-static struct nfs_inode *inode_new_dev(enum nfs_ftype4 type, specdata4 *devdata)
+static struct nfs_inode *inode_new_dev(struct nfs_cxn *cxn,
+				enum nfs_ftype4 type, specdata4 *devdata)
 {
-	struct nfs_inode *ino = inode_new();
+	struct nfs_inode *ino = inode_new(cxn);
 	if (!ino)
 		return NULL;
 
@@ -113,9 +117,9 @@ static struct nfs_inode *inode_new_dev(enum nfs_ftype4 type, specdata4 *devdata)
 	return ino;
 }
 
-static struct nfs_inode *inode_new_symlink(gchar *linktext)
+static struct nfs_inode *inode_new_symlink(struct nfs_cxn *cxn, gchar *linktext)
 {
-	struct nfs_inode *ino = inode_new();
+	struct nfs_inode *ino = inode_new(cxn);
 	if (!ino)
 		return NULL;
 
@@ -125,7 +129,8 @@ static struct nfs_inode *inode_new_symlink(gchar *linktext)
 	return ino;
 }
 
-static nfsstat4 inode_new_type(createtype4 *objtype, struct nfs_inode **ino_out)
+static nfsstat4 inode_new_type(struct nfs_cxn *cxn, createtype4 *objtype,
+			       struct nfs_inode **ino_out)
 {
 	struct nfs_inode *new_ino;
 	nfsstat4 status;
@@ -134,11 +139,11 @@ static nfsstat4 inode_new_type(createtype4 *objtype, struct nfs_inode **ino_out)
 
 	switch(objtype->type) {
 	case NF4DIR:
-		new_ino = inode_new_dir();
+		new_ino = inode_new_dir(cxn);
 		break;
 	case NF4BLK:
 	case NF4CHR:
-		new_ino = inode_new_dev(objtype->type,
+		new_ino = inode_new_dev(cxn, objtype->type,
 				        &objtype->createtype4_u.devdata);
 		break;
 	case NF4LNK: {
@@ -148,19 +153,21 @@ static nfsstat4 inode_new_type(createtype4 *objtype, struct nfs_inode **ino_out)
 			status = NFS4ERR_RESOURCE;
 			goto out;
 		}
-		new_ino = inode_new_symlink(linktext);
+		new_ino = inode_new_symlink(cxn, linktext);
 		if (!new_ino)
 			free(linktext);
 		break;
 	}
 	case NF4SOCK:
 	case NF4FIFO:
-		new_ino = inode_new();
+		new_ino = inode_new(cxn);
 		break;
 	default:
 		status = NFS4ERR_BADTYPE;
 		goto out;
 	}
+
+	new_ino->type = objtype->type;
 
 	if (!new_ino) {
 		status = NFS4ERR_RESOURCE;
@@ -180,7 +187,7 @@ bool_t inode_table_init(void)
 
 	srv.inode_table = g_hash_table_new(g_direct_hash, g_direct_equal);
 
-	root = inode_new_dir();
+	root = inode_new_dir(NULL);
 	if (!root)
 		return FALSE;
 	root->ino = INO_ROOT;
@@ -431,7 +438,7 @@ bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	status = inode_new_type(&arg->objtype, &new_ino);
+	status = inode_new_type(cxn, &arg->objtype, &new_ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -441,6 +448,9 @@ bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
 		goto out;
 
 	cxn->current_fh = new_ino->ino;
+
+	if (debugging)
+		syslog(LOG_INFO, "   CREATE -> %u", cxn->current_fh);
 
 out:
 	res->status = status;

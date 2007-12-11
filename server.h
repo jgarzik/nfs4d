@@ -188,22 +188,22 @@ extern struct nfs_server srv;
 extern int debugging;
 
 /* inode.c */
-struct nfs_inode *inode_get(nfsino_t inum);
-void inode_touch(struct nfs_inode *ino);
-bool_t inode_table_init(void);
-void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
-bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
+extern struct nfs_inode *inode_get(nfsino_t inum);
+extern void inode_touch(struct nfs_inode *ino);
+extern bool_t inode_table_init(void);
+extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
+extern bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
+extern bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
+extern bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres);
-bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
+extern bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 		      COMPOUND4res *cres);
-bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
+extern bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify);
-struct nfs_inode *inode_new_file(void);
-nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
+extern nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
 		   change_info4 *cinfo);
+extern struct nfs_inode *inode_new_file(struct nfs_cxn *cxn);
 
 /* data.c */
 extern bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);

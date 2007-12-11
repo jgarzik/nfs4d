@@ -152,7 +152,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	 * create file, if necessary
 	 */
 	if (creating) {
-		ino = inode_new_file();
+		ino = inode_new_file(cxn);
 		if (!ino) {
 			status = NFS4ERR_RESOURCE;
 			goto out;

@@ -299,7 +299,8 @@ int main (int argc, char *argv[])
 	if (init_server())
 		return 1;
 
-	syslog(LOG_INFO, PACKAGE_STRING " initialized");
+	syslog(LOG_INFO, PACKAGE_STRING " initialized%s",
+	       debugging ? " (DEBUG MODE)" : "");
 
 	svc_run ();
 
