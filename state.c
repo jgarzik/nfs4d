@@ -100,11 +100,36 @@ nfsstat4 stateid_lookup(uint32_t id, struct nfs_state **st_out)
 
 void state_trash(struct nfs_state *st)
 {
+	GList *last, *node;
+	gboolean rc;
+
 	st->flags |= stfl_dead;
 	srv.dead_state = g_list_prepend(srv.dead_state, st);
 	srv.n_dead++;
 
-	/* FIXME: garbage collect */
+	if (srv.n_dead < SRV_STATE_HIGH_WAT)
+		return;
+
+	last = g_list_last(srv.dead_state);
+	
+	while (srv.n_dead > SRV_STATE_LOW_WAT) {
+		node = last;
+		last = last->prev;
+
+		/* removing from hash table frees struct */
+		st = node->data;
+		rc = g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id));
+		if (!rc) {
+			syslog(LOG_ERR, "failed to GC state(ID:%u)", st->id);
+			state_free(st);
+		}
+
+		srv.dead_state = g_list_delete_link(srv.dead_state, node);
+		srv.n_dead--;
+	}
+
+	if (debugging)
+		syslog(LOG_INFO, "state garbage collected");
 }
 
 static void gen_clientid4(clientid4 *id)

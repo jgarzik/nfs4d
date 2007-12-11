@@ -29,6 +29,9 @@ enum server_limits {
 	SRV_GID_NOBODY		= 65537,	/* arbitrary >64K number */
 
 	SRV_MAX_COMPOUND	= 30000,	/* arbitrary */
+
+	SRV_STATE_HIGH_WAT	= 100000,	/* start gc at this size */
+	SRV_STATE_LOW_WAT	= 33000,	/* stop gc at this limit */
 };
 
 enum server_fs_settings {
