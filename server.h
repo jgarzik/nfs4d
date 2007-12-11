@@ -56,6 +56,78 @@ enum fattr_types {
 	FATTR_TYPE_SRV,
 };
 
+enum {
+	fattr_mandatory_ro_mask =
+		1ULL << FATTR4_SUPPORTED_ATTRS |
+		1ULL << FATTR4_TYPE |
+		1ULL << FATTR4_FH_EXPIRE_TYPE |
+		1ULL << FATTR4_CHANGE |
+		1ULL << FATTR4_LINK_SUPPORT |
+		1ULL << FATTR4_SYMLINK_SUPPORT |
+		1ULL << FATTR4_NAMED_ATTR |
+		1ULL << FATTR4_FSID |
+		1ULL << FATTR4_UNIQUE_HANDLES |
+		1ULL << FATTR4_LEASE_TIME |
+		1ULL << FATTR4_RDATTR_ERROR |
+		1ULL << FATTR4_FILEHANDLE,
+
+	fattr_mandatory_rw_mask =
+		1ULL << FATTR4_SIZE,
+
+	fattr_write_only_mask =
+		1ULL << FATTR4_TIME_ACCESS_SET |
+		1ULL << FATTR4_TIME_MODIFY_SET,
+
+	fattr_read_write_mask = fattr_mandatory_rw_mask |
+		1ULL << FATTR4_ACL |
+		1ULL << FATTR4_ARCHIVE |
+		1ULL << FATTR4_HIDDEN |
+		1ULL << FATTR4_MIMETYPE |
+		1ULL << FATTR4_MODE |
+		1ULL << FATTR4_OWNER |
+		1ULL << FATTR4_OWNER_GROUP |
+		1ULL << FATTR4_SYSTEM |
+		1ULL << FATTR4_TIME_BACKUP |
+		1ULL << FATTR4_TIME_CREATE,
+
+	fattr_read_only_mask = fattr_mandatory_ro_mask |
+		1ULL << FATTR4_ACLSUPPORT |
+		1ULL << FATTR4_CANSETTIME |
+		1ULL << FATTR4_CASE_INSENSITIVE |
+		1ULL << FATTR4_CASE_PRESERVING |
+		1ULL << FATTR4_CHOWN_RESTRICTED |
+		1ULL << FATTR4_FILEID |
+		1ULL << FATTR4_FILES_AVAIL |
+		1ULL << FATTR4_FILES_FREE |
+		1ULL << FATTR4_FILES_TOTAL |
+		1ULL << FATTR4_HOMOGENEOUS |
+		1ULL << FATTR4_MAXFILESIZE |
+		1ULL << FATTR4_MAXLINK |
+		1ULL << FATTR4_MAXNAME |
+		1ULL << FATTR4_MAXREAD |
+		1ULL << FATTR4_MAXWRITE |
+		1ULL << FATTR4_NO_TRUNC |
+		1ULL << FATTR4_NUMLINKS |
+		1ULL << FATTR4_QUOTA_AVAIL_HARD |
+		1ULL << FATTR4_QUOTA_AVAIL_SOFT |
+		1ULL << FATTR4_QUOTA_USED |
+		1ULL << FATTR4_RAWDEV |
+		1ULL << FATTR4_SPACE_AVAIL |
+		1ULL << FATTR4_SPACE_FREE |
+		1ULL << FATTR4_SPACE_TOTAL |
+		1ULL << FATTR4_SPACE_USED |
+		1ULL << FATTR4_TIME_ACCESS |
+		1ULL << FATTR4_TIME_DELTA |
+		1ULL << FATTR4_TIME_METADATA |
+		1ULL << FATTR4_TIME_MODIFY |
+		1ULL << FATTR4_MOUNTED_ON_FILEID,
+
+	fattr_supported_mask =
+		fattr_read_only_mask |
+		fattr_read_write_mask |
+		fattr_write_only_mask,
+};
+
 struct blob {
 	unsigned int		magic;
 	unsigned int		len;
@@ -235,10 +307,6 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 void nfs_readdir_free(READDIR4res *res);
 
 /* fattr.c */
-extern const uint64_t fattr_write_only_mask;
-extern const uint64_t fattr_read_write_mask;
-extern const uint64_t fattr_read_only_mask;
-extern const uint64_t fattr_supported_mask;
 extern bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
 extern bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 extern void fattr_free(struct nfs_fattr_set *attr);
