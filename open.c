@@ -20,7 +20,7 @@ static void print_open_args(OPEN4args *args)
 	       args->claim.open_claim4_u.file.utf8string_len,
 	       args->claim.open_claim4_u.file.utf8string_val);
 
-	syslog(LOG_INFO, "   OPEN (SEQ:%x SHAC:%x SHDN:%x OCID:%Lx ON:%.*s "
+	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x OCID:%Lx ON:%.*s "
 	       "HOW:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
@@ -61,6 +61,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	struct nfs_dirent *de;
 	struct nfs_client *cli;
 	struct nfs_state *st;
+	struct nfs_stateid *sid;
 	int creating;
 
 	print_open_args(args);
@@ -183,10 +184,11 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
-	resok->stateid.seqid = GUINT32_TO_LE(st->id);
-	memset(&resok->stateid.other, 0, sizeof(resok->stateid.other));
-	memcpy(&resok->stateid.other, &resok->stateid.seqid,
-	       sizeof(resok->stateid.seqid));
+	sid = (struct nfs_stateid *) &resok->stateid;
+	sid->seqid = args->seqid + 1;
+	sid->id = GUINT32_TO_LE(st->id);
+	memcpy(&sid->server_verf, &srv.instance_verf,
+	       sizeof(srv.instance_verf));
 	resok->rflags = OPEN4_RESULT_LOCKTYPE_POSIX;
 	resok->delegation.delegation_type = OPEN_DELEGATE_NONE;
 
@@ -194,7 +196,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	cxn->current_fh = ino->ino;
 
 	if (debugging)
-		syslog(LOG_INFO, "   OPEN -> (SEQ:%x)", st->id);
+		syslog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",
+		       sid->seqid, st->id);
 
 out:
 	res->status = status;
@@ -206,12 +209,12 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	struct nfs_resop4 resop;
 	CLOSE4res *res;
 	nfsstat4 status = NFS4_OK;
-	uint32_t id;
+	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
+	uint32_t id = GUINT32_FROM_LE(sid->id);
 
 	if (debugging)
-		syslog(LOG_INFO, "op CLOSE (SEQ:%x ID:%x)",
-		       arg->seqid,
-		       GUINT32_FROM_LE(arg->open_stateid.seqid));
+		syslog(LOG_INFO, "op CLOSE (SEQ:%u ID:%x)",
+		       arg->seqid, id);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CLOSE;
@@ -222,17 +225,14 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	id = GUINT32_FROM_LE(arg->open_stateid.seqid);
 	if (id) {
 		struct nfs_state *st;
 
-		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
-		if (!st) {
-			status = NFS4ERR_STALE_STATEID;
+		status = stateid_lookup(id, &st);
+		if (status != NFS4_OK)
 			goto out;
-		}
 
-		g_hash_table_remove(srv.state, GUINT_TO_POINTER(id));
+		state_trash(st);
 	}
 
 	memcpy(&res->CLOSE4res_u.open_stateid,

@@ -78,17 +78,28 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
-bool_t valid_stateid(const stateid4 *sid)
+nfsstat4 stateid_lookup(uint32_t id, struct nfs_state **st_out)
 {
-	stateid4 sid_verf;
+	struct nfs_state *st;
 
-	if ((sid->seqid == 0) || (sid->seqid == 0xffffffffU))
-		return TRUE;
+	st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
+	if (!st)
+		return NFS4ERR_STALE_STATEID;
 
-	memcpy(&sid_verf.other, &sid->seqid, sizeof(sid->seqid));
-	memcpy(&sid_verf.other + 4, srv.instance_verf, 8);
+	if (st->flags & stfl_dead)
+		return NFS4ERR_OLD_STATEID;
 
-	return (memcmp(&sid_verf.other, &sid->other, sizeof(sid->other)) == 0);
+	*st_out = st;
+	return NFS4_OK;
+}
+
+void state_trash(struct nfs_state *st)
+{
+	st->flags |= stfl_dead;
+	srv.dead_state = g_list_prepend(srv.dead_state, st);
+	srv.n_dead++;
+
+	/* FIXME: garbage collect */
 }
 
 static void gen_clientid4(clientid4 *id)
@@ -283,6 +294,41 @@ err_out:
 	return rc;
 }
 
+struct cancel_search {
+	struct nfs_client	*cli;
+	GList			*list;
+};
+
+static void cli_cancel_search(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct cancel_search *cs = user_data;
+
+	if (st->cli == cs->cli)
+		cs->list = g_list_append(cs->list, st);
+}
+
+static void client_cancel(struct nfs_cxn *cxn, struct nfs_client *cli)
+{
+	struct cancel_search cs = { cli };
+	struct nfs_state *st;
+	GList *tmp;
+
+	/* build list of state records associated with this client */
+	g_hash_table_foreach(srv.state, cli_cancel_search, &cs);
+
+	/* destroy each state record */
+	tmp = cs.list;
+	while (tmp) {
+		st = tmp->data;
+		tmp = tmp->next;
+
+		state_trash(st);
+	}
+
+	g_list_free(cs.list);
+}
+
 static gboolean callback_equal(struct nfs_client *cli, cb_client4 *cb,
 			       uint32_t cb_ident)
 {
@@ -469,8 +515,11 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	 * If we get this far, the client requires recovery.  Start
 	 * the process of recovering locks, leases, etc.
 	 */
-	/* FIXME: cancel client state */
-	syslog(LOG_WARNING, "FIXME: we need to cancel existing client state");
+
+	client_cancel(cxn, cli);
+
+	clientid_free(clid);
+	clid = NULL;	/* FIXME probably incorrect, for some cases */
 
 out2:
 	if (clid) {

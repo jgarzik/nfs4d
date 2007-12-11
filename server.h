@@ -72,8 +72,14 @@ struct nfs_cxn {
 	struct cxn_auth		auth;		/* RPC creds */
 };
 
+enum nfs_state_flags {
+	stfl_dead		= (1 << 0),
+};
+
 struct nfs_state {
 	struct nfs_client	*cli;
+
+	unsigned long		flags;
 
 	uint32_t		id;
 
@@ -83,6 +89,13 @@ struct nfs_state {
 
 	uint32_t		share_ac;
 	uint32_t		share_dn;
+};
+
+/* overlays stateid4 with our own info in place of 'other' */
+struct nfs_stateid {
+	uint32_t		seqid;		/* native endian */
+	uint32_t		id;		/* fixed endian (LE) */
+	verifier4		server_verf;
 };
 
 struct nfs_clientid {
@@ -146,6 +159,8 @@ struct nfs_server {
 	GHashTable		*clid_idx;
 
 	GHashTable		*state;
+	GList			*dead_state;
+	unsigned int		n_dead;
 
 	unsigned int		lease_time;
 
@@ -247,7 +262,6 @@ extern gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);
 extern uint32_t gen_stateid(void);
-extern bool_t valid_stateid(const stateid4 *sid);
 extern bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			 COMPOUND4res *cres);
 extern bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
@@ -255,6 +269,8 @@ extern bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				 COMPOUND4res *cres);
 extern void rand_verifier(verifier4 *verf);
 extern unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
+extern nfsstat4 stateid_lookup(uint32_t id, struct nfs_state **st_out);
+extern void state_trash(struct nfs_state *st);
 
 static inline void free_bitmap(bitmap4 *map)
 {

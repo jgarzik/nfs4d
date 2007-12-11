@@ -32,7 +32,8 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	WRITE4res *res;
 	WRITE4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	uint32_t id = GUINT32_FROM_LE(arg->stateid.seqid);
+	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->stateid;
+	uint32_t id = GUINT32_FROM_LE(sid->id);
 	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
 	uint64_t new_size;
@@ -41,8 +42,8 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	unsigned int data_len = arg->data.data_len;
 
 	if (debugging)
-		syslog(LOG_INFO, "op WRITE (ID:%x OFS:%Lu ST:%s LEN:%u)",
-		       id,
+		syslog(LOG_INFO, "op WRITE (SEQ:%u ID:%x OFS:%Lu ST:%s LEN:%u)",
+		       arg->stateid.seqid, id,
 		       (unsigned long long) arg->offset,
 		       name_stable_how4[arg->stable],
 		       data_len);
@@ -57,11 +58,9 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		data_len = SRV_MAX_WRITE;
 
 	if (id && (id != 0xffffffffU)) {
-		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
-		if (!st) {
-			status = NFS4ERR_STALE_STATEID;
+		status = stateid_lookup(id, &st);
+		if (status != NFS4_OK)
 			goto out;
-		}
 
 		if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
 			status = NFS4ERR_OPENMODE;
@@ -138,7 +137,8 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	READ4res *res;
 	READ4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	uint32_t id = GUINT32_FROM_LE(arg->stateid.seqid);
+	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->stateid;
+	uint32_t id = GUINT32_FROM_LE(sid->id);
 	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
 	uint64_t read_size;
@@ -146,11 +146,10 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	struct state_search ss;
 
 	if (debugging)
-		syslog(LOG_INFO, "op READ (ID:%x OFS:%Lu LEN:%u)",
-		       id,
+		syslog(LOG_INFO, "op READ (SEQ:%u ID:%x OFS:%Lu LEN:%u)",
+		       arg->stateid.seqid, id,
 		       (unsigned long long) arg->offset,
 		       arg->count);
-
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_READ;
@@ -168,11 +167,9 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	memset(mem, 0, arg->count);
 
 	if (id && (id != 0xffffffffU)) {
-		st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
-		if (!st) {
-			status = NFS4ERR_STALE_STATEID;
-			goto out_mem;
-		}
+		status = stateid_lookup(id, &st);
+		if (status != NFS4_OK)
+			goto out;
 
 		if (!(st->share_ac & OPEN4_SHARE_ACCESS_READ)) {
 			status = NFS4ERR_OPENMODE;

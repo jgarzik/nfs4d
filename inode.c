@@ -456,6 +456,7 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_fattr_set attrset;
+	gboolean printed = FALSE;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_GETATTR;
@@ -472,6 +473,11 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 
 	attrset.bitmap = get_bitmap(&arg->attr_request);
 
+	if (debugging && (status == NFS4_OK)) {
+		print_fattr_bitmap("op GETATTR", attrset.bitmap);
+		printed = TRUE;
+	}
+
 	/* GETATTR not permitted to process write-only attrs */
 	if (attrset.bitmap & ((1ULL << FATTR4_TIME_ACCESS_SET) |
 			      (1ULL << FATTR4_TIME_MODIFY_SET))) {
@@ -486,7 +492,16 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 
 	fattr_free(&attrset);
 
+	if (debugging) {
+		attrset.bitmap = get_bitmap(&resok->obj_attributes.attrmask);
+		print_fattr_bitmap("   GETATTR ->", attrset.bitmap);
+		printed = TRUE;
+	}
+
 out:
+	if (debugging && !printed)
+		syslog(LOG_INFO, "op GETATTR");
+
 	res->status = status;
 	return push_resop(cres, &resop, status);
 }

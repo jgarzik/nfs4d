@@ -206,7 +206,7 @@ static nfsstat4 cli_init(struct svc_req *rqstp, struct nfs_cxn **cxn_out)
 		syslog(LOG_INFO, "AUTH_NONE");
 		cxn->auth.type = auth_none;
 		break;
-	
+
 	case AUTH_SYS:
 		if (!rqstp->rq_cred.oa_base || !rqstp->rq_cred.oa_length) {
 			syslog(LOG_INFO, "AUTH_SYS null");
