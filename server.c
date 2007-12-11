@@ -363,6 +363,20 @@ static bool_t nfs_op_notsupp(struct nfs_cxn *cxn, COMPOUND4res *cres,
 	return push_resop(cres, &resop, status);
 }
 
+static bool_t nfs_op_illegal(struct nfs_cxn *cxn, COMPOUND4res *cres,
+			     nfs_opnum4 argop)
+{
+	struct nfs_resop4 resop;
+	OPENATTR4res *res;
+	nfsstat4 status = NFS4ERR_OP_ILLEGAL;
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = argop;
+	res = &resop.nfs_resop4_u.opopenattr;
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 static const char *arg_str[] = {
 	"<n/a>",
 	"<n/a>",
@@ -483,8 +497,9 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 			       	arg_str[arg->argop]);
 
 		return nfs_op_notsupp(cxn, res, arg->argop);
+
 	default:
-		return FALSE;
+		return nfs_op_illegal(cxn, res, arg->argop);
 	}
 
 	return FALSE;	/* never reached */
@@ -515,6 +530,15 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 	if (res->status != NFS4_OK)
 		goto out;
 
+	/* honestly, this was put here more to shortcut a
+	 * pathological case in pynfs.  we don't really have
+	 * any inherent limits here.
+	 */
+	if (arg->argarray.argarray_len > SRV_MAX_COMPOUND) {
+		res->status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
 	for (i = 0; i < arg->argarray.argarray_len; i++)
 		if (!nfs_arg(cxn, &arg->argarray.argarray_val[i], res)) {
 			syslog(LOG_WARNING, "compound failed (%s)",
@@ -522,7 +546,7 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 			break;
 		}
 
-	if (debugging)
+	if (debugging || (i > 500))
 		syslog(LOG_INFO, "arg list end (%u of %u args)",
 		       (i == arg->argarray.argarray_len) ? i : i + 1,
 		       arg->argarray.argarray_len);

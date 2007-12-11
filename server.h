@@ -27,6 +27,8 @@ enum server_limits {
 
 	SRV_UID_NOBODY		= 65537,	/* arbitrary >64K number */
 	SRV_GID_NOBODY		= 65537,	/* arbitrary >64K number */
+
+	SRV_MAX_COMPOUND	= 30000,	/* arbitrary */
 };
 
 enum server_fs_settings {
@@ -41,6 +43,10 @@ enum blob_hash_init_info {
 	BLOB_HASH_INIT		= 5381UL
 };
 
+enum other_blob_info {
+	BLOB_MAGIC		= 0xdeadbeef
+};
+
 enum fattr_types {
 	FATTR_TYPE_OBJ,
 	FATTR_TYPE_FS,
@@ -48,6 +54,7 @@ enum fattr_types {
 };
 
 struct blob {
+	unsigned int		magic;
 	unsigned int		len;
 	void			*buf;
 };

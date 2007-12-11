@@ -142,11 +142,15 @@ nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
 		break;
 
 	default:
+		syslog(LOG_ERR, "RPC: unknown proc %u",
+			(unsigned int) rqstp->rq_proc);
 		svcerr_noproc (transp);
 		return;
 	}
 	memset ((char *)&argument, 0, sizeof (argument));
-	if (!svc_getargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
+	if (!svc_getargs(transp, (xdrproc_t) _xdr_argument,
+			 (caddr_t) &argument)) {
+		syslog(LOG_ERR, "RPC: getargs failed");
 		svcerr_decode (transp);
 		return;
 	}
@@ -199,7 +203,7 @@ static int init_server(void)
 	memset(&srv, 0, sizeof(srv));
 	srv.lease_time = 5 * 60;
 	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
-					       NULL, client_free);
+					       NULL, NULL);
 	srv.clid_idx = g_hash_table_new_full(short_clientid_hash,
 					     short_clientid_equal,
 					     free, NULL);

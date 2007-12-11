@@ -11,8 +11,7 @@ unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 	const unsigned char *buf = _buf;
 	int c;
 
-	if (!buf)
-		return hash;
+	g_assert(buf != NULL);
 
 	while (buflen > 0) {
 		c = *buf++;
@@ -26,13 +25,19 @@ unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 
 static guint blob_hash_for_key(const struct blob *b)
 {
-	if (!b)
-		return BLOB_HASH_INIT;
+	g_assert(b != NULL);
+	g_assert(b->magic == BLOB_MAGIC);
+
 	return blob_hash(BLOB_HASH_INIT, b->buf, b->len);
 }
 
 static gboolean blob_equal(const struct blob *a, const struct blob *b)
 {
+	g_assert(a != NULL);
+	g_assert(a->magic == BLOB_MAGIC);
+	g_assert(b != NULL);
+	g_assert(b->magic == BLOB_MAGIC);
+
 	if (a->len != b->len)
 		return FALSE;
 	if (memcmp(a->buf, b->buf, a->len))
@@ -147,14 +152,15 @@ static void free_cb_client4(cb_client4 *cbc)
 	free(cbc->cb_location.r_addr);
 }
 
-static void clientid_free(struct nfs_clientid *id)
+static void clientid_free(struct nfs_clientid *clid)
 {
-	if (!id)
-		return;
+	g_assert(clid != NULL);
 
-	free(id->id.buf);
-	free_cb_client4(&id->callback);
-	free(id);
+	g_hash_table_remove(srv.client_ids, &clid->id);
+
+	free(clid->id.buf);
+	free_cb_client4(&clid->callback);
+	free(clid);
 }
 
 void state_free(gpointer data)
@@ -191,15 +197,15 @@ void client_free(gpointer data)
 
 guint clientid_hash(gconstpointer key)
 {
-	const struct nfs_clientid *clid = key;
-	return blob_hash_for_key(&clid->id);
+	const struct blob *blob = key;
+	return blob_hash_for_key(blob);
 }
 
 gboolean clientid_equal(gconstpointer _a, gconstpointer _b)
 {
-	const struct nfs_clientid *a = _a;
-	const struct nfs_clientid *b = _b;
-	return blob_equal(&a->id, &b->id);
+	const struct blob *a = _a;
+	const struct blob *b = _b;
+	return blob_equal(a, b);
 }
 
 guint short_clientid_hash(gconstpointer key)
@@ -226,6 +232,7 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 		goto err_out;
 
 	/* copy client id */
+	clid->id.magic = BLOB_MAGIC;
 	clid->id.len = args->client.id.id_len;
 	clid->id.buf = malloc(clid->id.len);
 	if (!clid->id.buf)
@@ -249,7 +256,9 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 		goto err_out_cb_client4;
 	memcpy(short_clid, &clid->id_short, sizeof(clientid4));
 
+	/* add to short, long client id indices */
 	g_hash_table_insert(srv.clid_idx, short_clid, cli);
+	g_hash_table_insert(srv.client_ids, &clid->id, cli);
 
 	*clid_out = clid;
 	return 0;
@@ -281,9 +290,6 @@ static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 
 	/* add to state's client-id pending list */
 	cli->pending = g_list_prepend(cli->pending, clid);
-
-	/* add to global list of client ids */
-	g_hash_table_insert(srv.client_ids, clid, cli);
 
 	*clid_out = clid;
 	return 0;
@@ -365,7 +371,8 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_client *cli;
 	int rc;
-	struct nfs_clientid *clid = NULL, clid_key;
+	struct nfs_clientid *clid = NULL;
+	struct blob clid_key;
 
 	if (debugging)
 		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
@@ -383,9 +390,9 @@ bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	resok = &res->SETCLIENTID4res_u.resok4;
 
 	/* look up client id */
-	memset(&clid_key, 0, sizeof(clid_key));
-	clid_key.id.len = args->client.id.id_len;
-	clid_key.id.buf = args->client.id.id_val;
+	clid_key.magic = BLOB_MAGIC;
+	clid_key.len = args->client.id.id_len;
+	clid_key.buf = args->client.id.id_val;
 	cli = g_hash_table_lookup(srv.client_ids, &clid_key);
 
 	if (!cli) {
@@ -516,15 +523,14 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	 * the process of recovering locks, leases, etc.
 	 */
 
+	/* FIXME: probably need to do more than just forget state */
 	client_cancel(cxn, cli);
-
-	clientid_free(clid);
-	clid = NULL;	/* FIXME probably incorrect, for some cases */
 
 out2:
 	if (clid) {
 		clientid4 *id_short = malloc(sizeof(clientid4));
 		if (!id_short) {
+			g_assert(new_clid != NULL);
 			cli->pending = g_list_prepend(cli->pending, new_clid);
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -535,6 +541,7 @@ out2:
 		clientid_free(clid);
 	}
 	cli->id = new_clid;
+	g_hash_table_insert(srv.client_ids, &new_clid->id, cli);
 
 out:
 	res->status = status;
