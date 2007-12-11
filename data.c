@@ -29,7 +29,8 @@ static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
 	struct nfs_state *st = val;
 	struct state_search *ss = user_data;
 
-	if ((st->ino == ss->ino) && (st->share_dn & ss->share_dn)) {
+	if ((st->ino == ss->ino) && (st->share_dn & ss->share_dn) &&
+	    (!(st->flags & stfl_lock))) {
 		ss->match = TRUE;
 		ss->st = st;
 	}
@@ -409,6 +410,39 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+static void print_lock_args(LOCK4args *arg, uint32_t prev_id)
+{
+	gboolean new_lock;
+	uint32_t lseqid;
+
+	if (!debugging)
+		return;
+
+	new_lock = arg->locker.new_lock_owner;
+
+	if (new_lock)
+		lseqid = arg->locker.locker4_u.open_owner.lock_seqid;
+	else
+		lseqid = arg->locker.locker4_u.lock_owner.lock_seqid;
+
+	syslog(LOG_INFO, "op LOCK (NEW:%s LSEQ:%u TYP:%s REC:%s OFS:%Lu LEN:%lu)",
+	       new_lock ? "Y" : "N",
+	       lseqid,
+	       name_lock_type4[arg->locktype],
+	       arg->reclaim ? "Y" : "N",
+	       (unsigned long long) arg->offset,
+	       (unsigned long) arg->length);
+
+	if (new_lock) {
+		syslog(LOG_INFO, "   LOCK (OSEQ:%u ID:%x OCID:%Lx OWNER:%.*s)",
+		       arg->locker.locker4_u.open_owner.open_seqid,
+		       prev_id,
+		       (unsigned long long) arg->locker.locker4_u.open_owner.lock_owner.clientid,
+		       arg->locker.locker4_u.open_owner.lock_owner.owner.owner_len,
+		       arg->locker.locker4_u.open_owner.lock_owner.owner.owner_val);
+	}
+}
+
 bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -417,27 +451,35 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_state *st;
+	struct nfs_state *prev_st = NULL;
+	struct nfs_stateid *prev_sid;
+	uint32_t prev_id;
 	struct nfs_client *cli;
 	struct nfs_stateid *sid;
 	GList *locks = NULL;
-	uint32_t seqid;
+	uint32_t lseqid;
+	gboolean new_lock = arg->locker.new_lock_owner;
 
-	if (debugging)
-		syslog(LOG_INFO, "op LOCK (TYP:%s REC:%s OFS:%Lu LEN:%lu)",
-		       name_lock_type4[arg->locktype],
-		       arg->reclaim ? "YES" : "NO",
-		       (unsigned long long) arg->offset,
-		       (unsigned long) arg->length);
+	if (new_lock) {
+		lseqid = arg->locker.locker4_u.open_owner.lock_seqid;
+
+		prev_sid = (struct nfs_stateid *)
+			&arg->locker.locker4_u.open_owner.open_stateid;
+	} else {
+		lseqid = arg->locker.locker4_u.lock_owner.lock_seqid;
+
+		prev_sid = (struct nfs_stateid *)
+			&arg->locker.locker4_u.lock_owner.lock_stateid;
+	}
+
+	prev_id = GUINT32_FROM_LE(prev_sid->id);
+
+	print_lock_args(arg, prev_id);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOCK;
 	res = &resop.nfs_resop4_u.oplock;
 	resok = &res->LOCK4res_u.resok4;
-
-	if (arg->locker.new_lock_owner)
-		seqid = arg->locker.locker4_u.open_owner.lock_seqid;
-	else
-		seqid = arg->locker.locker4_u.lock_owner.lock_seqid;
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -457,18 +499,59 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
+	status = stateid_lookup(prev_id, &prev_st);
+	if (status != NFS4_OK)
+		goto out;
+
+	if (new_lock) {
+		if (arg->locker.locker4_u.open_owner.open_seqid !=
+			(prev_st->seq + 1)) {
+			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+	} else {
+		if (arg->locker.locker4_u.lock_owner.lock_seqid !=
+			(prev_st->seq + 1)) {
+			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+	}
+
 	find_locks(ino->ino, arg->locktype, arg->offset, arg->length, &locks);
+
+	/*
+	 * lock update code path...
+	 */
+
+	if (!new_lock) {
+		/* no locks found? bad user input */
+		if (!locks) {
+			status = NFS4ERR_INVAL;
+			goto out;
+		}
+
+		/* more than one lock found? ditto */
+		if (locks->next) {
+			status = NFS4ERR_INVAL;
+			goto out;
+		}
+
+		/* FIXME convert the lock... */
+
+		st = locks->data;
+		g_list_free(locks);
+
+		goto have_st;
+	}
+
+	/*
+	 * new-lock code path
+	 */
 
 	if (locks) {
 		fill_lock_denied(&res->LOCK4res_u.denied, locks);
 		g_list_free(locks);
 		status = NFS4ERR_DENIED;
-		goto out;
-	}
-
-	/* FIXME: lock update not supported yet */
-	if (!arg->locker.new_lock_owner) {
-		status = NFS4ERR_NOTSUPP;
 		goto out;
 	}
 
@@ -507,8 +590,11 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
+have_st:
+	st->seq = lseqid;
+
 	sid = (struct nfs_stateid *) &resok->lock_stateid;
-	sid->seqid = seqid + 1;
+	sid->seqid = lseqid;
 	sid->id = GUINT32_TO_LE(st->id);
 	memcpy(&sid->server_verf, &srv.instance_verf,
 	       sizeof(srv.instance_verf));
@@ -548,6 +634,11 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 	status = stateid_lookup(id, &st);
 	if (status != NFS4_OK)
 		goto out;
+
+	if (arg->seqid != (st->seq + 1)) {
+		status = NFS4ERR_BAD_SEQID;
+		goto out;
+	}
 
 	/* FIXME SECURITY: make sure we are the lock owner!!!!! */
 

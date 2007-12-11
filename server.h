@@ -95,6 +95,8 @@ struct nfs_state {
 
 	nfsino_t		ino;
 
+	uint32_t		seq;
+
 	uint32_t		share_ac;
 	uint32_t		share_dn;
 
@@ -253,6 +255,7 @@ void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* open.c */
 bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
+bool_t nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *args, COMPOUND4res *cres);
 bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 
 /* server.c */

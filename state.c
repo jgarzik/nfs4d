@@ -320,6 +320,12 @@ static void client_cancel(struct nfs_cxn *cxn, struct nfs_client *cli)
 	struct nfs_state *st;
 	GList *tmp;
 
+	if (debugging)
+		syslog(LOG_INFO, "removing state associated with %Lx",
+		       (cli && cli->id) ?
+		       		(unsigned long long) cli->id->id_short : 0ULL);
+
+
 	/* build list of state records associated with this client */
 	g_hash_table_foreach(srv.state, cli_cancel_search, &cs);
 
