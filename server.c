@@ -114,19 +114,6 @@ char *copy_utf8string(utf8string *str)
 	return strndup(str->utf8string_val, str->utf8string_len);
 }
 
-bool_t has_dots(utf8string *str)
-{
-	if (!str)
-		return FALSE;
-	if ((str->utf8string_len == 1) &&
-	    (!memcmp(str->utf8string_val, ".", 1)))
-		return TRUE;
-	if ((str->utf8string_len == 2) &&
-	    (!memcmp(str->utf8string_val, "..", 2)))
-		return TRUE;
-	return FALSE;
-}
-
 guint64 get_bitmap(const bitmap4 *map)
 {
 	guint64 v = 0;

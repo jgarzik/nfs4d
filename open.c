@@ -143,6 +143,10 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 		status = NFS4ERR_BADOWNER;
 		goto out;
 	}
+	if (!cli->id) {
+		status = NFS4ERR_STALE_CLIENTID;
+		goto out;
+	}
 
 	/*
 	 * create file, if necessary

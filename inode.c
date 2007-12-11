@@ -158,7 +158,7 @@ static nfsstat4 inode_new_type(createtype4 *objtype, struct nfs_inode **ino_out)
 		new_ino = inode_new();
 		break;
 	default:
-		status = NFS4ERR_INVAL;
+		status = NFS4ERR_BADTYPE;
 		goto out;
 	}
 

@@ -7,6 +7,28 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
+static bool_t has_slash(utf8string *str)
+{
+	if (!str)
+		return FALSE;
+	if (g_utf8_strchr(str->utf8string_val, str->utf8string_len, '/'))
+		return TRUE;
+	return FALSE;
+}
+
+static bool_t has_dots(utf8string *str)
+{
+	if (!str)
+		return FALSE;
+	if ((str->utf8string_len == 1) &&
+	    (!memcmp(str->utf8string_val, ".", 1)))
+		return TRUE;
+	if ((str->utf8string_len == 2) &&
+	    (!memcmp(str->utf8string_val, "..", 2)))
+		return TRUE;
+	return FALSE;
+}
+
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
 {
 	nfsstat4 status;
@@ -44,6 +66,8 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 	if (!valid_utf8string(str))
 		return NFS4ERR_INVAL;
 	if (has_dots(str))
+		return NFS4ERR_BADNAME;
+	if (has_slash(str))
 		return NFS4ERR_BADNAME;
 
 	name = copy_utf8string(str);

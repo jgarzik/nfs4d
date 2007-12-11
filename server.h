@@ -255,7 +255,6 @@ extern int cxn_getgid(const struct nfs_cxn *cxn);
 extern bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 extern bool_t valid_utf8string(utf8string *str);
 extern char *copy_utf8string(utf8string *str);
-extern bool_t has_dots(utf8string *str);
 extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 extern guint64 get_bitmap(const bitmap4 *map);
 extern void __set_bitmap(guint64 map_in, bitmap4 *map_out);
