@@ -98,16 +98,24 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
-nfsstat4 stateid_lookup(uint32_t id, struct nfs_state **st_out)
+nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
+			struct nfs_state **st_out)
 {
 	struct nfs_state *st;
+
+	*st_out = NULL;
 
 	st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
 	if (!st)
 		return NFS4ERR_STALE_STATEID;
 
-	if (st->flags & stfl_dead)
+	if ((st->type == nst_dead) && (type != nst_dead))
 		return NFS4ERR_OLD_STATEID;
+
+	if ((type != nst_any) && (st->type != type))
+		return NFS4ERR_BAD_STATEID;
+	if (ino && (ino != st->ino))
+		return NFS4ERR_BAD_STATEID;
 
 	*st_out = st;
 	return NFS4_OK;
@@ -118,7 +126,7 @@ void state_trash(struct nfs_state *st)
 	GList *last, *node;
 	bool rc;
 
-	st->flags |= stfl_dead;
+	st->type = nst_dead;
 	srv.dead_state = g_list_prepend(srv.dead_state, st);
 	srv.n_dead++;
 
@@ -415,16 +423,7 @@ bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	int rc;
 	struct nfs_clientid *clid = NULL;
 	struct blob clid_key;
-
-	if (debugging)
-		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
-		       "PROG:%u NET:%s ADDR:%s CBID:%u)",
-		       args->client.id.id_len,
-		       args->client.id.id_val,
-		       args->callback.cb_program,
-		       args->callback.cb_location.r_netid,
-		       args->callback.cb_location.r_addr,
-		       args->callback_ident);
+	const char *msg;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SETCLIENTID;
@@ -443,6 +442,8 @@ bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			status = NFS4ERR_RESOURCE;
 			goto out;
 		}
+
+		msg = "NEW";
 	}
 
 	else if ((!cli->id) ||
@@ -459,11 +460,26 @@ bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 
 		/* add to state's client-id pending list */
 		cli->pending = g_list_prepend(cli->pending, clid);
+
+		msg = "EXIST";
 	}
 
 	else {
 		clid = cli->id;
+
+		msg = "PEND";
 	}
+
+	if (debugging)
+		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
+		       "PROG:%u NET:%s ADDR:%s CBID:%u ACT:%s)",
+		       args->client.id.id_len,
+		       args->client.id.id_val,
+		       args->callback.cb_program,
+		       args->callback.cb_location.r_netid,
+		       args->callback.cb_location.r_addr,
+		       args->callback_ident,
+		       msg);
 
 	g_assert(clid != NULL);
 
@@ -522,6 +538,8 @@ bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	    (!memcmp(&clid->confirm_verf, &args->setclientid_confirm,
 	    	     sizeof(verifier4)))) {
 		/* duplicate, just return success */
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM dup, ignoring");
 		goto out;
 	}
 
@@ -552,14 +570,19 @@ bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 		 * the existing connection to the client
 		 */
 
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM: updating callback");
 		goto out2;
 	}
 
 	/*
 	 * if no pre-existing state exists, we are done
 	 */
-	if (!clid)
+	if (!clid) {
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM: no previous state.  confirmed.");
 		goto out2;
+	}
 
 	/*
 	 * If we get this far, the client requires recovery.  Start

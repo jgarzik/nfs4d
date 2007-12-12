@@ -169,15 +169,17 @@ struct nfs_cxn {
 	struct cxn_auth		auth;		/* RPC creds */
 };
 
-enum nfs_state_flags {
-	stfl_dead		= (1 << 0),
-	stfl_lock		= (1 << 1),
+enum nfs_state_type {
+	nst_any,
+	nst_dead,
+	nst_open,
+	nst_lock
 };
 
 struct nfs_state {
 	clientid4		cli;
 
-	unsigned long		flags;
+	enum nfs_state_type	type;
 
 	uint32_t		id;
 
@@ -365,7 +367,8 @@ extern bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				 COMPOUND4res *cres);
 extern void rand_verifier(verifier4 *verf);
 extern unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
-extern nfsstat4 stateid_lookup(uint32_t id, struct nfs_state **st_out);
+extern nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
+			struct nfs_state **st_out);
 extern void state_trash(struct nfs_state *st);
 
 static inline void free_bitmap(bitmap4 *map)

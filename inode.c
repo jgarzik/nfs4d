@@ -310,14 +310,9 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 		if (sid && sid->seqid && (sid->seqid != 0xffffffffU)) {
 			uint32_t id = GUINT32_FROM_LE(sid->id);
 
-			status = stateid_lookup(id, &st);
+			status = stateid_lookup(id, ino->ino, nst_open, &st);
 			if (status != NFS4_OK)
 				goto out;
-
-			if (st->ino != ino->ino) {
-				status = NFS4ERR_BAD_STATEID;
-				goto out;
-			}
 
 			if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
 				status = NFS4ERR_OPENMODE;

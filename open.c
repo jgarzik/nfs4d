@@ -46,7 +46,7 @@ static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
 
 	if (st->ino != cfs->ino)
 		return;
-	if (st->flags & (stfl_dead | stfl_lock))
+	if (st->type != nst_open)
 		return;
 
 	if (cfs->args->share_access & st->share_dn)
@@ -197,14 +197,32 @@ bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	}
 
 	st = calloc(1, sizeof(struct nfs_state));
+	if (!st) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
 	st->cli = args->owner.clientid;
+	st->type = nst_open;
 	st->id = gen_stateid();
+	if (!st->id) {
+		free(st);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
 	st->owner = strndup(args->owner.owner.owner_val,
 			    args->owner.owner.owner_len);
+	if (!st->owner) {
+		free(st);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
 	st->ino = ino->ino;
+	st->seq = args->seqid + 1;
 	st->share_ac = args->share_access;
 	st->share_dn = args->share_deny;
-	st->seq = args->seqid + 1;
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
@@ -262,14 +280,9 @@ bool nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND4r
 		goto out;
 	}
 
-	status = stateid_lookup(id, &st);
+	status = stateid_lookup(id, ino->ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
-
-	if (cxn->current_fh != st->ino) {
-		status = NFS4ERR_NOFILEHANDLE;
-		goto out;
-	}
 
 	if (arg->seqid != st->seq) {
 		status = NFS4ERR_BAD_SEQID;
@@ -320,7 +333,7 @@ bool nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *arg, COMPOU
 		goto out;
 	}
 
-	status = stateid_lookup(id, &st);
+	status = stateid_lookup(id, ino->ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -363,6 +376,7 @@ bool nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
 	uint32_t id = GUINT32_FROM_LE(sid->id);
 	struct nfs_state *st;
+	struct nfs_inode *ino;
 
 	if (debugging)
 		syslog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
@@ -372,12 +386,18 @@ bool nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	resop.resop = OP_CLOSE;
 	res = &resop.nfs_resop4_u.opclose;
 
-	if (!cxn->current_fh) {
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	status = stateid_lookup(id, &st);
+	if (ino->type != NF4REG) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	status = stateid_lookup(id, ino->ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 

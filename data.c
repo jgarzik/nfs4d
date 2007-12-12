@@ -29,8 +29,8 @@ static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
 	struct nfs_state *st = val;
 	struct state_search *ss = user_data;
 
-	if ((st->ino == ss->ino) && (st->share_dn & ss->share_dn) &&
-	    (!(st->flags & stfl_lock))) {
+	if ((st->ino == ss->ino) && (st->type == nst_open) &&
+	    (st->share_dn & ss->share_dn)) {
 		ss->match = true;
 		ss->st = st;
 	}
@@ -111,17 +111,6 @@ bool nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	if (data_len > SRV_MAX_WRITE)
 		data_len = SRV_MAX_WRITE;
 
-	if (id && (id != 0xffffffffU)) {
-		status = stateid_lookup(id, &st);
-		if (status != NFS4_OK)
-			goto out;
-
-		if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
-			status = NFS4ERR_OPENMODE;
-			goto out;
-		}
-	}
-
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -138,6 +127,17 @@ bool nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		else
 			status = NFS4ERR_INVAL;
 		goto out;
+	}
+
+	if (id && (id != 0xffffffffU)) {
+		status = stateid_lookup(id, ino->ino, nst_open, &st);
+		if (status != NFS4_OK)
+			goto out;
+
+		if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
+			status = NFS4ERR_OPENMODE;
+			goto out;
+		}
 	}
 
 	/* search for conflicting share reservation (deny write) */
@@ -225,17 +225,6 @@ bool nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	}
 	memset(mem, 0, arg->count);
 
-	if (id && (id != 0xffffffffU)) {
-		status = stateid_lookup(id, &st);
-		if (status != NFS4_OK)
-			goto out;
-
-		if (!(st->share_ac & OPEN4_SHARE_ACCESS_READ)) {
-			status = NFS4ERR_OPENMODE;
-			goto out;
-		}
-	}
-
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -251,6 +240,17 @@ bool nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 		else
 			status = NFS4ERR_INVAL;
 		goto out_mem;
+	}
+
+	if (id && (id != 0xffffffffU)) {
+		status = stateid_lookup(id, ino->ino, nst_open, &st);
+		if (status != NFS4_OK)
+			goto out;
+
+		if (!(st->share_ac & OPEN4_SHARE_ACCESS_READ)) {
+			status = NFS4ERR_OPENMODE;
+			goto out;
+		}
 	}
 
 	/* search for conflicting share reservation (deny read) */
@@ -322,7 +322,7 @@ static void state_search_lock(gpointer key, gpointer val, gpointer user_data)
 
 	if (st->ino != ss->ino)
 		return;
-	if (!(st->flags & stfl_lock))
+	if (st->type != nst_lock)
 		return;
 
 	if (!ranges_intersect(st->lock_ofs, st->lock_len, ss->ofs, ss->len))
@@ -465,7 +465,6 @@ bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_state *st;
-	struct nfs_state *prev_st = NULL;
 	struct nfs_stateid *prev_sid;
 	uint32_t prev_id;
 	struct nfs_stateid *sid;
@@ -518,25 +517,34 @@ bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	status = stateid_lookup(prev_id, &prev_st);
-	if (status != NFS4_OK)
-		goto out;
 
 	if (new_lock) {
+		struct nfs_state *open_st = NULL;
+
+		status = stateid_lookup(prev_id, ino->ino, nst_open, &open_st);
+		if (status != NFS4_OK)
+			goto out;
+
 		if (arg->locker.locker4_u.open_owner.open_seqid !=
-			prev_st->seq) {
+			open_st->seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
 
 		if ((arg->locktype == WRITE_LT || arg->locktype == WRITEW_LT) &&
-		    (prev_st->share_ac == OPEN4_SHARE_ACCESS_READ)) {
+		    (open_st->share_ac == OPEN4_SHARE_ACCESS_READ)) {
 			status = NFS4ERR_OPENMODE;
 			goto out;
 		}
 	} else {
+		struct nfs_state *lock_st = NULL;
+
+		status = stateid_lookup(prev_id, ino->ino, nst_lock, &lock_st);
+		if (status != NFS4_OK)
+			goto out;
+
 		if (arg->locker.locker4_u.lock_owner.lock_seqid !=
-			prev_st->seq) {
+			lock_st->seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
@@ -594,11 +602,22 @@ bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	}
 
 	st->cli = arg->locker.locker4_u.open_owner.lock_owner.clientid;
-	st->flags = stfl_lock;
+	st->type = nst_lock;
 	st->id = gen_stateid();
+	if (!st->id) {
+		free(st);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
 	st->owner =
 	  strndup(arg->locker.locker4_u.open_owner.lock_owner.owner.owner_val,
 	          arg->locker.locker4_u.open_owner.lock_owner.owner.owner_len);
+	if (!st->owner) {
+		free(st);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
 
 	st->ino = ino->ino;
 
@@ -670,7 +689,7 @@ bool nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	status = stateid_lookup(id, &st);
+	status = stateid_lookup(id, ino->ino, nst_lock, &st);
 	if (status != NFS4_OK)
 		goto out;
 
