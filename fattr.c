@@ -269,10 +269,14 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 		WRITE64(attr->maxwrite);
 		bitmap_out |= (1ULL << FATTR4_MAXWRITE);
 	}
+
+#if 0
 	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
 		encode_utf8(&attr->mimetype, &buf, &p, &buflen, &alloc_len);
 		bitmap_out |= (1ULL << FATTR4_MIMETYPE);
 	}
+#endif
+
 	if (bitmap & (1ULL << FATTR4_MODE)) {
 		WRITE32(attr->mode);
 		bitmap_out |= (1ULL << FATTR4_MODE);
@@ -471,6 +475,15 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->no_trunc = TRUE;
 	attr->time_delta.seconds = 1;
 	attr->time_delta.nseconds = 0;
+
+	attr->files_avail = 
+	attr->files_free = 330000000ULL;
+	attr->files_total = attr->files_free + next_ino;
+
+	attr->space_avail = 
+	attr->space_free = 400000000ULL;
+	attr->space_used = srv.space_used;
+	attr->space_total = attr->space_used + attr->space_free;
 }
 
 static void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
@@ -490,7 +503,10 @@ static void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 
 	attr->fileid = ino->ino;
 	attr->mode = ino->mode;
-	attr->numlinks = ino->parents->len;
+	if (ino->parents && ino->parents->len)
+		attr->numlinks = ino->parents->len;
+	else
+		attr->numlinks = 1;
 
 	if (ino->type == NF4BLK || ino->type == NF4CHR)
 		memcpy(&attr->rawdev, &ino->u.devdata, sizeof(specdata4));

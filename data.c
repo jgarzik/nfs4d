@@ -164,6 +164,8 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 
 	/* new size is larger than old size, enlarge buffer */
 	else {
+		uint64_t old_size = ino->size;
+
 		mem = realloc(ino->data, new_size);
 		if (!mem) {
 			status = NFS4ERR_NOSPC;
@@ -174,6 +176,8 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 		ino->size = new_size;
 
 		memcpy(ino->data + arg->offset, arg->data.data_val, data_len);
+
+		srv.space_used += (new_size - old_size);
 	}
 
 	resok->count = data_len;

@@ -2,11 +2,61 @@
 #include <string.h>
 #include <ctype.h>
 #include <syslog.h>
+#include <errno.h>
 #include <glib.h>
 #include "server.h"
 #include "nfs4_prot.h"
 
-static nfsino_t next_ino = INO_RESERVED_LAST + 1;
+nfsino_t next_ino = INO_RESERVED_LAST + 1;
+
+static const struct idmap_ent {
+	const char		*name;
+	int			id;
+} idmap[] = {
+	{ "root@localdomain", 0 },
+	{ "jgarzik@localdomain", 500 },
+
+	{ }	/* terminate list */
+};
+
+static int srv_lookup_user(const utf8string *user)
+{
+	const struct idmap_ent *ent = &idmap[0];
+	size_t len;
+
+	while (ent->name) {
+		len = strlen(ent->name);
+
+		if ((user->utf8string_len == len) &&
+	    	    (!memcmp(user->utf8string_val, ent->name, len)))
+			return ent->id;
+
+		ent++;
+	}
+
+	return -ENOENT;
+}
+
+static int srv_lookup_group(const utf8string *user)
+{
+	return srv_lookup_user(user);
+}
+
+#if 0
+static const char *srv_lookup_id(int id)
+{
+	const struct idmap_ent *ent = &idmap[0];
+
+	while (ent->name) {
+		if (id == ent->id)
+			return ent->name;
+
+		ent++;
+	}
+
+	return NULL;
+}
+#endif
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
@@ -38,8 +88,10 @@ static void inode_free(struct nfs_inode *ino)
 		break;
 	}
 
-	if (ino->data)
+	if (ino->data) {
 		free(ino->data);
+		srv.space_used -= ino->size;
+	}
 
 	free(ino);
 }
@@ -191,6 +243,10 @@ bool_t inode_table_init(void)
 	if (!root)
 		return FALSE;
 	root->ino = INO_ROOT;
+	root->mode = 0755;
+	root->uid = 0;
+	root->gid = 0;
+	root->size = 2;
 
 	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 
@@ -216,49 +272,31 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 	}
 }
 
-static int int_from_utf8string(utf8string *str_in)
-{
-	gchar *s;
-	int i, rc = -1;
-
-	s = copy_utf8string(str_in);
-	if (!s)
-		return -1;
-
-	for (i = 0; i < strlen(s); i++)
-		if (!isdigit(s[i]))
-			goto out;
-
-	rc = atoi(s);
-
-out:
-	free(s);
-	return rc;
-}
-
 static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
-				       uint64_t *bitmap_set_out)
+				       uint64_t *bitmap_set_out,
+				       struct nfs_stateid *sid,
+				       gboolean in_setattr)
 {
 	struct nfs_fattr_set fattr;
 	uint64_t bitmap_set = 0;
-	uint64_t notsupp_mask = !fattr_supported_mask;
 	enum nfsstat4 status = NFS4_OK;
 
 	if (!fattr_decode(raw_attr, &fattr))
-		return NFS4ERR_INVAL;
+		return NFS4ERR_BADXDR;
 
 	if (fattr.bitmap & fattr_read_only_mask) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
-	if (fattr.bitmap & notsupp_mask) {
-		status = NFS4ERR_NOTSUPP;
+	if (fattr.bitmap & ~fattr_supported_mask) {
+		status = NFS4ERR_ATTRNOTSUPP;
 		goto out;
 	}
 
 	if (fattr.bitmap & (1ULL << FATTR4_SIZE)) {
-		uint64_t zero = 0, new_size = fattr.size;
+		uint64_t new_size = fattr.size;
 		void *mem;
+		struct nfs_state *st = NULL;
 
 		/* only permit size attribute manip on files */
 		if (ino->type != NF4REG) {
@@ -267,6 +305,24 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 			else
 				status = NFS4ERR_INVAL;
 			goto out;
+		}
+
+		if (sid && sid->seqid && (sid->seqid != 0xffffffffU)) {
+			uint32_t id = GUINT32_FROM_LE(sid->id);
+
+			status = stateid_lookup(id, &st);
+			if (status != NFS4_OK)
+				goto out;
+
+			if (st->ino != ino->ino) {
+				status = NFS4ERR_BAD_STATEID;
+				goto out;
+			}
+
+			if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
+				status = NFS4ERR_OPENMODE;
+				goto out;
+			}
 		}
 
 		if (new_size == ino->size)
@@ -282,17 +338,27 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 			goto out;
 		}
 
-		if (new_size > ino->size)
-			zero = new_size - ino->size;
+		if (new_size > ino->size) {
+			uint64_t zero = new_size - ino->size;
+			memset(ino->data + ino->size, 0, zero);
+			srv.space_used += zero;
+		} else {
+			srv.space_used -= (ino->size - new_size);
+		}
 
 		ino->data = mem;
-		memset(ino->data + ino->size, 0, zero);
 
 size_done:
 		ino->size = new_size;
+		bitmap_set |= (1ULL << FATTR4_SIZE);
 	}
 
 	if (fattr.bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
+		if (fattr.time_access_set.settime4_u.time.nseconds > 999999999){
+			status = NFS4ERR_INVAL;
+			goto out;
+		}
+
 		if (fattr.time_access_set.set_it == SET_TO_CLIENT_TIME4)
 			ino->atime =
 			      fattr.time_access_set.settime4_u.time.seconds;
@@ -302,6 +368,11 @@ size_done:
 		bitmap_set |= (1ULL << FATTR4_TIME_ACCESS_SET);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
+		if (fattr.time_modify_set.settime4_u.time.nseconds > 999999999){
+			status = NFS4ERR_INVAL;
+			goto out;
+		}
+
 		if (fattr.time_modify_set.set_it == SET_TO_CLIENT_TIME4)
 			ino->mtime =
 			      fattr.time_modify_set.settime4_u.time.seconds;
@@ -311,12 +382,20 @@ size_done:
 		bitmap_set |= (1ULL << FATTR4_TIME_MODIFY_SET);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_MODE)) {
+		if ((!fattr.mode) || (fattr.mode & ~MODE4_ALL)) {
+			status = NFS4ERR_BADXDR;
+			goto out;
+		}
 		ino->mode = fattr.mode;
 		bitmap_set |= (1ULL << FATTR4_MODE);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_OWNER)) {
-		int x = int_from_utf8string(&fattr.owner);
+		int x = srv_lookup_user(&fattr.owner);
 		if (x < 0) {
+			if (debugging)
+				syslog(LOG_INFO, "invalid OWNER attr: '%.*s'",
+				       fattr.owner.utf8string_len,
+				       fattr.owner.utf8string_val);
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
@@ -325,8 +404,12 @@ size_done:
 		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		int x = int_from_utf8string(&fattr.owner);
+		int x = srv_lookup_group(&fattr.owner_group);
 		if (x < 0) {
+			if (debugging)
+				syslog(LOG_INFO, "invalid OWNER GROUP attr: '%.*s'",
+				       fattr.owner_group.utf8string_len,
+				       fattr.owner_group.utf8string_val);
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
@@ -337,6 +420,9 @@ size_done:
 
 out:
 	fattr_free(&fattr);
+
+	if (in_setattr && bitmap_set)
+		inode_touch(ino);
 
 	*bitmap_set_out = bitmap_set;
 	return status;
@@ -349,7 +435,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 	uint64_t bitmap_set;
 	nfsstat4 status;
 
-	status = inode_apply_attrs(new_ino, attr, &bitmap_set);
+	status = inode_apply_attrs(new_ino, attr, &bitmap_set, NULL, FALSE);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
 		goto out;
@@ -523,18 +609,18 @@ bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 	SETATTR4res *res;
 	struct nfs_inode *ino;
 	nfsstat4 status = NFS4_OK;
-	uint64_t bitmap_set;
+	uint64_t bitmap = get_bitmap(&arg->obj_attributes.attrmask);
+	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->stateid;
+	uint32_t id = GUINT32_FROM_LE(sid->id);
+
+	if (debugging) {
+		syslog(LOG_INFO, "op SETATTR (ID:%x)", id);
+		print_fattr_bitmap("   SETATTR", bitmap);
+	}
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SETATTR;
 	res = &resop.nfs_resop4_u.opsetattr;
-
-	res->attrsset.bitmap4_val = calloc(2, sizeof(uint32_t));
-	if (!res->attrsset.bitmap4_val) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-	res->attrsset.bitmap4_len = 2;
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -542,11 +628,16 @@ bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 		goto err_out;
 	}
 
-	status = inode_apply_attrs(ino, &arg->obj_attributes, &bitmap_set);
+	bitmap = 0;
+	status = inode_apply_attrs(ino, &arg->obj_attributes, &bitmap, sid,
+				   TRUE);
 	if (status != NFS4_OK)
 		goto err_out;
 
-	__set_bitmap(bitmap_set, &res->attrsset);
+	set_bitmap(bitmap, &res->attrsset);
+
+	if (debugging)
+		print_fattr_bitmap("   SETATTR result", bitmap);
 
 out:
 	res->status = status;
@@ -777,7 +868,7 @@ bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 	res = &resop.nfs_resop4_u.opverify;
 
 	if (!fattr_decode(&arg->obj_attributes, &fattr)) {
-		status = NFS4ERR_INVAL;
+		status = NFS4ERR_BADXDR;
 		goto out;
 	}
 

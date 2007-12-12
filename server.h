@@ -32,6 +32,19 @@ enum server_limits {
 
 	SRV_STATE_HIGH_WAT	= 100000,	/* start gc at this size */
 	SRV_STATE_LOW_WAT	= 33000,	/* stop gc at this limit */
+
+	MODE4_ALL		= MODE4_SUID |
+				  MODE4_SGID |
+				  MODE4_SVTX |
+				  MODE4_RUSR |
+				  MODE4_WUSR |
+				  MODE4_XUSR |
+				  MODE4_RGRP |
+				  MODE4_WGRP |
+				  MODE4_XGRP |
+				  MODE4_ROTH |
+				  MODE4_WOTH |
+				  MODE4_XOTH,
 };
 
 enum server_fs_settings {
@@ -79,10 +92,11 @@ enum {
 		1ULL << FATTR4_TIME_MODIFY_SET,
 
 	fattr_read_write_mask = fattr_mandatory_rw_mask |
+#if 0
 		1ULL << FATTR4_ACL |
+#endif
 		1ULL << FATTR4_ARCHIVE |
 		1ULL << FATTR4_HIDDEN |
-		1ULL << FATTR4_MIMETYPE |
 		1ULL << FATTR4_MODE |
 		1ULL << FATTR4_OWNER |
 		1ULL << FATTR4_OWNER_GROUP |
@@ -91,7 +105,9 @@ enum {
 		1ULL << FATTR4_TIME_CREATE,
 
 	fattr_read_only_mask = fattr_mandatory_ro_mask |
+#if 0
 		1ULL << FATTR4_ACLSUPPORT |
+#endif
 		1ULL << FATTR4_CANSETTIME |
 		1ULL << FATTR4_CASE_INSENSITIVE |
 		1ULL << FATTR4_CASE_PRESERVING |
@@ -256,6 +272,8 @@ struct nfs_server {
 	struct drand48_data	rng;
 
 	verifier4		instance_verf;
+
+	uint64_t		space_used;
 };
 
 /* global variables */
@@ -265,6 +283,7 @@ extern struct nfs_server srv;
 extern int debugging;
 
 /* inode.c */
+extern nfsino_t next_ino;
 extern struct nfs_inode *inode_get(nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool_t inode_table_init(void);
