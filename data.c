@@ -50,7 +50,7 @@ bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres)
 	resok = &res->COMMIT4res_u.resok4;
 
 	if (debugging)
-		syslog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%u)",
+		syslog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%x)",
 		       (unsigned long long) arg->offset,
 		       arg->count);
 
@@ -97,7 +97,7 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	unsigned int data_len = arg->data.data_len;
 
 	if (debugging)
-		syslog(LOG_INFO, "op WRITE (SEQ:%u ID:%x OFS:%Lu ST:%s LEN:%u)",
+		syslog(LOG_INFO, "op WRITE (IDSEQ:%u ID:%x OFS:%Lu ST:%s LEN:%x)",
 		       arg->stateid.seqid, id,
 		       (unsigned long long) arg->offset,
 		       name_stable_how4[arg->stable],
@@ -205,7 +205,7 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	struct state_search ss;
 
 	if (debugging)
-		syslog(LOG_INFO, "op READ (SEQ:%u ID:%x OFS:%Lu LEN:%u)",
+		syslog(LOG_INFO, "op READ (IDSEQ:%u ID:%x OFS:%Lu LEN:%x)",
 		       arg->stateid.seqid, id,
 		       (unsigned long long) arg->offset,
 		       arg->count);
@@ -371,14 +371,20 @@ bool_t nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres)
 	struct nfs_inode *ino;
 
 	if (debugging)
-		syslog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%lu)",
+		syslog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%Lx)",
 		       name_lock_type4[arg->locktype],
 		       (unsigned long long) arg->offset,
-		       (unsigned long) arg->length);
+		       (unsigned long long) arg->length);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOCKT;
 	res = &resop.nfs_resop4_u.oplockt;
+
+	if (!arg->length || ((arg->length != ~0ULL) &&
+		     ((uint64_t)arg->length > ~(uint64_t)arg->offset))) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -414,7 +420,8 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static void print_lock_args(LOCK4args *arg, uint32_t prev_id)
+static void print_lock_args(LOCK4args *arg, uint32_t prev_id_seq,
+			    uint32_t prev_id)
 {
 	gboolean new_lock;
 	uint32_t lseqid;
@@ -429,21 +436,24 @@ static void print_lock_args(LOCK4args *arg, uint32_t prev_id)
 	else
 		lseqid = arg->locker.locker4_u.lock_owner.lock_seqid;
 
-	syslog(LOG_INFO, "op LOCK (NEW:%s LSEQ:%u TYP:%s REC:%s OFS:%Lu LEN:%lu)",
+	syslog(LOG_INFO, "op LOCK (NEW:%s LSEQ:%u TYP:%s REC:%s OFS:%Lu LEN:%Lx)",
 	       new_lock ? "Y" : "N",
 	       lseqid,
 	       name_lock_type4[arg->locktype],
 	       arg->reclaim ? "Y" : "N",
 	       (unsigned long long) arg->offset,
-	       (unsigned long) arg->length);
+	       (unsigned long long) arg->length);
 
 	if (new_lock) {
-		syslog(LOG_INFO, "   LOCK (OSEQ:%u ID:%x OCID:%Lx OWNER:%.*s)",
+		syslog(LOG_INFO, "   LOCK (OSEQ:%u IDSEQ:%u ID:%x OCID:%Lx OWNER:%.*s)",
 		       arg->locker.locker4_u.open_owner.open_seqid,
-		       prev_id,
+		       prev_id_seq, prev_id,
 		       (unsigned long long) arg->locker.locker4_u.open_owner.lock_owner.clientid,
 		       arg->locker.locker4_u.open_owner.lock_owner.owner.owner_len,
 		       arg->locker.locker4_u.open_owner.lock_owner.owner.owner_val);
+	} else {
+		syslog(LOG_INFO, "   LOCK (IDSEQ:%u ID:%x)",
+		       prev_id_seq, prev_id);
 	}
 }
 
@@ -478,12 +488,18 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 
 	prev_id = GUINT32_FROM_LE(prev_sid->id);
 
-	print_lock_args(arg, prev_id);
+	print_lock_args(arg, prev_sid->seqid, prev_id);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOCK;
 	res = &resop.nfs_resop4_u.oplock;
 	resok = &res->LOCK4res_u.resok4;
+
+	if (!arg->length || ((arg->length != ~0ULL) &&
+		     ((uint64_t)arg->length > ~(uint64_t)arg->offset))) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -509,13 +525,19 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 
 	if (new_lock) {
 		if (arg->locker.locker4_u.open_owner.open_seqid !=
-			(prev_st->seq + 1)) {
+			prev_st->seq) {
 			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+
+		if ((arg->locktype == WRITE_LT || arg->locktype == WRITEW_LT) &&
+		    (prev_st->share_ac == OPEN4_SHARE_ACCESS_READ)) {
+			status = NFS4ERR_OPENMODE;
 			goto out;
 		}
 	} else {
 		if (arg->locker.locker4_u.lock_owner.lock_seqid !=
-			(prev_st->seq + 1)) {
+			prev_st->seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
@@ -595,7 +617,7 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
 have_st:
-	st->seq = lseqid;
+	st->seq = lseqid + 1;
 
 	sid = (struct nfs_stateid *) &resok->lock_stateid;
 	sid->seqid = lseqid;
@@ -629,11 +651,13 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 	res = &resop.nfs_resop4_u.oplocku;
 
 	if (debugging)
-		syslog(LOG_INFO, "op UNLOCK (TYP:%s SEQ:%u OFS:%Lu LEN:%lu ID:%x)",
+		syslog(LOG_INFO, "op UNLOCK (TYP:%s SEQ:%u OFS:%Lu LEN:%Lx "
+		       "IDSEQ:%u ID:%x)",
 		       name_lock_type4[arg->locktype],
 		       arg->seqid,
 		       (unsigned long long) arg->offset,
-		       (unsigned long) arg->length,
+		       (unsigned long long) arg->length,
+		       arg->lock_stateid.seqid,
 		       id);
 
 	ino = inode_get(cxn->current_fh);
@@ -658,7 +682,7 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 	if (status != NFS4_OK)
 		goto out;
 
-	if (arg->seqid != (st->seq + 1)) {
+	if (arg->seqid != st->seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -666,7 +690,7 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 	/* FIXME SECURITY: make sure we are the lock owner!!!!! */
 
 	if ((arg->offset != st->lock_ofs) || (arg->length != st->lock_len)) {
-		status = NFS4ERR_INVAL;
+		status = NFS4ERR_LOCK_RANGE;
 		goto out;
 	}
 

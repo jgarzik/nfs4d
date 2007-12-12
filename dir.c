@@ -41,15 +41,12 @@ nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-	if (ino->type != NF4DIR) {
-		if (ino->type == NF4LNK)
-			status = NFS4ERR_SYMLINK;
-		else
-			status = NFS4ERR_NOTDIR;
-		goto out;
-	}
 
 	*ino_out = ino;
+	if (ino->type != NF4DIR) {
+		/* NOTE: add NF4LNK tests at caller */
+		status = NFS4ERR_NOTDIR;
+	}
 
 out:
 	return status;

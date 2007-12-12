@@ -211,12 +211,12 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	st->ino = ino->ino;
 	st->share_ac = args->share_access;
 	st->share_dn = args->share_deny;
-	st->seq = args->seqid;
+	st->seq = args->seqid + 1;
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
 	sid = (struct nfs_stateid *) &resok->stateid;
-	sid->seqid = args->seqid;
+	sid->seqid = args->seqid + 1;
 	sid->id = GUINT32_TO_LE(st->id);
 	memcpy(&sid->server_verf, &srv.instance_verf,
 	       sizeof(srv.instance_verf));
@@ -247,8 +247,8 @@ bool_t nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND
 	struct nfs_inode *ino;
 
 	if (debugging)
-		syslog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u ID:%x)",
-		       arg->seqid, id);
+		syslog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
+		       arg->seqid, arg->open_stateid.seqid, id);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_OPEN_CONFIRM;
@@ -278,7 +278,7 @@ bool_t nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND
 		goto out;
 	}
 
-	if (arg->seqid != (st->seq + 1)) {
+	if (arg->seqid != st->seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -294,6 +294,74 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
+bool_t nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *arg, COMPOUND4res *cres)
+{
+	struct nfs_resop4 resop;
+	OPEN_DOWNGRADE4res *res;
+	OPEN_DOWNGRADE4resok *resok;
+	nfsstat4 status = NFS4_OK;
+	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
+	uint32_t id = GUINT32_FROM_LE(sid->id);
+	struct nfs_state *st = NULL;
+	struct nfs_inode *ino;
+
+	if (debugging)
+		syslog(LOG_INFO, "op OPEN_DOWNGRADE (SEQ:%u IDSEQ:%u ID:%x "
+		       "SHAC:%x SHDN:%x)",
+		       arg->seqid, arg->open_stateid.seqid, id,
+		       arg->share_access, arg->share_deny);
+
+	memset(&resop, 0, sizeof(resop));
+	resop.resop = OP_OPEN_DOWNGRADE;
+	res = &resop.nfs_resop4_u.opopen_downgrade;
+	resok = &res->OPEN_DOWNGRADE4res_u.resok4;
+
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	if (ino->type != NF4REG) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	status = stateid_lookup(id, &st);
+	if (status != NFS4_OK)
+		goto out;
+
+	if (arg->seqid != st->seq) {
+		status = NFS4ERR_BAD_SEQID;
+		goto out;
+	}
+
+	if ((!(arg->share_access & st->share_ac)) ||
+	    (!(arg->share_deny & st->share_dn))) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	st->share_ac = arg->share_access;
+	st->share_dn = arg->share_deny;
+
+	st->seq++;
+
+	sid = (struct nfs_stateid *) &resok->open_stateid;
+	sid->seqid = st->seq;
+	sid->id = GUINT32_TO_LE(st->id);
+	memcpy(&sid->server_verf, &srv.instance_verf,
+	       sizeof(srv.instance_verf));
+
+	if (debugging)
+		syslog(LOG_INFO, "   OPEN_DOWNGRADE -> (SEQ:%u ID:%x)",
+		       sid->seqid, st->id);
+
+out:
+	res->status = status;
+	return push_resop(cres, &resop, status);
+}
+
 bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -301,10 +369,11 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
 	uint32_t id = GUINT32_FROM_LE(sid->id);
+	struct nfs_state *st;
 
 	if (debugging)
-		syslog(LOG_INFO, "op CLOSE (SEQ:%u ID:%x)",
-		       arg->seqid, id);
+		syslog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
+		       arg->seqid, arg->open_stateid.seqid, id);
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_CLOSE;
@@ -315,20 +384,16 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	if (id) {
-		struct nfs_state *st;
+	status = stateid_lookup(id, &st);
+	if (status != NFS4_OK)
+		goto out;
 
-		status = stateid_lookup(id, &st);
-		if (status != NFS4_OK)
-			goto out;
-
-		if (arg->seqid != (st->seq + 1)) {
-			status = NFS4ERR_BAD_SEQID;
-			goto out;
-		}
-
-		state_trash(st);
+	if (arg->seqid != st->seq) {
+		status = NFS4ERR_BAD_SEQID;
+		goto out;
 	}
+
+	state_trash(st);
 
 	memcpy(&res->CLOSE4res_u.open_stateid,
 	       &arg->open_stateid, sizeof(arg->open_stateid));

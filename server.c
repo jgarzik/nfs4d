@@ -452,6 +452,8 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, res);
 	case OP_OPEN_CONFIRM:
 		return nfs_op_open_confirm(cxn, &arg->nfs_argop4_u.opopen_confirm, res);
+	case OP_OPEN_DOWNGRADE:
+		return nfs_op_open_downgrade(cxn, &arg->nfs_argop4_u.opopen_downgrade, res);
 	case OP_PUTFH:
 		return nfs_op_putfh(cxn, &arg->nfs_argop4_u.opputfh, res);
 	case OP_PUTPUBFH:
@@ -489,7 +491,6 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
-	case OP_OPEN_DOWNGRADE:
 	case OP_RENEW:
 	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
