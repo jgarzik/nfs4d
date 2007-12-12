@@ -46,9 +46,13 @@ static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
 
 	if (st->ino != cfs->ino)
 		return;
+	if (st->flags & (stfl_dead | stfl_lock))
+		return;
 
-	if ((cfs->args->share_access & st->share_dn) ||
-	    (cfs->args->share_deny & st->share_ac))
+	if (cfs->args->share_access & st->share_dn)
+		cfs->match = TRUE;
+
+	if (cfs->args->share_deny & st->share_ac)
 		cfs->match = TRUE;
 }
 
@@ -63,7 +67,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	struct nfs_client *cli;
 	struct nfs_state *st;
 	struct nfs_stateid *sid;
-	int creating;
+	gboolean creating, recreating = FALSE;
 
 	print_open_args(args);
 
@@ -104,15 +108,20 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 
 	creating = (args->openhow.opentype == OPEN4_CREATE);
 
+	if (creating && ino &&
+	    (args->openhow.openflag4_u.how.mode == UNCHECKED4)) {
+		creating = FALSE;
+		recreating = TRUE;
+	}
+
 	/*
 	 * does the dirent's existence match our expectations?
 	 */
-	if ((!creating) && (lu_stat == NFS4ERR_NOENT)) {
+	if (!creating && (lu_stat == NFS4ERR_NOENT)) {
 		status = lu_stat;
 		goto out;
 	}
-	if ((lu_stat == NFS4_OK) && creating &&
-	    (args->openhow.openflag4_u.how.mode != UNCHECKED4)) {
+	if (creating && (lu_stat == NFS4_OK)) {
 		status = NFS4ERR_EXIST;
 		goto out;
 	}
@@ -176,6 +185,22 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 		else
 			status = NFS4ERR_INVAL;
 		goto out;
+	}
+
+	/*
+	 * if re-creating, only size attribute applies
+	 */
+	if (recreating) {
+		uint64_t bitmap_set = 0;
+		args->openhow.openflag4_u.how.createhow4_u.createattrs.attrmask.bitmap4_val[0]
+			&= GUINT32_TO_BE(1 << FATTR4_SIZE);
+		args->openhow.openflag4_u.how.createhow4_u.createattrs.attrmask.bitmap4_val[1] = 0;
+
+		status = inode_apply_attrs(ino,
+			&args->openhow.openflag4_u.how.createhow4_u.createattrs,
+			&bitmap_set, NULL, FALSE);
+		if (status != NFS4_OK)
+			goto out;
 	}
 
 	st = calloc(1, sizeof(struct nfs_state));

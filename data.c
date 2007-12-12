@@ -622,6 +622,7 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->lock_stateid;
 	uint32_t id = GUINT32_FROM_LE(sid->id);
 	struct nfs_state *st = NULL;
+	struct nfs_inode *ino;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOCKU;
@@ -634,6 +635,24 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 		       (unsigned long long) arg->offset,
 		       (unsigned long) arg->length,
 		       id);
+
+	ino = inode_get(cxn->current_fh);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out;
+	}
+
+	/* we only support reading from regular files */
+	if (ino->type != NF4REG) {
+		if (debugging)
+			syslog(LOG_INFO, "trying to lock file of type %s",
+			       name_nfs_ftype4[ino->type]);
+		if (ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
+		goto out;
+	}
 
 	status = stateid_lookup(id, &st);
 	if (status != NFS4_OK)

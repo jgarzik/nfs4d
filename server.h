@@ -300,6 +300,10 @@ extern nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
 		   change_info4 *cinfo);
 extern struct nfs_inode *inode_new_file(struct nfs_cxn *cxn);
+extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
+			        uint64_t *bitmap_set_out,
+			        struct nfs_stateid *sid,
+			        gboolean in_setattr);
 
 /* data.c */
 extern bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);

@@ -272,10 +272,10 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 	}
 }
 
-static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
-				       uint64_t *bitmap_set_out,
-				       struct nfs_stateid *sid,
-				       gboolean in_setattr)
+enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
+			        uint64_t *bitmap_set_out,
+			        struct nfs_stateid *sid,
+			        gboolean in_setattr)
 {
 	struct nfs_fattr_set fattr;
 	uint64_t bitmap_set = 0;
@@ -382,7 +382,7 @@ size_done:
 		bitmap_set |= (1ULL << FATTR4_TIME_MODIFY_SET);
 	}
 	if (fattr.bitmap & (1ULL << FATTR4_MODE)) {
-		if ((!fattr.mode) || (fattr.mode & ~MODE4_ALL)) {
+		if (fattr.mode & ~MODE4_ALL) {
 			status = NFS4ERR_BADXDR;
 			goto out;
 		}
