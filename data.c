@@ -18,7 +18,7 @@ static const char *name_lock_type4[] = {
 };
 
 struct state_search {
-	gboolean		match;
+	bool			match;
 	nfsino_t		ino;
 	uint32_t		share_dn;
 	struct nfs_state	*st;
@@ -31,12 +31,12 @@ static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
 
 	if ((st->ino == ss->ino) && (st->share_dn & ss->share_dn) &&
 	    (!(st->flags & stfl_lock))) {
-		ss->match = TRUE;
+		ss->match = true;
 		ss->st = st;
 	}
 }
 
-bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres)
+bool nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	COMMIT4res *res;
@@ -81,7 +81,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
+bool nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	WRITE4res *res;
@@ -141,7 +141,7 @@ bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres)
 	}
 
 	/* search for conflicting share reservation (deny write) */
-	ss.match = FALSE;
+	ss.match = false;
 	ss.ino = ino->ino;
 	ss.share_dn = OPEN4_SHARE_DENY_WRITE;
 
@@ -190,7 +190,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
+bool nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	READ4res *res;
@@ -254,7 +254,7 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	}
 
 	/* search for conflicting share reservation (deny read) */
-	ss.match = FALSE;
+	ss.match = false;
 	ss.ino = ino->ino;
 	ss.share_dn = OPEN4_SHARE_DENY_READ;
 
@@ -266,7 +266,7 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	}
 
 	if (arg->offset >= ino->size) {
-		resok->eof = TRUE;
+		resok->eof = true;
 		goto out_mem;
 	}
 	if (arg->count == 0)
@@ -281,7 +281,7 @@ bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres)
 	resok->data.data_val = mem;
 	resok->data.data_len = read_size;
 	if ((arg->offset + read_size) >= ino->size)
-		resok->eof = TRUE;
+		resok->eof = true;
 
 out:
 	res->status = status;
@@ -292,18 +292,18 @@ out_mem:
 	goto out;
 }
 
-static bool_t ranges_intersect(uint64_t a_ofs, uint64_t a_len,
-			       uint64_t b_ofs, uint64_t b_len)
+static bool ranges_intersect(uint64_t a_ofs, uint64_t a_len,
+			     uint64_t b_ofs, uint64_t b_len)
 {
 	if (a_ofs < b_ofs) {
 		if ((a_ofs + a_len) < b_ofs)
-			return FALSE;
+			return false;
 	} else {
 		if ((b_ofs + b_len) < a_ofs)
-			return FALSE;
+			return false;
 	}
 
-	return TRUE;
+	return true;
 }
 
 struct state_search_lock {
@@ -362,7 +362,7 @@ static void fill_lock_denied(LOCK4denied *denied, GList *locks)
 	}
 }
 
-bool_t nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres)
+bool nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOCKT4res *res;
@@ -423,7 +423,7 @@ out:
 static void print_lock_args(LOCK4args *arg, uint32_t prev_id_seq,
 			    uint32_t prev_id)
 {
-	gboolean new_lock;
+	bool new_lock;
 	uint32_t lseqid;
 
 	if (!debugging)
@@ -457,7 +457,7 @@ static void print_lock_args(LOCK4args *arg, uint32_t prev_id_seq,
 	}
 }
 
-bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
+bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOCK4res *res;
@@ -471,7 +471,7 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	struct nfs_stateid *sid;
 	GList *locks = NULL;
 	uint32_t lseqid;
-	gboolean new_lock = arg->locker.new_lock_owner;
+	bool new_lock = arg->locker.new_lock_owner;
 
 	if (new_lock) {
 		lseqid = arg->locker.locker4_u.open_owner.lock_seqid;
@@ -628,7 +628,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
+bool nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOCKU4res *res;

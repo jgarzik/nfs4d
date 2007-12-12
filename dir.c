@@ -7,26 +7,26 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static bool_t has_slash(utf8string *str)
+static bool has_slash(utf8string *str)
 {
 	if (!str)
-		return FALSE;
+		return false;
 	if (g_utf8_strchr(str->utf8string_val, str->utf8string_len, '/'))
-		return TRUE;
-	return FALSE;
+		return true;
+	return false;
 }
 
-static bool_t has_dots(utf8string *str)
+static bool has_dots(utf8string *str)
 {
 	if (!str)
-		return FALSE;
+		return false;
 	if ((str->utf8string_len == 1) &&
 	    (!memcmp(str->utf8string_val, ".", 1)))
-		return TRUE;
+		return true;
 	if ((str->utf8string_len == 2) &&
 	    (!memcmp(str->utf8string_val, "..", 2)))
-		return TRUE;
-	return FALSE;
+		return true;
+	return false;
 }
 
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
@@ -93,14 +93,14 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 	return NFS4_OK;
 }
 
-bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
+bool nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOOKUP4res *res;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_dirent *dirent;
-	gboolean printed = FALSE;
+	bool printed = false;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOOKUP;
@@ -126,7 +126,7 @@ bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 		       arg->objname.utf8string_len,
 		       arg->objname.utf8string_val,
 		       cxn->current_fh);
-		printed = TRUE;
+		printed = true;
 	}
 
 out:
@@ -141,7 +141,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres)
+bool nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LOOKUPP4res *res;
@@ -216,7 +216,7 @@ out:
 	return status;
 }
 
-bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
+bool nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	LINK4res *res;
@@ -267,7 +267,7 @@ bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	resok->cinfo.atomic = TRUE;
+	resok->cinfo.atomic = true;
 	resok->cinfo.before =
 	resok->cinfo.after = dir_ino->version;
 
@@ -284,7 +284,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
+bool nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	REMOVE4res *res;
@@ -361,7 +361,7 @@ bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 	g_hash_table_remove(dir_ino->u.dir, name);
 
 	/* record directory change info */
-	resok->cinfo.atomic = TRUE;
+	resok->cinfo.atomic = true;
 	resok->cinfo.before = dir_ino->version;
 	inode_touch(dir_ino);
 	resok->cinfo.after = dir_ino->version;
@@ -376,7 +376,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
+bool nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	RENAME4res *res;
@@ -447,7 +447,7 @@ bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 
 	/* if target (newname) is present, attempt to remove */
 	if (new_dirent != NULL) {
-		gboolean ok_to_remove = FALSE;
+		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
 		new_file = inode_get(new_dirent->ino);
@@ -458,10 +458,10 @@ bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 
 		/* do oldname and newname refer to same file? */
 		if (old_file->ino == new_file->ino) {
-			resok->source_cinfo.atomic = TRUE;
+			resok->source_cinfo.atomic = true;
 			resok->source_cinfo.after =
 			resok->source_cinfo.before = src_dir->version;
-			resok->target_cinfo.atomic = TRUE;
+			resok->target_cinfo.atomic = true;
 			resok->target_cinfo.after =
 			resok->target_cinfo.before = target_dir->version;
 			goto out_name;
@@ -469,10 +469,10 @@ bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 
 		if (old_file->type == NF4DIR && new_file->type == NF4DIR) {
 			if (g_hash_table_size(new_file->u.dir) == 0)
-				ok_to_remove = TRUE;
+				ok_to_remove = true;
 		}
 		else if (old_file->type != NF4DIR && new_file->type != NF4DIR) {
-			ok_to_remove = TRUE;
+			ok_to_remove = true;
 		}
 
 		if (ok_to_remove) {
@@ -499,9 +499,9 @@ bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 	new_name = NULL;	/* prevent function exit from freeing */
 
 	/* record directory change info */
-	resok->source_cinfo.atomic = TRUE;
+	resok->source_cinfo.atomic = true;
 	resok->source_cinfo.before = src_dir->version;
-	resok->target_cinfo.atomic = TRUE;
+	resok->target_cinfo.atomic = true;
 	resok->target_cinfo.before = target_dir->version;
 
 	inode_touch(src_dir);
@@ -527,14 +527,14 @@ static void entry4_free(entry4 *ent)
 }
 
 static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
-			   guint64 bitmap, const struct nfs_dirent *de,
+			   uint64_t bitmap, const struct nfs_dirent *de,
 			   entry4 **new_entry_out)
 {
 	nfsstat4 status = NFS4_OK;
 	entry4 *ent;
 	struct nfs_inode *ino;
 	struct nfs_fattr_set attrset;
-	bool_t encode_rc;
+	bool encode_rc;
 
 	ent = calloc(1, sizeof(*ent));
 	if (!ent) {
@@ -603,10 +603,10 @@ void nfs_readdir_free(READDIR4res *_res)
 struct readdir_info {
 	unsigned long		hash;
 	unsigned long		cookie;
-	gboolean		found_cookie;
-	gboolean		full;
+	bool			found_cookie;
+	bool			full;
 
-	guint64			attr_req;
+	uint64_t		attr_req;
 
 	entry4			*tail;
 
@@ -638,7 +638,7 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	if (!ri->found_cookie) {
 		if (hash != ri->cookie)
 			return;
-		ri->found_cookie = TRUE;
+		ri->found_cookie = true;
 	}
 
 	ri->status = entry4_new(hash, name, ri->attr_req, de, &new_entry);
@@ -653,7 +653,7 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 
 	if (((ri->dir_sz + new_dir_sz) > ri->max_dir_sz) ||
 	    ((ri->reply_sz + new_reply_sz) > ri->max_reply_sz)) {
-		ri->full = TRUE;
+		ri->full = true;
 		entry4_free(new_entry);
 		return;
 	}
@@ -668,15 +668,14 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	ri->reply_sz += new_reply_sz;
 }
 
-bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
-		      COMPOUND4res *cres)
+bool nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	READDIR4res *res;
 	READDIR4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	guint32 tmp_ino_n;
+	uint32_t tmp_ino_n;
 	struct readdir_info ri;
 
 	if (debugging) {
@@ -707,7 +706,7 @@ bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
 	memset(&ri, 0, sizeof(ri));
 	ri.cookie = (unsigned long) args->cookie;
 	if (!ri.cookie)
-		ri.found_cookie = TRUE;
+		ri.found_cookie = true;
 	ri.attr_req = get_bitmap(&args->attr_request);
 	ri.status = NFS4_OK;
 	ri.resok = resok;
@@ -719,7 +718,7 @@ bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
 		goto out;
 
 	memcpy(&resok->cookieverf, &srv.instance_verf, sizeof(verifier4));
-	resok->reply.eof = TRUE;
+	resok->reply.eof = true;
 	tmp_ino_n = GUINT32_TO_LE(ino->ino);
 	ri.hash = blob_hash(BLOB_HASH_INIT, &tmp_ino_n, sizeof(tmp_ino_n));
 
@@ -727,7 +726,7 @@ bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args,
 
 	status = ri.status;
 	if (ri.full)
-		resok->reply.eof = FALSE;
+		resok->reply.eof = false;
 
 out:
 	res->status = status;

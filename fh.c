@@ -48,13 +48,13 @@ void nfs_getfh_free(GETFH4res *opgetfh)
 	nfs_fh_free(&opgetfh->GETFH4res_u.resok4.object);
 }
 
-bool_t nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+bool nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	GETFH4res *res;
 	GETFH4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	gboolean printed = FALSE;
+	bool printed = false;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_GETFH;
@@ -70,7 +70,7 @@ bool_t nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 
 	if (debugging) {
 		syslog(LOG_INFO, "op GETFH -> %u", cxn->current_fh);
-		printed = TRUE;
+		printed = true;
 	}
 
 out:
@@ -83,7 +83,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
+bool nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -110,7 +110,7 @@ bool_t nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+bool nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -129,7 +129,7 @@ bool_t nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+bool nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	PUTFH4res *res;
@@ -148,12 +148,12 @@ bool_t nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+bool nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	RESTOREFH4res *res;
 	nfsstat4 status = NFS4_OK;
-	gboolean printed = FALSE;
+	bool printed = false;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_RESTOREFH;
@@ -168,7 +168,7 @@ bool_t nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 
 	if (debugging) {
 		syslog(LOG_INFO, "op RESTOREFH -> %u", cxn->current_fh);
-		printed = TRUE;
+		printed = true;
 	}
 
 out:
@@ -181,12 +181,12 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+bool nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	SAVEFH4res *res;
 	nfsstat4 status = NFS4_OK;
-	gboolean printed = FALSE;
+	bool printed = false;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SAVEFH;
@@ -201,7 +201,7 @@ bool_t nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
 
 	if (debugging) {
 		syslog(LOG_INFO, "op SAVEFH (SAVE:%u)", cxn->save_fh);
-		printed = TRUE;
+		printed = true;
 	}
 
 out:

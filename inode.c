@@ -73,7 +73,7 @@ void inode_touch(struct nfs_inode *ino)
 
 static void inode_free(struct nfs_inode *ino)
 {
-	g_array_free(ino->parents, TRUE);
+	g_array_free(ino->parents, true);
 
 	switch (ino->type) {
 	case NF4DIR:
@@ -102,7 +102,7 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	if (!ino)
 		goto out;
 
-	ino->parents = g_array_new(FALSE, FALSE, sizeof(nfsino_t));
+	ino->parents = g_array_new(false, false, sizeof(nfsino_t));
 	if (!ino->parents)
 		goto out_ino;
 
@@ -233,7 +233,7 @@ out:
 	return status;
 }
 
-bool_t inode_table_init(void)
+bool inode_table_init(void)
 {
 	struct nfs_inode *root;
 
@@ -241,7 +241,7 @@ bool_t inode_table_init(void)
 
 	root = inode_new_dir(NULL);
 	if (!root)
-		return FALSE;
+		return false;
 	root->ino = INO_ROOT;
 	root->mode = 0755;
 	root->uid = 0;
@@ -250,7 +250,7 @@ bool_t inode_table_init(void)
 
 	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 
-	return TRUE;
+	return true;
 }
 
 void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
@@ -275,7 +275,7 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,
-			        gboolean in_setattr)
+			        bool in_setattr)
 {
 	struct nfs_fattr_set fattr;
 	uint64_t bitmap_set = 0;
@@ -435,7 +435,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 	uint64_t bitmap_set;
 	nfsstat4 status;
 
-	status = inode_apply_attrs(new_ino, attr, &bitmap_set, NULL, FALSE);
+	status = inode_apply_attrs(new_ino, attr, &bitmap_set, NULL, false);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
 		goto out;
@@ -450,7 +450,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(new_ino->ino),
 			    new_ino);
 
-	cinfo->atomic = TRUE;
+	cinfo->atomic = true;
 	cinfo->before =
 	cinfo->after = dir_ino->version;
 
@@ -499,7 +499,7 @@ static void print_create_args(CREATE4args *arg)
 	print_fattr("op CREATE attr", &arg->createattrs);
 }
 
-bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
+bool nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	CREATE4res *res;
@@ -543,7 +543,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
+bool nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -552,7 +552,7 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_fattr_set attrset;
-	gboolean printed = FALSE;
+	bool printed = false;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_GETATTR;
@@ -571,7 +571,7 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 
 	if (debugging && (status == NFS4_OK)) {
 		print_fattr_bitmap("op GETATTR", attrset.bitmap);
-		printed = TRUE;
+		printed = true;
 	}
 
 	/* GETATTR not permitted to process write-only attrs */
@@ -591,7 +591,7 @@ bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 	if (debugging) {
 		attrset.bitmap = get_bitmap(&resok->obj_attributes.attrmask);
 		print_fattr_bitmap("   GETATTR ->", attrset.bitmap);
-		printed = TRUE;
+		printed = true;
 	}
 
 out:
@@ -602,7 +602,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
+bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 		      COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -630,7 +630,7 @@ bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 
 	bitmap = 0;
 	status = inode_apply_attrs(ino, &arg->obj_attributes, &bitmap, sid,
-				   TRUE);
+				   true);
 	if (status != NFS4_OK)
 		goto err_out;
 
@@ -690,7 +690,7 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 	return rc;
 }
 
-bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
+bool nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
 		     COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -734,131 +734,131 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t inode_attr_cmp(const struct nfs_inode *ino,
+static bool inode_attr_cmp(const struct nfs_inode *ino,
 			     const struct nfs_fattr_set *attr)
 {
-	guint64 bitmap = attr->bitmap;
+	uint64_t bitmap = attr->bitmap;
 
 	/*
 	 * per-server attributes
 	 */
         if (bitmap & (1ULL << FATTR4_LEASE_TIME))
 		if (attr->lease_time != srv.lease_time)
-			return FALSE;
+			return false;
 
 	/*
 	 * per-filesystem attributes
 	 */
         if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
-		guint64 tmp = get_bitmap(&attr->supported_attrs);
+		uint64_t tmp = get_bitmap(&attr->supported_attrs);
 		if (tmp != fattr_supported_mask)
-			return FALSE;
+			return false;
 	}
         if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE))
 		if (attr->fh_expire_type != SRV_FH_EXP_TYPE)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_LINK_SUPPORT))
-		if (attr->link_support != TRUE)
-			return FALSE;
+		if (attr->link_support != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT))
-		if (attr->symlink_support != TRUE)
-			return FALSE;
+		if (attr->symlink_support != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES))
-		if (attr->unique_handles != TRUE)
-			return FALSE;
+		if (attr->unique_handles != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_CANSETTIME))
-		if (attr->cansettime != TRUE)
-			return FALSE;
+		if (attr->cansettime != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_CASE_INSENSITIVE))
-		if (attr->case_insensitive != FALSE)
-			return FALSE;
+		if (attr->case_insensitive != false)
+			return false;
         if (bitmap & (1ULL << FATTR4_CASE_PRESERVING))
-		if (attr->case_preserving != TRUE)
-			return FALSE;
+		if (attr->case_preserving != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_FILES_TOTAL))
 		if (attr->files_total != g_hash_table_size(srv.inode_table))
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_HOMOGENEOUS))
-		if (attr->homogeneous != TRUE)
-			return FALSE;
+		if (attr->homogeneous != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_MAXFILESIZE))
 		if (attr->maxfilesize != SRV_MAX_FILESIZE)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_MAXLINK))
 		if (attr->maxlink != SRV_MAX_LINK)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_MAXNAME))
 		if (attr->maxname != SRV_MAX_NAME)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_MAXREAD))
 		if (attr->maxread != SRV_MAX_READ)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_MAXWRITE))
 		if (attr->maxwrite != SRV_MAX_WRITE)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_NO_TRUNC))
-		if (attr->no_trunc != TRUE)
-			return FALSE;
+		if (attr->no_trunc != true)
+			return false;
         if (bitmap & (1ULL << FATTR4_TIME_DELTA))
 		if ((attr->time_delta.seconds != 1) ||
 		    (attr->time_delta.nseconds != 0))
-			return FALSE;
+			return false;
 
 	/*
 	 * per-object attributes
 	 */
         if (bitmap & (1ULL << FATTR4_TYPE))
 		if (attr->type != ino->type)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_CHANGE))
 		if (attr->change != ino->version)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_SIZE))
 		if (attr->size != ino->size)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_NAMED_ATTR))
-		if (attr->named_attr != FALSE)
-			return FALSE;
+		if (attr->named_attr != false)
+			return false;
         if (bitmap & (1ULL << FATTR4_FSID))
 		if ((attr->fsid.major != 1) || (attr->fsid.minor != 0))
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
 		nfsino_t fh = 0;
 		if (nfs_fh_decode(&attr->filehandle, &fh) <= 0)
-			return FALSE;
+			return false;
 		if (fh != ino->ino)
-			return FALSE;
+			return false;
 	}
         if (bitmap & (1ULL << FATTR4_FILEID))
 		if (attr->fileid != ino->ino)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_NUMLINKS))
 		if (attr->numlinks != ino->parents->len)
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_RAWDEV))
 		if ((attr->rawdev.specdata1 != ino->u.devdata.specdata1) ||
 		    (attr->rawdev.specdata2 != ino->u.devdata.specdata2))
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_TIME_ACCESS))
 		if ((attr->time_access.seconds != ino->atime) ||
 		    (attr->time_access.nseconds != 0))
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_TIME_CREATE))
 		if ((attr->time_create.seconds != ino->ctime) ||
 		    (attr->time_create.nseconds != 0))
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_TIME_MODIFY))
 		if ((attr->time_modify.seconds != ino->mtime) ||
 		    (attr->time_modify.nseconds != 0))
-			return FALSE;
+			return false;
         if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID))
 		if (attr->mounted_on_fileid != ino->ino)
-			return FALSE;
+			return false;
 
-	return TRUE;
+	return true;
 }
 
-bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
+bool nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify)
 {
 	struct nfs_resop4 resop;
@@ -866,7 +866,7 @@ bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_fattr_set fattr;
-	bool_t match;
+	bool match;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_VERIFY;

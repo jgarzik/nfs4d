@@ -11,7 +11,7 @@ struct nfs_clientid {
 	clientid4		id_short;
 	verifier4		confirm_verf;	/* clientid confirm verifier */
 	cb_client4		callback;
-	guint32			callback_ident;
+	uint32_t			callback_ident;
 };
 
 struct nfs_client {
@@ -38,7 +38,7 @@ unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 	return hash;
 }
 
-static guint blob_hash_for_key(const struct blob *b)
+static unsigned long blob_hash_for_key(const struct blob *b)
 {
 	g_assert(b != NULL);
 	g_assert(b->magic == BLOB_MAGIC);
@@ -46,7 +46,7 @@ static guint blob_hash_for_key(const struct blob *b)
 	return blob_hash(BLOB_HASH_INIT, b->buf, b->len);
 }
 
-static gboolean blob_equal(const struct blob *a, const struct blob *b)
+static bool blob_equal(const struct blob *a, const struct blob *b)
 {
 	g_assert(a != NULL);
 	g_assert(a->magic == BLOB_MAGIC);
@@ -54,15 +54,15 @@ static gboolean blob_equal(const struct blob *a, const struct blob *b)
 	g_assert(b->magic == BLOB_MAGIC);
 
 	if (a->len != b->len)
-		return FALSE;
+		return false;
 	if (memcmp(a->buf, b->buf, a->len))
-		return FALSE;
-	return TRUE;
+		return false;
+	return true;
 }
 
 static void nrand32(void *mem, unsigned int dwords)
 {
-	guint32 *v = mem;
+	uint32_t *v = mem;
 	long l;
 	int i;
 
@@ -116,7 +116,7 @@ nfsstat4 stateid_lookup(uint32_t id, struct nfs_state **st_out)
 void state_trash(struct nfs_state *st)
 {
 	GList *last, *node;
-	gboolean rc;
+	bool rc;
 
 	st->flags |= stfl_dead;
 	srv.dead_state = g_list_prepend(srv.dead_state, st);
@@ -377,34 +377,34 @@ static void client_cancel(struct nfs_cxn *cxn, clientid4 cli)
 		       trashed, (unsigned long long) cli);
 }
 
-static gboolean callback_equal(struct nfs_client *cli, cb_client4 *cb,
+static bool callback_equal(struct nfs_client *cli, cb_client4 *cb,
 			       uint32_t cb_ident)
 {
 	struct nfs_clientid *clid;
 
 	if (!cli)
-		return FALSE;
+		return false;
 	if (!cli->id)
-		return FALSE;
+		return false;
 
 	clid = cli->id;
 	if (clid->callback_ident != cb_ident)
-		return FALSE;
+		return false;
 	if (clid->callback.cb_program != cb->cb_program)
-		return FALSE;
+		return false;
 	if (!cb->cb_location.r_addr || !cb->cb_location.r_netid)
-		return FALSE;
+		return false;
 	if (strcmp(clid->callback.cb_location.r_netid,
 		   cb->cb_location.r_netid))
-		return FALSE;
+		return false;
 	if (strcmp(clid->callback.cb_location.r_addr,
 		   cb->cb_location.r_addr))
-		return FALSE;
+		return false;
 
-	return TRUE;
+	return true;
 }
 
-bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
+bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			  COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
@@ -476,7 +476,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static gint compare_confirm(gconstpointer _a, gconstpointer _b)
+static int compare_confirm(gconstpointer _a, gconstpointer _b)
 {
 	const struct nfs_clientid *a = _a;
 	const struct nfs_clientid *b = _b;
@@ -489,7 +489,7 @@ static gint compare_confirm(gconstpointer _a, gconstpointer _b)
 	return 1;
 }
 
-bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
+bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				  SETCLIENTID_CONFIRM4args *args,
 				  COMPOUND4res *cres)
 {

@@ -2,6 +2,7 @@
 #define __SERVER_H__
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <sys/time.h>
 #include <glib.h>
 #include <rpc/auth.h>
@@ -269,15 +270,15 @@ extern int debugging;
 extern nfsino_t next_ino;
 extern struct nfs_inode *inode_get(nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
-extern bool_t inode_table_init(void);
+extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
-extern bool_t nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
+extern bool nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres);
-extern bool_t nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
+extern bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 		      COMPOUND4res *cres);
-extern bool_t nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
+extern bool nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 		     COMPOUND4res *cres, int nverify);
 extern nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
@@ -286,26 +287,26 @@ extern struct nfs_inode *inode_new_file(struct nfs_cxn *cxn);
 extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,
-			        gboolean in_setattr);
+			        bool in_setattr);
 
 /* data.c */
-extern bool_t nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres);
-extern bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres);
+extern bool nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres);
 
 /* dir.c */
-bool_t nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool_t nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres);
+bool nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres);
+bool nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres);
+bool nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres);
+bool nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres);
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
 		      nfsino_t inum);
 void dirent_free(gpointer p);
-bool_t nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *arg,
+bool nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *arg,
 		      COMPOUND4res *cres);
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
 nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
@@ -313,8 +314,8 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 void nfs_readdir_free(READDIR4res *res);
 
 /* fattr.c */
-extern bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
-extern bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
+extern bool fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr);
+extern bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 extern void fattr_free(struct nfs_fattr_set *attr);
 extern void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
 extern void fattr4_free(fattr4 *attr);
@@ -322,32 +323,32 @@ extern void print_fattr(const char *pfx, fattr4 *attr);
 extern void print_fattr_bitmap(const char *pfx, uint64_t bitmap);
 
 /* fh.c */
-bool_t nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool_t nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres);
-bool_t nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool_t nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool_t nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool_t nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres);
+bool nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+bool nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
 void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* open.c */
-bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
-bool_t nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *args, COMPOUND4res *cres);
-bool_t nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *args, COMPOUND4res *cres);
-bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
+bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
+bool nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *args, COMPOUND4res *cres);
+bool nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *args, COMPOUND4res *cres);
+bool nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres);
 
 /* server.c */
 extern const char *name_nfs_ftype4[];
 extern int cxn_getuid(const struct nfs_cxn *cxn);
 extern int cxn_getgid(const struct nfs_cxn *cxn);
 
-extern bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
-extern bool_t valid_utf8string(utf8string *str);
+extern bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
+extern bool valid_utf8string(utf8string *str);
 extern char *copy_utf8string(utf8string *str);
 extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
-extern guint64 get_bitmap(const bitmap4 *map);
-extern void __set_bitmap(guint64 map_in, bitmap4 *map_out);
-extern int set_bitmap(guint64 map_in, bitmap4 *map_out);
+extern uint64_t get_bitmap(const bitmap4 *map);
+extern void __set_bitmap(uint64_t map_in, bitmap4 *map_out);
+extern int set_bitmap(uint64_t map_in, bitmap4 *map_out);
 extern int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
@@ -357,9 +358,9 @@ extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);
 extern uint32_t gen_stateid(void);
-extern bool_t nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
+extern bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 			 COMPOUND4res *cres);
-extern bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
+extern bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 				 SETCLIENTID_CONFIRM4args *arg,
 				 COMPOUND4res *cres);
 extern void rand_verifier(verifier4 *verf);

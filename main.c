@@ -30,7 +30,7 @@ struct timeval current_time;
 GList *client_list = NULL;
 int debugging = 0;
 struct nfs_server srv;
-static gboolean opt_foreground;
+static bool opt_foreground;
 static unsigned int opt_nfs_port = 2049;
 
 static const char doc[] =
@@ -241,7 +241,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		debugging = 1;
 		break;
 	case 'f':
-		opt_foreground = TRUE;
+		opt_foreground = true;
 		break;
 	case 'p':
 		if (atoi(arg) > 0 && atoi(arg) < 65536)

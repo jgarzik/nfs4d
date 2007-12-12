@@ -36,7 +36,7 @@ static void print_open_args(OPEN4args *args)
 struct conflict_fe_state {
 	OPEN4args *args;
 	nfsino_t ino;
-	gboolean match;
+	bool match;
 };
 
 static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
@@ -50,13 +50,13 @@ static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
 		return;
 
 	if (cfs->args->share_access & st->share_dn)
-		cfs->match = TRUE;
+		cfs->match = true;
 
 	if (cfs->args->share_deny & st->share_ac)
-		cfs->match = TRUE;
+		cfs->match = true;
 }
 
-bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
+bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	OPEN4res *res;
@@ -66,7 +66,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	struct nfs_dirent *de;
 	struct nfs_state *st;
 	struct nfs_stateid *sid;
-	gboolean creating, recreating = FALSE;
+	bool creating, recreating = false;
 
 	print_open_args(args);
 
@@ -109,8 +109,8 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 
 	if (creating && ino &&
 	    (args->openhow.openflag4_u.how.mode == UNCHECKED4)) {
-		creating = FALSE;
-		recreating = TRUE;
+		creating = false;
+		recreating = true;
 	}
 
 	/*
@@ -134,7 +134,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	}
 
 	if (ino) {
-		struct conflict_fe_state cfs = { args, ino->ino, FALSE };
+		struct conflict_fe_state cfs = { args, ino->ino, false };
 
 		g_hash_table_foreach(srv.state, state_sh_conflict, &cfs);
 
@@ -191,7 +191,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 
 		status = inode_apply_attrs(ino,
 			&args->openhow.openflag4_u.how.createhow4_u.createattrs,
-			&bitmap_set, NULL, FALSE);
+			&bitmap_set, NULL, false);
 		if (status != NFS4_OK)
 			goto out;
 	}
@@ -228,7 +228,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND4res *cres)
+bool nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	OPEN_CONFIRM4res *res;
@@ -287,7 +287,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *arg, COMPOUND4res *cres)
+bool nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	OPEN_DOWNGRADE4res *res;
@@ -355,7 +355,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
+bool nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	CLOSE4res *res;

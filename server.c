@@ -97,16 +97,16 @@ static const char *name_nfs4status[] = {
 
 bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
 {
-	return TRUE;
+	return true;
 }
 
-bool_t valid_utf8string(utf8string *str)
+bool valid_utf8string(utf8string *str)
 {
 	if (!str || !str->utf8string_len || !str->utf8string_val)
-		return FALSE;
+		return false;
 	if (!g_utf8_validate(str->utf8string_val, str->utf8string_len, NULL))
-		return FALSE;
-	return TRUE;
+		return false;
+	return true;
 }
 
 char *copy_utf8string(utf8string *str)
@@ -114,9 +114,9 @@ char *copy_utf8string(utf8string *str)
 	return strndup(str->utf8string_val, str->utf8string_len);
 }
 
-guint64 get_bitmap(const bitmap4 *map)
+uint64_t get_bitmap(const bitmap4 *map)
 {
-	guint64 v = 0;
+	uint64_t v = 0;
 
 	if (!map || !map->bitmap4_val || !map->bitmap4_len)
 		goto out;
@@ -124,20 +124,20 @@ guint64 get_bitmap(const bitmap4 *map)
 	if (map->bitmap4_len > 0)
 		v |= map->bitmap4_val[0];
 	if (map->bitmap4_len > 1)
-		v |= ((guint64)map->bitmap4_val[1]) << 32;
+		v |= ((uint64_t)map->bitmap4_val[1]) << 32;
 
 out:
 	return v;
 }
 
-void __set_bitmap(guint64 map_in, bitmap4 *map_out)
+void __set_bitmap(uint64_t map_in, bitmap4 *map_out)
 {
 	map_out->bitmap4_len = 2;
 	map_out->bitmap4_val[0] = map_in;
 	map_out->bitmap4_val[1] = (map_in >> 32);
 }
 
-int set_bitmap(guint64 map_in, bitmap4 *map_out)
+int set_bitmap(uint64_t map_in, bitmap4 *map_out)
 {
 	map_out->bitmap4_val = calloc(2, sizeof(uint32_t));
 	if (!map_out->bitmap4_val) {
@@ -236,7 +236,7 @@ static void cli_free(struct nfs_cxn *cxn)
 	free(cxn);
 }
 
-bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
+bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 {
 	void *mem;
 	u_int array_len = res->resarray.resarray_len;
@@ -244,7 +244,7 @@ bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 	mem = realloc(res->resarray.resarray_val,
 		((array_len + 1) * sizeof(nfs_resop4)));
 	if (!mem)
-		return FALSE;
+		return false;
 
 	res->resarray.resarray_len++;
 	res->resarray.resarray_val = mem;
@@ -252,10 +252,10 @@ bool_t push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 	       sizeof(struct nfs_resop4));
 	res->status = stat;
 
-	return stat == NFS4_OK ? TRUE : FALSE;
+	return stat == NFS4_OK ? true : false;
 }
 
-static bool_t nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
+static bool nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	READLINK4res *res;
@@ -293,14 +293,14 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_op_secinfo(struct nfs_cxn *cxn, SECINFO4args *arg, COMPOUND4res *cres)
+static bool nfs_op_secinfo(struct nfs_cxn *cxn, SECINFO4args *arg, COMPOUND4res *cres)
 {
 	struct nfs_resop4 resop;
 	SECINFO4res *res;
 	SECINFO4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	secinfo4 *val;
-	gboolean printed = FALSE;
+	bool printed = false;
 
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_SECINFO;
@@ -333,7 +333,7 @@ static bool_t nfs_op_secinfo(struct nfs_cxn *cxn, SECINFO4args *arg, COMPOUND4re
 	if (debugging) {
 		syslog(LOG_INFO, "op SECINFO -> AUTH_%s",
 		       (val->flavor == AUTH_NONE) ? "NONE" : "SYS");
-		printed = TRUE;
+		printed = true;
 	}
 
 out:
@@ -346,7 +346,7 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_op_notsupp(struct nfs_cxn *cxn, COMPOUND4res *cres,
+static bool nfs_op_notsupp(struct nfs_cxn *cxn, COMPOUND4res *cres,
 			     nfs_opnum4 argop)
 {
 	struct nfs_resop4 resop;
@@ -360,7 +360,7 @@ static bool_t nfs_op_notsupp(struct nfs_cxn *cxn, COMPOUND4res *cres,
 	return push_resop(cres, &resop, status);
 }
 
-static bool_t nfs_op_illegal(struct nfs_cxn *cxn, COMPOUND4res *cres,
+static bool nfs_op_illegal(struct nfs_cxn *cxn, COMPOUND4res *cres,
 			     nfs_opnum4 argop)
 {
 	struct nfs_resop4 resop;
@@ -417,7 +417,7 @@ static const char *arg_str[] = {
 	"RELEASE_LOCKOWNER",
 };
 
-static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
+static bool nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 {
 	switch (arg->argop) {
 	case OP_ACCESS:
@@ -505,7 +505,7 @@ static bool_t nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_illegal(cxn, res, arg->argop);
 	}
 
-	return FALSE;	/* never reached */
+	return false;	/* never reached */
 }
 
 bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
@@ -556,7 +556,7 @@ bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
 
 	cli_free(cxn);
 out:
-	return TRUE;
+	return true;
 }
 
 static void nfs_free(nfs_resop4 *res)
@@ -620,6 +620,6 @@ int nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
 	free(res->resarray.resarray_val);
 
 out:
-	return TRUE;
+	return true;
 }
 

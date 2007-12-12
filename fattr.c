@@ -114,18 +114,18 @@ static void encode_acl(fattr4_acl *acl, uint32_t **base_out,
 	*alloc_len_out = alloc_len;
 }
 
-bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
+bool fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 {
 	uint32_t *buf;
-	guint64 bitmap = attr->bitmap;
-	guint64 bitmap_out = 0;
+	uint64_t bitmap = attr->bitmap;
+	uint64_t bitmap_out = 0;
 	size_t buflen, alloc_len = 1024;
 	uint32_t *p;
 	void *p1, *p2;
 
 	buf = malloc(alloc_len);
 	if (!buf)
-		return FALSE;
+		return false;
 	buflen = alloc_len;
 
 	memset(buf, 0xffffffff, alloc_len);
@@ -383,26 +383,26 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 	else
 		raw->attr_vals.attrlist4_val = p1;
 
-	return TRUE;
+	return true;
 
 out:
 	free(buf);
-	return FALSE;
+	return false;
 }
 
 #define FATTR_DEFINE(a,b,c)				\
 	if (bitmap & ( 1ULL << FATTR4_##a )) {		\
 		if (!xdr_fattr4_##b(&xdr, &attr->b)) {	\
-			rc = FALSE;			\
+			rc = false;			\
 			goto out;			\
 		}					\
 	}
 
-bool_t fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr)
+bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap;
 	XDR xdr;
-	bool_t rc = TRUE;
+	bool rc = true;
 
 	memset(attr, 0, sizeof(*attr));
 	bitmap = attr->bitmap = get_bitmap(&raw->attrmask);
@@ -445,7 +445,7 @@ void fattr4_free(fattr4 *attr)
 
 static void fattr_fill_server(struct nfs_fattr_set *attr)
 {
-	guint64 bitmap = attr->bitmap;
+	uint64_t bitmap = attr->bitmap;
 
 	if (bitmap & (1ULL << FATTR4_LEASE_TIME))
 		attr->lease_time = srv.lease_time;
@@ -453,27 +453,27 @@ static void fattr_fill_server(struct nfs_fattr_set *attr)
 
 static void fattr_fill_fs(struct nfs_fattr_set *attr)
 {
-	guint64 bitmap = attr->bitmap;
+	uint64_t bitmap = attr->bitmap;
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS))
 		if (set_bitmap(fattr_supported_mask, &attr->supported_attrs))
 			return;		/* failure, OOM most likely */
 
 	attr->fh_expire_type = SRV_FH_EXP_TYPE;
-	attr->link_support = TRUE;
-	attr->symlink_support = TRUE;
-	attr->unique_handles = TRUE;
-	attr->cansettime = TRUE;
-	attr->case_insensitive = FALSE;
-	attr->case_preserving = TRUE;
+	attr->link_support = true;
+	attr->symlink_support = true;
+	attr->unique_handles = true;
+	attr->cansettime = true;
+	attr->case_insensitive = false;
+	attr->case_preserving = true;
 	attr->files_total = g_hash_table_size(srv.inode_table);
-	attr->homogeneous = TRUE;
+	attr->homogeneous = true;
 	attr->maxfilesize = SRV_MAX_FILESIZE;
 	attr->maxlink = SRV_MAX_LINK;
 	attr->maxname = SRV_MAX_NAME;
 	attr->maxread = SRV_MAX_READ;
 	attr->maxwrite = SRV_MAX_WRITE;
-	attr->no_trunc = TRUE;
+	attr->no_trunc = true;
 	attr->time_delta.seconds = 1;
 	attr->time_delta.nseconds = 0;
 
@@ -489,12 +489,12 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 
 static void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
-	guint64 bitmap = attr->bitmap;
+	uint64_t bitmap = attr->bitmap;
 
 	attr->type = ino->type;
 	attr->change = ino->version;
 	attr->size = ino->size;
-	attr->named_attr = FALSE;
+	attr->named_attr = false;
 	attr->fsid.major = 1;
 	attr->fsid.minor = 0;
 	attr->rdattr_error = NFS4_OK;
