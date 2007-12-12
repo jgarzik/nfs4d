@@ -257,7 +257,7 @@ bool_t nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
-			
+
 	sid = (struct nfs_stateid *) &resok->open_stateid;
 	sid->seqid = arg->seqid;
 	sid->id = GUINT32_TO_LE(st->id);
@@ -301,7 +301,7 @@ bool_t nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
-			
+
 		state_trash(st);
 	}
 

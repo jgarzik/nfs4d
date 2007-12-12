@@ -29,8 +29,8 @@ enum {
 #define WRITE64(val)					\
 	do {						\
 		GROW_ATTR_BUF(8);			\
-		*p++ = GUINT32_TO_BE(val);		\
-		*p++ = GUINT32_TO_BE((val) >> 32);	\
+		*((uint64_t *)p) = GUINT64_TO_BE(val);	\
+		p += 2;					\
 		buflen -= 8;				\
 	} while (0)
 
@@ -134,7 +134,8 @@ bool_t fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
 		WRITE32(2);
-		WRITE64(fattr_supported_mask);
+		WRITE32(fattr_supported_mask);
+		WRITE32(fattr_supported_mask >> 32);
 		bitmap_out |= (1ULL << FATTR4_SUPPORTED_ATTRS);
 	}
 	if (bitmap & (1ULL << FATTR4_TYPE)) {
@@ -476,11 +477,11 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->time_delta.seconds = 1;
 	attr->time_delta.nseconds = 0;
 
-	attr->files_avail = 
+	attr->files_avail =
 	attr->files_free = 330000000ULL;
 	attr->files_total = attr->files_free + next_ino;
 
-	attr->space_avail = 
+	attr->space_avail =
 	attr->space_free = 400000000ULL;
 	attr->space_used = srv.space_used;
 	attr->space_total = attr->space_used + attr->space_free;

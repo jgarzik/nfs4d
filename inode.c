@@ -338,6 +338,8 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 			goto out;
 		}
 
+		ino->data = mem;
+
 		if (new_size > ino->size) {
 			uint64_t zero = new_size - ino->size;
 			memset(ino->data + ino->size, 0, zero);
@@ -345,8 +347,6 @@ static enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 		} else {
 			srv.space_used -= (ino->size - new_size);
 		}
-
-		ino->data = mem;
 
 size_done:
 		ino->size = new_size;
@@ -653,32 +653,37 @@ err_out:
 unsigned int inode_access(const struct nfs_cxn *cxn,
 			  const struct nfs_inode *ino, unsigned int req_access)
 {
-	unsigned int mode = ino->mode & 0x7;
-	unsigned int rc = 0;
+	unsigned int mode, rc;
 	int uid, gid;
 
 	uid = cxn_getuid(cxn);
 	gid = cxn_getgid(cxn);
-	if ((uid < 0) || (gid < 0))
+	if ((uid < 0) || (gid < 0)) {
+		if (debugging)
+			syslog(LOG_INFO, "invalid cxn uid/gid (%d/%d)",
+				uid, gid);
 		return 0;
+	}
 
+	mode = ino->mode & 0x7;
 	if (uid == ino->uid)
 		mode |= (ino->mode >> 6) & 0x7;
 	if (gid == ino->gid)
 		mode |= (ino->mode >> 3) & 0x7;
 
-	if ((req_access & ACCESS4_READ) && (mode & MODE4_ROTH))
+	rc = 0;
+	if (mode & MODE4_ROTH)
 		rc |= ACCESS4_READ;
-	else if ((req_access & ACCESS4_LOOKUP) && (mode & MODE4_XOTH) &&
-		 (ino->type == NF4DIR))
+	else if ((mode & MODE4_XOTH) && (ino->type == NF4DIR))
 		rc |= ACCESS4_LOOKUP;
-	else if ((req_access & ACCESS4_MODIFY) && (mode & MODE4_WOTH))
+	else if (mode & MODE4_WOTH)
 		rc |= ACCESS4_MODIFY;
-	else if ((req_access & ACCESS4_EXTEND) && (mode & MODE4_WOTH))
+	else if (mode & MODE4_WOTH)
 		rc |= ACCESS4_EXTEND;
-	else if ((req_access & ACCESS4_EXECUTE) && (mode & MODE4_XOTH) &&
-		 (ino->type != NF4DIR))
+	else if ((mode & MODE4_XOTH) && (ino->type != NF4DIR))
 		rc |= ACCESS4_EXECUTE;
+
+	rc &= req_access;
 
 	/* FIXME: check ACCESS4_DELETE */
 

@@ -192,10 +192,14 @@ static nfsstat4 cli_init(struct svc_req *rqstp, struct nfs_cxn **cxn_out)
 	case AUTH_NONE:
 		syslog(LOG_INFO, "AUTH_NONE");
 		cxn->auth.type = auth_none;
+
+		if (debugging)
+			syslog(LOG_INFO, "RPC CRED None (len %d)",
+				rqstp->rq_cred.oa_length);
 		break;
 
 	case AUTH_SYS:
-		if (!rqstp->rq_cred.oa_base || !rqstp->rq_cred.oa_length) {
+		if (!rqstp->rq_clntcred) {
 			syslog(LOG_INFO, "AUTH_SYS null");
 			status = NFS4ERR_DENIED;
 			goto err_out;
@@ -203,7 +207,13 @@ static nfsstat4 cli_init(struct svc_req *rqstp, struct nfs_cxn **cxn_out)
 
 		cxn->auth.type = auth_unix;
 		cxn->auth.u.up =
-			(struct authunix_parms *) rqstp->rq_cred.oa_base;
+			(struct authunix_parms *) rqstp->rq_clntcred;
+
+		if (debugging)
+			syslog(LOG_INFO, "RPC CRED Unix (uid %d gid %d len %d)",
+				cxn->auth.u.up->aup_uid,
+				cxn->auth.u.up->aup_gid,
+				rqstp->rq_cred.oa_length);
 		break;
 
 	default:

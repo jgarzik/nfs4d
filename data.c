@@ -622,7 +622,7 @@ bool_t nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres)
 	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->lock_stateid;
 	uint32_t id = GUINT32_FROM_LE(sid->id);
 	struct nfs_state *st = NULL;
-	
+
 	memset(&resop, 0, sizeof(resop));
 	resop.resop = OP_LOCKU;
 	res = &resop.nfs_resop4_u.oplocku;

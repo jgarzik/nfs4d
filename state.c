@@ -111,7 +111,7 @@ void state_trash(struct nfs_state *st)
 		return;
 
 	last = g_list_last(srv.dead_state);
-	
+
 	while (srv.n_dead > SRV_STATE_LOW_WAT) {
 		node = last;
 		last = last->prev;
