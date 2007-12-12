@@ -5,6 +5,21 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
+struct nfs_clientid {
+	struct blob		id;
+	verifier4		cli_verf;	/* client-supplied verifier */
+	clientid4		id_short;
+	verifier4		confirm_verf;	/* clientid confirm verifier */
+	cb_client4		callback;
+	guint32			callback_ident;
+};
+
+struct nfs_client {
+	struct nfs_clientid	*id;
+
+	GList			*pending;	/* unconfirmed requests */
+};
+
 /* "djb2"-derived hash function */
 unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
 {
@@ -146,7 +161,21 @@ static void gen_clientid4(clientid4 *id)
 		loop--;
 
 		nrand32(id, 2);
-	} while (g_hash_table_lookup(srv.clid_idx, id) != NULL);
+	} while (g_hash_table_lookup(srv.clid_idx,
+				(void *)((unsigned long) *id)) != NULL);
+}
+
+nfsstat4 clientid_test(clientid4 id_in)
+{
+	struct nfs_client *cli;
+	unsigned long id = (unsigned long) id_in;
+
+	cli = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	if (!cli)
+		return NFS4ERR_BADOWNER;
+	if (!cli->id)
+		return NFS4ERR_STALE_CLIENTID;
+	return NFS4_OK;
 }
 
 static int copy_cb_client4(cb_client4 *dest, const cb_client4 *src)
@@ -233,24 +262,11 @@ gboolean clientid_equal(gconstpointer _a, gconstpointer _b)
 	return blob_equal(a, b);
 }
 
-guint short_clientid_hash(gconstpointer key)
-{
-	const clientid4 *clid = key;
-	return *clid;
-}
-
-gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b)
-{
-	const clientid4 *a = _a;
-	const clientid4 *b = _b;
-	return (*a == *b) ? TRUE : FALSE;
-}
-
 static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 			SETCLIENTID4args *args, struct nfs_clientid **clid_out)
 {
 	struct nfs_clientid *clid;
-	clientid4 *short_clid;
+	unsigned long short_clid;
 
 	clid = calloc(1, sizeof(struct nfs_clientid));
 	if (!clid)
@@ -276,20 +292,15 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 		goto err_out_clid_buf;
 	clid->callback_ident = args->callback_ident;
 
-	short_clid = malloc(sizeof(clientid4));
-	if (!short_clid)
-		goto err_out_cb_client4;
-	memcpy(short_clid, &clid->id_short, sizeof(clientid4));
+	short_clid = (unsigned long) clid->id_short;
 
 	/* add to short, long client id indices */
-	g_hash_table_insert(srv.clid_idx, short_clid, cli);
+	g_hash_table_insert(srv.clid_idx, (void *) short_clid, cli);
 	g_hash_table_insert(srv.client_ids, &clid->id, cli);
 
 	*clid_out = clid;
 	return 0;
 
-err_out_cb_client4:
-	free_cb_client4(&clid->callback);
 err_out_clid_buf:
 	free(clid->id.buf);
 err_out_clid:
@@ -326,7 +337,7 @@ err_out:
 }
 
 struct cancel_search {
-	struct nfs_client	*cli;
+	clientid4		cli;
 	GList			*list;
 };
 
@@ -339,17 +350,12 @@ static void cli_cancel_search(gpointer key, gpointer val, gpointer user_data)
 		cs->list = g_list_append(cs->list, st);
 }
 
-static void client_cancel(struct nfs_cxn *cxn, struct nfs_client *cli)
+static void client_cancel(struct nfs_cxn *cxn, clientid4 cli)
 {
 	struct cancel_search cs = { cli };
 	struct nfs_state *st;
+	unsigned int trashed = 0;
 	GList *tmp;
-
-	if (debugging)
-		syslog(LOG_INFO, "removing state associated with %Lx",
-		       (cli && cli->id) ?
-		       		(unsigned long long) cli->id->id_short : 0ULL);
-
 
 	/* build list of state records associated with this client */
 	g_hash_table_foreach(srv.state, cli_cancel_search, &cs);
@@ -364,6 +370,11 @@ static void client_cancel(struct nfs_cxn *cxn, struct nfs_client *cli)
 	}
 
 	g_list_free(cs.list);
+
+	if (debugging)
+		syslog(LOG_INFO,
+		       "binned %u state recs associated with CID:%Lx",
+		       trashed, (unsigned long long) cli);
 }
 
 static gboolean callback_equal(struct nfs_client *cli, cb_client4 *cb,
@@ -498,7 +509,8 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	res = &resop.nfs_resop4_u.opsetclientid_confirm;
 
 	/* get state record from clientid4 */
-	cli = g_hash_table_lookup(srv.clid_idx, &args->clientid);
+	cli = g_hash_table_lookup(srv.clid_idx,
+			(void *)(unsigned long) args->clientid);
 	if (!cli) {
 		status = NFS4ERR_STALE_CLIENTID;
 		goto out;
@@ -555,20 +567,12 @@ bool_t nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	 */
 
 	/* FIXME: probably need to do more than just forget state */
-	client_cancel(cxn, cli);
+	client_cancel(cxn, clid->id_short);
 
 out2:
 	if (clid) {
-		clientid4 *id_short = malloc(sizeof(clientid4));
-		if (!id_short) {
-			g_assert(new_clid != NULL);
-			cli->pending = g_list_prepend(cli->pending, new_clid);
-			status = NFS4ERR_RESOURCE;
-			goto out;
-		}
-		memcpy(id_short, &clid->id_short, sizeof(clientid4));
-
-		g_hash_table_replace(srv.clid_idx, id_short, NULL);
+		unsigned long id_short = (unsigned long) clid->id_short;
+		g_hash_table_replace(srv.clid_idx, (void *) id_short, NULL);
 		clientid_free(clid);
 	}
 	cli->id = new_clid;

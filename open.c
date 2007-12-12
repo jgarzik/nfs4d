@@ -64,7 +64,6 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	nfsstat4 status = NFS4_OK, lu_stat;
 	struct nfs_inode *dir_ino, *ino = NULL;
 	struct nfs_dirent *de;
-	struct nfs_client *cli;
 	struct nfs_state *st;
 	struct nfs_stateid *sid;
 	gboolean creating, recreating = FALSE;
@@ -148,15 +147,9 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	/*
 	 * look up shorthand client id (clientid4)
 	 */
-	cli = g_hash_table_lookup(srv.clid_idx, &args->owner.clientid);
-	if (!cli) {
-		status = NFS4ERR_BADOWNER;
+	status = clientid_test(args->owner.clientid);
+	if (status != NFS4_OK)
 		goto out;
-	}
-	if (!cli->id) {
-		status = NFS4ERR_STALE_CLIENTID;
-		goto out;
-	}
 
 	/*
 	 * create file, if necessary
@@ -204,7 +197,7 @@ bool_t nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	}
 
 	st = calloc(1, sizeof(struct nfs_state));
-	st->cli = cli;
+	st->cli = args->owner.clientid;
 	st->id = gen_stateid();
 	st->owner = strndup(args->owner.owner.owner_val,
 			    args->owner.owner.owner_len);

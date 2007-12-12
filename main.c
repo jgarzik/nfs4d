@@ -204,9 +204,8 @@ static int init_server(void)
 	srv.lease_time = 5 * 60;
 	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
 					       NULL, NULL);
-	srv.clid_idx = g_hash_table_new_full(short_clientid_hash,
-					     short_clientid_equal,
-					     free, NULL);
+	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					     NULL, NULL);
 	srv.state = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					  NULL, state_free);
 

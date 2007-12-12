@@ -7,8 +7,6 @@
 #include <rpc/auth.h>
 #include "nfs4_prot.h"
 
-struct nfs_client;
-
 typedef uint32_t nfsino_t;
 
 enum {
@@ -176,7 +174,7 @@ enum nfs_state_flags {
 };
 
 struct nfs_state {
-	struct nfs_client	*cli;
+	clientid4		cli;
 
 	unsigned long		flags;
 
@@ -201,21 +199,6 @@ struct nfs_stateid {
 	uint32_t		seqid;		/* native endian */
 	uint32_t		id;		/* fixed endian (LE) */
 	verifier4		server_verf;
-};
-
-struct nfs_clientid {
-	struct blob		id;
-	verifier4		cli_verf;	/* client-supplied verifier */
-	clientid4		id_short;
-	verifier4		confirm_verf;	/* clientid confirm verifier */
-	cb_client4		callback;
-	guint32			callback_ident;
-};
-
-struct nfs_client {
-	struct nfs_clientid	*id;
-
-	GList			*pending;	/* unconfirmed requests */
 };
 
 struct nfs_inode {
@@ -368,10 +351,9 @@ extern int set_bitmap(guint64 map_in, bitmap4 *map_out);
 extern int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
-extern guint short_clientid_hash(gconstpointer data);
-extern gboolean short_clientid_equal(gconstpointer _a, gconstpointer _b);
 
 /* state.c */
+extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);
 extern uint32_t gen_stateid(void);

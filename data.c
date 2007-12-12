@@ -468,7 +468,6 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	struct nfs_state *prev_st = NULL;
 	struct nfs_stateid *prev_sid;
 	uint32_t prev_id;
-	struct nfs_client *cli;
 	struct nfs_stateid *sid;
 	GList *locks = NULL;
 	uint32_t lseqid;
@@ -584,16 +583,9 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	/*
 	 * look up shorthand client id (clientid4) for new lock owner
 	 */
-	cli = g_hash_table_lookup(srv.clid_idx,
-		&arg->locker.locker4_u.open_owner.lock_owner.clientid);
-	if (!cli) {
-		status = NFS4ERR_BADOWNER;
+	status = clientid_test(arg->locker.locker4_u.open_owner.lock_owner.clientid);
+	if (status != NFS4_OK)
 		goto out;
-	}
-	if (!cli->id) {
-		status = NFS4ERR_STALE_CLIENTID;
-		goto out;
-	}
 
 	st = calloc(1, sizeof(struct nfs_state));
 	if (!st) {
@@ -601,7 +593,7 @@ bool_t nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	st->cli = cli;
+	st->cli = arg->locker.locker4_u.open_owner.lock_owner.clientid;
 	st->flags = stfl_lock;
 	st->id = gen_stateid();
 	st->owner =
