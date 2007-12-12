@@ -666,21 +666,21 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 	}
 
 	mode = ino->mode & 0x7;
-	if (uid == ino->uid)
+	if ((uid == ino->uid) || (uid == 0))
 		mode |= (ino->mode >> 6) & 0x7;
-	if (gid == ino->gid)
+	if ((gid == ino->gid) || (gid == 0))
 		mode |= (ino->mode >> 3) & 0x7;
 
 	rc = 0;
 	if (mode & MODE4_ROTH)
 		rc |= ACCESS4_READ;
-	else if ((mode & MODE4_XOTH) && (ino->type == NF4DIR))
+	if ((mode & MODE4_XOTH) && (ino->type == NF4DIR))
 		rc |= ACCESS4_LOOKUP;
-	else if (mode & MODE4_WOTH)
+	if (mode & MODE4_WOTH)
 		rc |= ACCESS4_MODIFY;
-	else if (mode & MODE4_WOTH)
+	if (mode & MODE4_WOTH)
 		rc |= ACCESS4_EXTEND;
-	else if ((mode & MODE4_XOTH) && (ino->type != NF4DIR))
+	if ((mode & MODE4_XOTH) && (ino->type != NF4DIR))
 		rc |= ACCESS4_EXECUTE;
 
 	rc &= req_access;
