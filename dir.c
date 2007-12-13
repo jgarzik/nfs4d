@@ -7,24 +7,24 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static bool has_slash(utf8string *str)
+static bool has_slash(struct nfs_buf *str)
 {
 	if (!str)
 		return false;
-	if (g_utf8_strchr(str->utf8string_val, str->utf8string_len, '/'))
+	if (g_utf8_strchr(str->val, str->len, '/'))
 		return true;
 	return false;
 }
 
-static bool has_dots(utf8string *str)
+static bool has_dots(struct nfs_buf *str)
 {
 	if (!str)
 		return false;
-	if ((str->utf8string_len == 1) &&
-	    (!memcmp(str->utf8string_val, ".", 1)))
+	if ((str->len == 1) &&
+	    (!memcmp(str->val, ".", 1)))
 		return true;
-	if ((str->utf8string_len == 2) &&
-	    (!memcmp(str->utf8string_val, "..", 2)))
+	if ((str->len == 2) &&
+	    (!memcmp(str->val, "..", 2)))
 		return true;
 	return false;
 }
@@ -52,7 +52,7 @@ out:
 	return status;
 }
 
-nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
+nfsstat4 dir_lookup(struct nfs_inode *dir_ino, struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out)
 {
 	struct nfs_dirent *dirent;
@@ -93,20 +93,18 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, utf8string *str,
 	return NFS4_OK;
 }
 
-bool nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	LOOKUP4res *res;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_dirent *dirent;
 	bool printed = false;
+	struct nfs_buf objname;
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_LOOKUP;
-	res = &resop.nfs_resop4_u.oplookup;
+	CURBUF(&objname);
 
-	if (arg->objname.utf8string_len > SRV_MAX_NAME) {
+	if (objname.len > SRV_MAX_NAME) {
 		status = NFS4ERR_NAMETOOLONG;
 		goto out;
 	}
@@ -115,7 +113,7 @@ bool nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 	if (status != NFS4_OK)
 		goto out;
 
-	status = dir_lookup(ino, &arg->objname, &dirent);
+	status = dir_lookup(ino, &objname, &dirent);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -123,8 +121,8 @@ bool nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres)
 
 	if (debugging) {
 		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
-		       arg->objname.utf8string_len,
-		       arg->objname.utf8string_val,
+		       objname.len,
+		       objname.val,
 		       cxn->current_fh);
 		printed = true;
 	}
@@ -133,27 +131,22 @@ out:
 	if (!printed) {
 		if (debugging)
 			syslog(LOG_INFO, "op LOOKUP ('%.*s')",
-			       arg->objname.utf8string_len,
-			       arg->objname.utf8string_val);
+			       objname.len,
+			       objname.val);
 	}
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 
-bool nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres)
+nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	LOOKUPP4res *res;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 
 	if (debugging)
 		syslog(LOG_INFO, "op LOOKUPP");
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_LOOKUPP;
-	res = &resop.nfs_resop4_u.oplookupp;
 
 	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
@@ -167,8 +160,8 @@ bool nfs_op_lookupp(struct nfs_cxn *cxn, COMPOUND4res *cres)
 	cxn->current_fh = g_array_index(ino->parents, nfsino_t, 0);
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 
 void dirent_free(gpointer p)
@@ -178,7 +171,7 @@ void dirent_free(gpointer p)
 	free(dirent);
 }
 
-enum nfsstat4 dir_add(struct nfs_inode *dir_ino, utf8string *name_in,
+enum nfsstat4 dir_add(struct nfs_inode *dir_ino, struct nfs_buf *name_in,
 		      nfsino_t inum)
 {
 	struct nfs_dirent *dirent;
@@ -216,29 +209,26 @@ out:
 	return status;
 }
 
-bool nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
+		     struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	LINK4res *res;
-	LINK4resok *resok;
 	nfsstat4 status;
 	struct nfs_inode *dir_ino, *src_ino;
+	struct nfs_buf newname;
+	uint64_t before, after;
+
+	CURBUF(&newname);
 
 	if (debugging)
 		syslog(LOG_INFO, "op LINK (%.*s)",
-		       arg->newname.utf8string_len,
-		       arg->newname.utf8string_val);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_LINK;
-	res = &resop.nfs_resop4_u.oplink;
-	resok = &res->LINK4res_u.resok4;
+		       newname.len,
+		       newname.val);
 
 	if (!cxn->current_fh || !cxn->save_fh) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-	if (arg->newname.utf8string_len > SRV_MAX_NAME) {
+	if (newname.len > SRV_MAX_NAME) {
 		status = NFS4ERR_NAMETOOLONG;
 		goto out;
 	}
@@ -267,53 +257,53 @@ bool nfs_op_link(struct nfs_cxn *cxn, LINK4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	resok->cinfo.atomic = true;
-	resok->cinfo.before =
-	resok->cinfo.after = dir_ino->version;
+	before = dir_ino->version;
 
-	status = dir_add(dir_ino, &arg->newname, cxn->save_fh);
+	status = dir_add(dir_ino, &newname, cxn->save_fh);
 	if (status != NFS4_OK)
 		goto out;
 
 	g_array_append_val(src_ino->parents, dir_ino->ino);
 
-	resok->cinfo.after = dir_ino->version;
+	after = dir_ino->version;
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		WR32(1);		/* cinfo.atomic */
+		WR64(before);		/* cinfo.before */
+		WR64(after);		/* cinfo.after */
+	}
+	return status;
 }
 
-bool nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	REMOVE4res *res;
-	REMOVE4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *target_ino;
 	struct nfs_dirent *dirent;
 	gchar *name;
+	struct nfs_buf target;
+	uint64_t before, after;
+
+	CURBUF(&target);
 
 	if (debugging)
 		syslog(LOG_INFO, "op REMOVE ('%.*s')",
-		       arg->target.utf8string_len,
-		       arg->target.utf8string_val);
+		       target.len,
+		       target.val);
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_REMOVE;
-	res = &resop.nfs_resop4_u.opremove;
-	resok = &res->REMOVE4res_u.resok4;
-
-	if (arg->target.utf8string_len > SRV_MAX_NAME) {
+	if (target.len > SRV_MAX_NAME) {
 		status = NFS4ERR_NAMETOOLONG;
 		goto out;
 	}
 
-	if (!valid_utf8string(&arg->target)) {
+	if (!valid_utf8string(&target)) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
-	if (has_dots(&arg->target)) {
+	if (has_dots(&target)) {
 		status = NFS4ERR_BADNAME;
 		goto out;
 	}
@@ -324,7 +314,7 @@ bool nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 		goto out;
 
 	/* copy target name */
-	name = copy_utf8string(&arg->target);
+	name = copy_utf8string(&target);
 	if (!name) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
@@ -361,10 +351,9 @@ bool nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 	g_hash_table_remove(dir_ino->u.dir, name);
 
 	/* record directory change info */
-	resok->cinfo.atomic = true;
-	resok->cinfo.before = dir_ino->version;
+	before = dir_ino->version;
 	inode_touch(dir_ino);
-	resok->cinfo.after = dir_ino->version;
+	after = dir_ino->version;
 
 	/* remove link, possibly deleting inode */
 	inode_unlink(target_ino, dir_ino->ino);
@@ -372,40 +361,43 @@ bool nfs_op_remove(struct nfs_cxn *cxn, REMOVE4args *arg, COMPOUND4res *cres)
 out_name:
 	free(name);
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		WR32(1);		/* cinfo.atomic */
+		WR64(before);		/* cinfo.before */
+		WR64(after);		/* cinfo.after */
+	}
+	return status;
 }
 
-bool nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	RENAME4res *res;
-	RENAME4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *src_dir, *target_dir;
 	struct nfs_inode *old_file;
 	struct nfs_dirent *old_dirent, *new_dirent;
 	gchar *old_name, *new_name;
+	struct nfs_buf oldname, newname;
+	uint64_t src_before, src_after, target_before, target_after;
+
+	CURBUF(&oldname);
+	CURBUF(&newname);
 
 	if (debugging)
 		syslog(LOG_INFO, "op REMOVE (OLD:%.*s, NEW:%.*s)",
-		       arg->oldname.utf8string_len,
-		       arg->oldname.utf8string_val,
-		       arg->newname.utf8string_len,
-		       arg->newname.utf8string_val);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_RENAME;
-	res = &resop.nfs_resop4_u.oprename;
-	resok = &res->RENAME4res_u.resok4;
+		       oldname.len,
+		       oldname.val,
+		       newname.len,
+		       newname.val);
 
 	/* validate text input */
-	if ((!valid_utf8string(&arg->oldname)) ||
-	    (!valid_utf8string(&arg->newname))) {
+	if ((!valid_utf8string(&oldname)) ||
+	    (!valid_utf8string(&newname))) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
-	if (has_dots(&arg->oldname) || has_dots(&arg->newname)) {
+	if (has_dots(&oldname) || has_dots(&newname)) {
 		status = NFS4ERR_BADNAME;
 		goto out;
 	}
@@ -425,8 +417,8 @@ bool nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 	}
 
 	/* copy source, target names */
-	old_name = copy_utf8string(&arg->oldname);
-	new_name = copy_utf8string(&arg->newname);
+	old_name = copy_utf8string(&oldname);
+	new_name = copy_utf8string(&newname);
 	if (!old_name || !new_name) {
 		status = NFS4ERR_RESOURCE;
 		goto out_name;
@@ -458,12 +450,10 @@ bool nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 
 		/* do oldname and newname refer to same file? */
 		if (old_file->ino == new_file->ino) {
-			resok->source_cinfo.atomic = true;
-			resok->source_cinfo.after =
-			resok->source_cinfo.before = src_dir->version;
-			resok->target_cinfo.atomic = true;
-			resok->target_cinfo.after =
-			resok->target_cinfo.before = target_dir->version;
+			src_after =
+			src_before = src_dir->version;
+			target_after =
+			target_before = target_dir->version;
 			goto out_name;
 		}
 
@@ -499,24 +489,30 @@ bool nfs_op_rename(struct nfs_cxn *cxn, RENAME4args *arg, COMPOUND4res *cres)
 	new_name = NULL;	/* prevent function exit from freeing */
 
 	/* record directory change info */
-	resok->source_cinfo.atomic = true;
-	resok->source_cinfo.before = src_dir->version;
-	resok->target_cinfo.atomic = true;
-	resok->target_cinfo.before = target_dir->version;
+	src_before = src_dir->version;
+	target_before = target_dir->version;
 
 	inode_touch(src_dir);
 	if (src_dir != target_dir)
 		inode_touch(target_dir);
 
-	resok->source_cinfo.after = src_dir->version;
-	resok->target_cinfo.after = target_dir->version;
+	src_after = src_dir->version;
+	target_after = target_dir->version;
 
 out_name:
 	free(old_name);
 	free(new_name);
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		WR32(1);		/* src cinfo.atomic */
+		WR64(src_before);	/* src cinfo.before */
+		WR64(src_after);	/* src cinfo.after */
+		WR32(1);		/* target cinfo.atomic */
+		WR64(target_before);	/* target cinfo.before */
+		WR64(target_after);	/* target cinfo.after */
+	}
+	return status;
 }
 
 static void entry4_free(entry4 *ent)
@@ -668,57 +664,55 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	ri->reply_sz += new_reply_sz;
 }
 
-bool nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args, COMPOUND4res *cres)
+nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
+		        struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	READDIR4res *res;
-	READDIR4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	uint32_t tmp_ino_n;
+	uint32_t tmp_ino_n, dircount, maxcount;
 	struct readdir_info ri;
+	uint64_t cookie, attr_request;
+	verifier4 *cookie_verf;
+	bool reply_eof;
+
+	cookie = CR64();
+	cookie_verf = CURMEM(sizeof(verifier4));
+	dircount = CR32();
+	maxcount = CR32();
+	attr_request = CURMAP();
 
 	if (debugging) {
-		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u MAP:%x %x)",
-		       (unsigned long long) args->cookie,
-		       args->dircount,
-		       args->maxcount,
-		       args->attr_request.bitmap4_len > 0 ?
-				args->attr_request.bitmap4_val[0] : 0,
-		       args->attr_request.bitmap4_len > 1 ?
-				args->attr_request.bitmap4_val[1] : 0);
+		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u MAP:%Lx)",
+		       (unsigned long long) cookie,
+		       dircount,
+		       maxcount,
+		       (unsigned long long) attr_request);
 
-		print_fattr_bitmap("op READDIR",
-				   get_bitmap(&args->attr_request));
+		print_fattr_bitmap("op READDIR", attr_request);
 	}
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_READDIR;
-	res = &resop.nfs_resop4_u.opreaddir;
-	resok = &res->READDIR4res_u.resok4;
-
-	if (args->cookie &&
-	    memcmp(&args->cookieverf, &srv.instance_verf, sizeof(verifier4))) {
+	if (cookie &&
+	    memcmp(cookie_verf, &srv.instance_verf, sizeof(verifier4))) {
 		status = NFS4ERR_NOT_SAME;
 		goto out;
 	}
 
 	memset(&ri, 0, sizeof(ri));
-	ri.cookie = (unsigned long) args->cookie;
+	ri.cookie = (unsigned long) cookie;
 	if (!ri.cookie)
 		ri.found_cookie = true;
-	ri.attr_req = get_bitmap(&args->attr_request);
+	ri.attr_req = attr_request;
 	ri.status = NFS4_OK;
-	ri.resok = resok;
-	ri.max_dir_sz = args->dircount;
-	ri.max_reply_sz = args->maxcount;
+#warning fix me, I'm broken
+/*	ri.resok = resok; */
+	ri.max_dir_sz = dircount;
+	ri.max_reply_sz = maxcount;
 
 	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
-	memcpy(&resok->cookieverf, &srv.instance_verf, sizeof(verifier4));
-	resok->reply.eof = true;
+	reply_eof = true;
 	tmp_ino_n = GUINT32_TO_LE(ino->ino);
 	ri.hash = blob_hash(BLOB_HASH_INIT, &tmp_ino_n, sizeof(tmp_ino_n));
 
@@ -726,10 +720,13 @@ bool nfs_op_readdir(struct nfs_cxn *cxn, READDIR4args *args, COMPOUND4res *cres)
 
 	status = ri.status;
 	if (ri.full)
-		resok->reply.eof = false;
+		reply_eof = false;
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		/* FIXME: send back dir info.... */
+	}
+	return status;
 }
 

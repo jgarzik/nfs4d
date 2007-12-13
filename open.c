@@ -248,25 +248,26 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	OPEN_CONFIRM4res *res;
-	OPEN_CONFIRM4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
-	uint32_t id = GUINT32_FROM_LE(sid->id);
+	struct nfs_stateid sid;
 	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
+	uint32_t seqid;
+
+	if (cur->len < 20) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	CURSID(&sid);
+	seqid = CR32();
 
 	if (debugging)
 		syslog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
-		       arg->seqid, arg->open_stateid.seqid, id);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_OPEN_CONFIRM;
-	res = &resop.nfs_resop4_u.opopen_confirm;
-	resok = &res->OPEN_CONFIRM4res_u.resok4;
+		       seqid, sid.seqid, sid.id);
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -282,47 +283,50 @@ bool nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *arg, COMPOUND4r
 		goto out;
 	}
 
-	status = stateid_lookup(id, ino->ino, nst_open, &st);
+	status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
-	if (arg->seqid != st->seq) {
+	if (seqid != st->seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
-	sid = (struct nfs_stateid *) &resok->open_stateid;
-	sid->seqid = arg->seqid;
-	sid->id = GUINT32_TO_LE(st->id);
-	memcpy(&sid->server_verf, &srv.instance_verf,
-	       sizeof(srv.instance_verf));
+	sid.seqid = seqid;
+	sid.id = st->id;
+	memcpy(&sid.server_verf, &srv.instance_verf, sizeof(srv.instance_verf));
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK)
+		WRSID(&sid);
+	return status;
 }
 
-bool nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	OPEN_DOWNGRADE4res *res;
-	OPEN_DOWNGRADE4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
-	uint32_t id = GUINT32_FROM_LE(sid->id);
+	struct nfs_stateid sid;
 	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
+	uint32_t seqid, share_access, share_deny;
+
+	if (cur->len < 28) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	CURSID(&sid);
+	seqid = CR32();
+	share_access = CR32();
+	share_deny = CR32();
 
 	if (debugging)
 		syslog(LOG_INFO, "op OPEN_DOWNGRADE (SEQ:%u IDSEQ:%u ID:%x "
 		       "SHAC:%x SHDN:%x)",
-		       arg->seqid, arg->open_stateid.seqid, id,
-		       arg->share_access, arg->share_deny);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_OPEN_DOWNGRADE;
-	res = &resop.nfs_resop4_u.opopen_downgrade;
-	resok = &res->OPEN_DOWNGRADE4res_u.resok4;
+		       seqid, sid.seqid, sid.id,
+		       share_access, share_deny);
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -335,58 +339,61 @@ bool nfs_op_open_downgrade(struct nfs_cxn *cxn, OPEN_DOWNGRADE4args *arg, COMPOU
 		goto out;
 	}
 
-	status = stateid_lookup(id, ino->ino, nst_open, &st);
+	status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
-	if (arg->seqid != st->seq) {
+	if (seqid != st->seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
-	if ((!(arg->share_access & st->share_ac)) ||
-	    (!(arg->share_deny & st->share_dn))) {
+	if ((!(share_access & st->share_ac)) ||
+	    (!(share_deny & st->share_dn))) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
-	st->share_ac = arg->share_access;
-	st->share_dn = arg->share_deny;
+	st->share_ac = share_access;
+	st->share_dn = share_deny;
 
 	st->seq++;
 
-	sid = (struct nfs_stateid *) &resok->open_stateid;
-	sid->seqid = st->seq;
-	sid->id = GUINT32_TO_LE(st->id);
-	memcpy(&sid->server_verf, &srv.instance_verf,
-	       sizeof(srv.instance_verf));
+	sid.seqid = st->seq;
+	sid.id = st->id;
+	memcpy(&sid.server_verf, &srv.instance_verf, sizeof(srv.instance_verf));
 
 	if (debugging)
 		syslog(LOG_INFO, "   OPEN_DOWNGRADE -> (SEQ:%u ID:%x)",
-		       sid->seqid, st->id);
+		       sid.seqid, st->id);
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK)
+		WRSID(&sid);
+	return status;
 }
 
-bool nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
+		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	CLOSE4res *res;
 	nfsstat4 status = NFS4_OK;
-	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->open_stateid;
-	uint32_t id = GUINT32_FROM_LE(sid->id);
+	struct nfs_stateid sid;
 	struct nfs_state *st;
 	struct nfs_inode *ino;
+	uint32_t seqid;
+
+	if (cur->len < 20) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	seqid = CR32();
+	CURSID(&sid);
 
 	if (debugging)
 		syslog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
-		       arg->seqid, arg->open_stateid.seqid, id);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_CLOSE;
-	res = &resop.nfs_resop4_u.opclose;
+		       seqid, sid.seqid, sid.id);
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -399,22 +406,21 @@ bool nfs_op_close(struct nfs_cxn *cxn, CLOSE4args *arg, COMPOUND4res *cres)
 		goto out;
 	}
 
-	status = stateid_lookup(id, ino->ino, nst_open, &st);
+	status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
-	if (arg->seqid != st->seq) {
+	if (seqid != st->seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
 	state_trash(st);
 
-	memcpy(&res->CLOSE4res_u.open_stateid,
-	       &arg->open_stateid, sizeof(arg->open_stateid));
-
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK)
+		WRSID(&sid);
+	return status;
 }
 

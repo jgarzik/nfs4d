@@ -95,18 +95,18 @@ static const char *name_nfs4status[] = {
 	[NFS4ERR_CB_PATH_DOWN] = "NFS4ERR_CB_PATH_DOWN",
 };
 
-bool valid_utf8string(utf8string *str)
+bool valid_utf8string(struct nfs_buf *str)
 {
-	if (!str || !str->utf8string_len || !str->utf8string_val)
+	if (!str || !str->len || !str->val)
 		return false;
-	if (!g_utf8_validate(str->utf8string_val, str->utf8string_len, NULL))
+	if (!g_utf8_validate(str->val, str->len, NULL))
 		return false;
 	return true;
 }
 
-char *copy_utf8string(utf8string *str)
+char *copy_utf8string(struct nfs_buf *str)
 {
-	return strndup(str->utf8string_val, str->utf8string_len);
+	return strndup(str->val, str->len);
 }
 
 uint64_t get_bitmap(const bitmap4 *map)
@@ -394,16 +394,46 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	switch (op) {
 	case OP_ACCESS:
 		return nfs_op_access(cxn, cur, writes, wr);
+	case OP_CLOSE:
+		return nfs_op_close(cxn, cur, writes, wr);
+	case OP_COMMIT:
+		return nfs_op_commit(cxn, cur, writes, wr);
+	case OP_GETATTR:
+		return nfs_op_getattr(cxn, cur, writes, wr);
 	case OP_GETFH:
 		return nfs_op_getfh(cxn, cur, writes, wr);
+	case OP_LINK:
+		return nfs_op_link(cxn, cur, writes, wr);
+	case OP_LOCK:
+		return nfs_op_lock(cxn, cur, writes, wr);
+	case OP_LOCKT:
+		return nfs_op_testlock(cxn, cur, writes, wr);
+	case OP_LOCKU:
+		return nfs_op_unlock(cxn, cur, writes, wr);
+	case OP_LOOKUP:
+		return nfs_op_lookup(cxn, cur, writes, wr);
+	case OP_LOOKUPP:
+		return nfs_op_lookupp(cxn, cur, writes, wr);
+	case OP_OPEN_CONFIRM:
+		return nfs_op_open_confirm(cxn, cur, writes, wr);
+	case OP_OPEN_DOWNGRADE:
+		return nfs_op_open_downgrade(cxn, cur, writes, wr);
 	case OP_PUTFH:
 		return nfs_op_putfh(cxn, cur, writes, wr);
 	case OP_PUTPUBFH:
 		return nfs_op_putpubfh(cxn, cur, writes, wr);
 	case OP_PUTROOTFH:
 		return nfs_op_putrootfh(cxn, cur, writes, wr);
+	case OP_READ:
+		return nfs_op_read(cxn, cur, writes, wr);
+	case OP_READDIR:
+		return nfs_op_readdir(cxn, cur, writes, wr);
 	case OP_READLINK:
 		return nfs_op_readlink(cxn, cur, writes, wr);
+	case OP_REMOVE:
+		return nfs_op_remove(cxn, cur, writes, wr);
+	case OP_RENAME:
+		return nfs_op_rename(cxn, cur, writes, wr);
 	case OP_RESTOREFH:
 		return nfs_op_restorefh(cxn, cur, writes, wr);
 	case OP_SAVEFH:
@@ -414,50 +444,21 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_setclientid(cxn, cur, writes, wr);
 	case OP_SETCLIENTID_CONFIRM:
 		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
+	case OP_WRITE:
+		return nfs_op_write(cxn, cur, writes, wr);
 
 #if 0
-	case OP_CLOSE:
-		return nfs_op_close(cxn, &arg->nfs_argop4_u.opclose, res);
-	case OP_COMMIT:
-		return nfs_op_commit(cxn, &arg->nfs_argop4_u.opcommit, res);
+
 	case OP_CREATE:
 		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, res);
-	case OP_GETATTR:
-		return nfs_op_getattr(cxn, &arg->nfs_argop4_u.opgetattr, res);
-	case OP_LINK:
-		return nfs_op_link(cxn, &arg->nfs_argop4_u.oplink, res);
-	case OP_LOCK:
-		return nfs_op_lock(cxn, &arg->nfs_argop4_u.oplock, res);
-	case OP_LOCKT:
-		return nfs_op_testlock(cxn, &arg->nfs_argop4_u.oplockt, res);
-	case OP_LOCKU:
-		return nfs_op_unlock(cxn, &arg->nfs_argop4_u.oplocku, res);
-	case OP_LOOKUP:
-		return nfs_op_lookup(cxn, &arg->nfs_argop4_u.oplookup, res);
-	case OP_LOOKUPP:
-		return nfs_op_lookupp(cxn, res);
 	case OP_NVERIFY:
 		return nfs_op_verify(cxn,
 				(VERIFY4args *) &arg->nfs_argop4_u.opnverify,
 				res, 1);
 	case OP_OPEN:
 		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, res);
-	case OP_OPEN_CONFIRM:
-		return nfs_op_open_confirm(cxn, &arg->nfs_argop4_u.opopen_confirm, res);
-	case OP_OPEN_DOWNGRADE:
-		return nfs_op_open_downgrade(cxn, &arg->nfs_argop4_u.opopen_downgrade, res);
-	case OP_READ:
-		return nfs_op_read(cxn, &arg->nfs_argop4_u.opread, res);
-	case OP_READDIR:
-		return nfs_op_readdir(cxn, &arg->nfs_argop4_u.opreaddir, res);
-	case OP_REMOVE:
-		return nfs_op_remove(cxn, &arg->nfs_argop4_u.opremove, res);
-	case OP_RENAME:
-		return nfs_op_rename(cxn, &arg->nfs_argop4_u.oprename, res);
 	case OP_SETATTR:
 		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, res);
-	case OP_WRITE:
-		return nfs_op_write(cxn, &arg->nfs_argop4_u.opwrite, res);
 	case OP_VERIFY:
 		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, res, 0);
 #endif

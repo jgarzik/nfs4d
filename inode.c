@@ -424,7 +424,7 @@ out:
 }
 
 nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
-		   fattr4 *attr, utf8string *name, bitmap4 *attrset,
+		   fattr4 *attr, struct nfs_buf *name, bitmap4 *attrset,
 		   change_info4 *cinfo)
 {
 	uint64_t bitmap_set;
@@ -538,31 +538,32 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-bool nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
-		      COMPOUND4res *cres)
+nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
+		        struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	GETATTR4res *res;
-	GETATTR4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_fattr_set attrset;
 	bool printed = false;
+	uint32_t *status_p;
+	uint64_t bitmap_out = 0;
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_GETATTR;
-	res = &resop.nfs_resop4_u.opgetattr;
-	resok = &res->GETATTR4res_u.resok4;
+	memset(&attrset, 0, sizeof(attrset));
+
+	if (cur->len < 12) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	attrset.bitmap = CURMAP();
+
+	status_p = WRSKIP(4);		/* ending status */
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-
-	memset(&attrset, 0, sizeof(attrset));
-
-	attrset.bitmap = get_bitmap(&arg->attr_request);
 
 	if (debugging && (status == NFS4_OK)) {
 		print_fattr_bitmap("op GETATTR", attrset.bitmap);
@@ -578,14 +579,12 @@ bool nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 
 	fattr_fill(ino, &attrset);
 
-	if (!fattr_encode(&resok->obj_attributes, &attrset))
-		status = NFS4ERR_IO;
+	status = wr_fattr(&attrset, &bitmap_out, writes, wr);
 
 	fattr_free(&attrset);
 
 	if (debugging) {
-		attrset.bitmap = get_bitmap(&resok->obj_attributes.attrmask);
-		print_fattr_bitmap("   GETATTR ->", attrset.bitmap);
+		print_fattr_bitmap("   GETATTR ->", bitmap_out);
 		printed = true;
 	}
 
@@ -593,8 +592,8 @@ out:
 	if (debugging && !printed)
 		syslog(LOG_INFO, "op GETATTR");
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	*status_p = status;
+	return status;
 }
 
 bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,

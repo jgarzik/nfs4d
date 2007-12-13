@@ -136,6 +136,31 @@ uint64_t cur_read64(struct curbuf *cur)
 	return (v[0] << 32) | v[1];
 }
 
+uint64_t cur_readmap(struct curbuf *cur)
+{
+	uint32_t len;
+	uint64_t val = 0;
+
+	if (cur->len < 4)
+		return 0;
+
+	len = cur_read32(cur);
+	if (len) {
+		val = cur_read32(cur);
+		len--;
+	}
+	if (len) {
+		val |= ((uint64_t)cur_read32(cur)) << 32;
+		len--;
+	}
+	while (len) {
+		cur_read32(cur);
+		len--;
+	}
+
+	return val;
+}
+
 void *cur_readmem(struct curbuf *cur, unsigned int n)
 {
 	if (!n)

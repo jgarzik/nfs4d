@@ -8,227 +8,140 @@ enum {
 	FATTR_LAST		= FATTR4_MOUNTED_ON_FILEID,
 };
 
-#define GROW_ATTR_BUF(sz)				\
-	do {						\
-		if (buflen < (sz)) {			\
-			alloc_len += ((sz) + 512);	\
-			buflen += ((sz) + 512);		\
-			buf = realloc(buf, alloc_len);	\
-		}					\
-	} while (0)
-
-#define WRITE32(val)					\
-	do {						\
-		GROW_ATTR_BUF(4);			\
-		*p++ = GUINT32_TO_BE(val);		\
-		buflen -= 4;				\
-	} while (0)
-
-#define WRITE64(val)					\
-	do {						\
-		GROW_ATTR_BUF(8);			\
-		*((uint64_t *)p) = GUINT64_TO_BE(val);	\
-		p += 2;					\
-		buflen -= 8;				\
-	} while (0)
-
-#define WRITEMEM(membuf, memlen)			\
-	do {						\
-		unsigned int ql = XDR_QUADLEN(memlen);	\
-		GROW_ATTR_BUF((ql + 1) * 4);		\
-		*(p + ql - 1) = 0;			\
-		memcpy(p, membuf, memlen);		\
-		p += ql;				\
-		buflen -= (ql * 4);			\
-	} while (0)
-
-static void encode_utf8(utf8string *s, uint32_t **base_out,
-			uint32_t **buf_out, size_t *buflen_out,
-			size_t *alloc_len_out)
+static void encode_acl(fattr4_acl *acl,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	uint32_t *buf = *base_out;
-	uint32_t *p = *buf_out;
-	size_t buflen = *buflen_out;
-	size_t alloc_len = *alloc_len_out;
-
-	WRITE32(s->utf8string_len);
-	if (s->utf8string_len)
-		WRITEMEM(s->utf8string_val, s->utf8string_len);
-
-	*base_out = buf;
-	*buf_out = p;
-	*buflen_out = buflen;
-	*alloc_len_out = alloc_len;
-}
-
-#if FS_LOCATIONS_CODE_WORKING
-static void encode_pathname(pathname4 *pathname, uint32_t **base_out,
-			    uint32_t **buf_out, size_t *buflen_out,
-			    size_t *alloc_len_out)
-{
-	uint32_t *buf = *base_out;
-	uint32_t *p = *buf_out;
-	size_t buflen = *buflen_out;
-	size_t alloc_len = *alloc_len_out;
-	int i;
-
-	WRITE32(pathname->pathname4_len);
-
-	for (i = 0; i < pathname->pathname4_len; i++)
-		encode_utf8(&pathname->pathname4_val[i], &buf, &p,
-				 &buflen, &alloc_len);
-
-	*base_out = buf;
-	*buf_out = p;
-	*buflen_out = buflen;
-	*alloc_len_out = alloc_len;
-}
-#endif
-
-static void encode_acl(fattr4_acl *acl, uint32_t **base_out,
-		       uint32_t **buf_out, size_t *buflen_out,
-		       size_t *alloc_len_out)
-{
-	uint32_t *buf = *base_out;
-	uint32_t *p = *buf_out;
-	size_t buflen = *buflen_out;
-	size_t alloc_len = *alloc_len_out;
+	struct nfs_buf nb;
 	nfsace4 *ace;
 	int i;
 
-	WRITE32(acl->fattr4_acl_len);
+	WR32(acl->fattr4_acl_len);
 
 	for (i = 0; i < acl->fattr4_acl_len; i++) {
 		ace = &acl->fattr4_acl_val[i];
-		WRITE32(ace->type);
-		WRITE32(ace->flag);
-		WRITE32(ace->access_mask);
-		encode_utf8(&ace->who, &buf, &p, &buflen, &alloc_len);
-	}
+		WR32(ace->type);
+		WR32(ace->flag);
+		WR32(ace->access_mask);
 
-	*base_out = buf;
-	*buf_out = p;
-	*buflen_out = buflen;
-	*alloc_len_out = alloc_len;
+		nb.len = ace->who.utf8string_len;
+		nb.val = ace->who.utf8string_val;
+		WRBUF(&nb);
+	}
 }
 
-bool fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
+nfsstat4 wr_fattr(struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
+		  struct list_head *writes, struct rpc_write **wr)
 {
-	uint32_t *buf;
 	uint64_t bitmap = attr->bitmap;
 	uint64_t bitmap_out = 0;
-	size_t buflen, alloc_len = 1024;
-	uint32_t *p;
-	void *p1, *p2;
+	struct nfs_buf nb;
+	char *end, *start = WRSKIP(0);
+	uint32_t *bmap[2], *attr_len;
 
-	buf = malloc(alloc_len);
-	if (!buf)
-		return false;
-	buflen = alloc_len;
-
-	memset(buf, 0xffffffff, alloc_len);
-
-	p = buf;
+	WR32(2);		/* bitmap array size */
+	bmap[0] = WRSKIP(4);	/* bitmap array[0] */
+	bmap[1] = WRSKIP(4);	/* bitmap array[1] */
+	attr_len = WRSKIP(4);	/* attribute buffer length */
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
-		WRITE32(2);
-		WRITE32(fattr_supported_mask);
-		WRITE32(fattr_supported_mask >> 32);
+		WR32(2);
+		WR32(fattr_supported_mask);
+		WR32(fattr_supported_mask >> 32);
 		bitmap_out |= (1ULL << FATTR4_SUPPORTED_ATTRS);
 	}
 	if (bitmap & (1ULL << FATTR4_TYPE)) {
-		WRITE32(attr->type);
+		WR32(attr->type);
 		bitmap_out |= (1ULL << FATTR4_TYPE);
 	}
 	if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE)) {
-		WRITE32(attr->fh_expire_type);
+		WR32(attr->fh_expire_type);
 		bitmap_out |= (1ULL << FATTR4_FH_EXPIRE_TYPE);
 	}
 	if (bitmap & (1ULL << FATTR4_CHANGE)) {
-		WRITE64(attr->change);
+		WR64(attr->change);
 		bitmap_out |= (1ULL << FATTR4_CHANGE);
 	}
 	if (bitmap & (1ULL << FATTR4_SIZE)) {
-		WRITE64(attr->size);
+		WR64(attr->size);
 		bitmap_out |= (1ULL << FATTR4_SIZE);
 	}
 	if (bitmap & (1ULL << FATTR4_LINK_SUPPORT)) {
-		WRITE32(attr->link_support ? 1 : 0);
+		WR32(attr->link_support ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_LINK_SUPPORT);
 	}
 	if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT)) {
-		WRITE32(attr->symlink_support ? 1 : 0);
+		WR32(attr->symlink_support ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_SYMLINK_SUPPORT);
 	}
 	if (bitmap & (1ULL << FATTR4_NAMED_ATTR)) {
-		WRITE32(attr->named_attr ? 1 : 0);
+		WR32(attr->named_attr ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_NAMED_ATTR);
 	}
 	if (bitmap & (1ULL << FATTR4_FSID)) {
-		WRITE64(attr->fsid.major);
-		WRITE64(attr->fsid.minor);
+		WR64(attr->fsid.major);
+		WR64(attr->fsid.minor);
 		bitmap_out |= (1ULL << FATTR4_FSID);
 	}
 	if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES)) {
-		WRITE32(attr->unique_handles ? 1 : 0);
+		WR32(attr->unique_handles ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_UNIQUE_HANDLES);
 	}
 	if (bitmap & (1ULL << FATTR4_LEASE_TIME)) {
-		WRITE32(attr->lease_time);
+		WR32(attr->lease_time);
 		bitmap_out |= (1ULL << FATTR4_LEASE_TIME);
 	}
 	if (bitmap & (1ULL << FATTR4_RDATTR_ERROR)) {
-		WRITE32(attr->rdattr_error);
+		WR32(attr->rdattr_error);
 		bitmap_out |= (1ULL << FATTR4_RDATTR_ERROR);
 	}
 	if (bitmap & (1ULL << FATTR4_ACL)) {
-		encode_acl(&attr->acl, &buf, &p, &buflen, &alloc_len);
+		encode_acl(&attr->acl, writes, wr);
 		bitmap_out |= (1ULL << FATTR4_ACL);
 	}
 	if (bitmap & (1ULL << FATTR4_ACLSUPPORT)) {
-		WRITE32(attr->aclsupport);
+		WR32(attr->aclsupport);
 		bitmap_out |= (1ULL << FATTR4_ACLSUPPORT);
 	}
 	if (bitmap & (1ULL << FATTR4_ARCHIVE)) {
-		WRITE32(attr->archive ? 1 : 0);
+		WR32(attr->archive ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_ARCHIVE);
 	}
 	if (bitmap & (1ULL << FATTR4_CANSETTIME)) {
-		WRITE32(attr->cansettime ? 1 : 0);
+		WR32(attr->cansettime ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_CANSETTIME);
 	}
 	if (bitmap & (1ULL << FATTR4_CASE_INSENSITIVE)) {
-		WRITE32(attr->case_insensitive ? 1 : 0);
+		WR32(attr->case_insensitive ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_CASE_INSENSITIVE);
 	}
 	if (bitmap & (1ULL << FATTR4_CASE_PRESERVING)) {
-		WRITE32(attr->case_preserving ? 1 : 0);
+		WR32(attr->case_preserving ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_CASE_PRESERVING);
 	}
 	if (bitmap & (1ULL << FATTR4_CHOWN_RESTRICTED)) {
-		WRITE32(attr->chown_restricted ? 1 : 0);
+		WR32(attr->chown_restricted ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_CHOWN_RESTRICTED);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		WRITE32(attr->filehandle.nfs_fh4_len);
-		WRITEMEM(attr->filehandle.nfs_fh4_val,
-			 attr->filehandle.nfs_fh4_len);
+		nb.len = attr->filehandle.nfs_fh4_len;
+		nb.val = attr->filehandle.nfs_fh4_val;
+		WRBUF(&nb);
 		bitmap_out |= (1ULL << FATTR4_FILEHANDLE);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEID)) {
-		WRITE64(attr->fileid);
+		WR64(attr->fileid);
 		bitmap_out |= (1ULL << FATTR4_FILEID);
 	}
 	if (bitmap & (1ULL << FATTR4_FILES_AVAIL)) {
-		WRITE64(attr->files_avail);
+		WR64(attr->files_avail);
 		bitmap_out |= (1ULL << FATTR4_FILES_AVAIL);
 	}
 	if (bitmap & (1ULL << FATTR4_FILES_FREE)) {
-		WRITE64(attr->files_free);
+		WR64(attr->files_free);
 		bitmap_out |= (1ULL << FATTR4_FILES_FREE);
 	}
 	if (bitmap & (1ULL << FATTR4_FILES_TOTAL)) {
-		WRITE64(attr->files_total);
+		WR64(attr->files_total);
 		bitmap_out |= (1ULL << FATTR4_FILES_TOTAL);
 	}
 
@@ -241,31 +154,31 @@ bool fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 #endif
 
 	if (bitmap & (1ULL << FATTR4_HIDDEN)) {
-		WRITE32(attr->hidden ? 1 : 0);
+		WR32(attr->hidden ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_HIDDEN);
 	}
 	if (bitmap & (1ULL << FATTR4_HOMOGENEOUS)) {
-		WRITE32(attr->homogeneous ? 1 : 0);
+		WR32(attr->homogeneous ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_HOMOGENEOUS);
 	}
 	if (bitmap & (1ULL << FATTR4_MAXFILESIZE)) {
-		WRITE64(attr->maxfilesize);
+		WR64(attr->maxfilesize);
 		bitmap_out |= (1ULL << FATTR4_MAXFILESIZE);
 	}
 	if (bitmap & (1ULL << FATTR4_MAXLINK)) {
-		WRITE32(attr->maxlink);
+		WR32(attr->maxlink);
 		bitmap_out |= (1ULL << FATTR4_MAXLINK);
 	}
 	if (bitmap & (1ULL << FATTR4_MAXNAME)) {
-		WRITE32(attr->maxname);
+		WR32(attr->maxname);
 		bitmap_out |= (1ULL << FATTR4_MAXNAME);
 	}
 	if (bitmap & (1ULL << FATTR4_MAXREAD)) {
-		WRITE64(attr->maxread);
+		WR64(attr->maxread);
 		bitmap_out |= (1ULL << FATTR4_MAXREAD);
 	}
 	if (bitmap & (1ULL << FATTR4_MAXWRITE)) {
-		WRITE64(attr->maxwrite);
+		WR64(attr->maxwrite);
 		bitmap_out |= (1ULL << FATTR4_MAXWRITE);
 	}
 
@@ -277,115 +190,111 @@ bool fattr_encode(fattr4 *raw, struct nfs_fattr_set *attr)
 #endif
 
 	if (bitmap & (1ULL << FATTR4_MODE)) {
-		WRITE32(attr->mode);
+		WR32(attr->mode);
 		bitmap_out |= (1ULL << FATTR4_MODE);
 	}
 	if (bitmap & (1ULL << FATTR4_NO_TRUNC)) {
-		WRITE32(attr->no_trunc ? 1 : 0);
+		WR32(attr->no_trunc ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_NO_TRUNC);
 	}
 	if (bitmap & (1ULL << FATTR4_NUMLINKS)) {
-		WRITE32(attr->numlinks);
+		WR32(attr->numlinks);
 		bitmap_out |= (1ULL << FATTR4_NUMLINKS);
 	}
 	if (bitmap & (1ULL << FATTR4_OWNER)) {
-		encode_utf8(&attr->owner, &buf, &p, &buflen, &alloc_len);
+		nb.len = attr->owner.utf8string_len;
+		nb.val = attr->owner.utf8string_val;
+		WRBUF(&nb);
 		bitmap_out |= (1ULL << FATTR4_OWNER);
 	}
 	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		encode_utf8(&attr->owner_group, &buf, &p, &buflen, &alloc_len);
+		nb.len = attr->owner_group.utf8string_len;
+		nb.val = attr->owner_group.utf8string_val;
+		WRBUF(&nb);
 		bitmap_out |= (1ULL << FATTR4_OWNER_GROUP);
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
-		WRITE64(attr->quota_avail_hard);
+		WR64(attr->quota_avail_hard);
 		bitmap_out |= (1ULL << FATTR4_QUOTA_AVAIL_HARD);
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_SOFT)) {
-		WRITE64(attr->quota_avail_soft);
+		WR64(attr->quota_avail_soft);
 		bitmap_out |= (1ULL << FATTR4_QUOTA_AVAIL_SOFT);
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_USED)) {
-		WRITE64(attr->quota_used);
+		WR64(attr->quota_used);
 		bitmap_out |= (1ULL << FATTR4_QUOTA_USED);
 	}
 	if (bitmap & (1ULL << FATTR4_RAWDEV)) {
 		/* FIXME: correct order of these two dwords? */
-		WRITE32(attr->rawdev.specdata1);
-		WRITE32(attr->rawdev.specdata2);
+		WR32(attr->rawdev.specdata1);
+		WR32(attr->rawdev.specdata2);
 		bitmap_out |= (1ULL << FATTR4_RAWDEV);
 	}
 	if (bitmap & (1ULL << FATTR4_SPACE_AVAIL)) {
-		WRITE64(attr->space_avail);
+		WR64(attr->space_avail);
 		bitmap_out |= (1ULL << FATTR4_SPACE_AVAIL);
 	}
 	if (bitmap & (1ULL << FATTR4_SPACE_FREE)) {
-		WRITE64(attr->space_free);
+		WR64(attr->space_free);
 		bitmap_out |= (1ULL << FATTR4_SPACE_FREE);
 	}
 	if (bitmap & (1ULL << FATTR4_SPACE_TOTAL)) {
-		WRITE64(attr->space_total);
+		WR64(attr->space_total);
 		bitmap_out |= (1ULL << FATTR4_SPACE_TOTAL);
 	}
 	if (bitmap & (1ULL << FATTR4_SPACE_USED)) {
-		WRITE64(attr->space_used);
+		WR64(attr->space_used);
 		bitmap_out |= (1ULL << FATTR4_SPACE_USED);
 	}
 	if (bitmap & (1ULL << FATTR4_SYSTEM)) {
-		WRITE32(attr->system ? 1 : 0);
+		WR32(attr->system ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_SYSTEM);
 	}
 	if (bitmap & (1ULL << FATTR4_TIME_ACCESS)) {
-		WRITE64(attr->time_access.seconds);
-		WRITE32(attr->time_access.nseconds);
+		WR64(attr->time_access.seconds);
+		WR32(attr->time_access.nseconds);
 		bitmap_out |= (1ULL << FATTR4_TIME_ACCESS);
 	}
 	if (bitmap & (1ULL << FATTR4_TIME_BACKUP)) {
-		WRITE64(attr->time_backup.seconds);
-		WRITE32(attr->time_backup.nseconds);
+		WR64(attr->time_backup.seconds);
+		WR32(attr->time_backup.nseconds);
 		bitmap_out |= (1ULL << FATTR4_TIME_BACKUP);
 	}
 	if (bitmap & (1ULL << FATTR4_TIME_CREATE)) {
-		WRITE64(attr->time_create.seconds);
-		WRITE32(attr->time_create.nseconds);
+		WR64(attr->time_create.seconds);
+		WR32(attr->time_create.nseconds);
 		bitmap_out |= (1ULL << FATTR4_TIME_CREATE);
 	}
 	if (bitmap & (1ULL << FATTR4_TIME_DELTA)) {
-		WRITE64(attr->time_delta.seconds);
-		WRITE32(attr->time_delta.nseconds);
+		WR64(attr->time_delta.seconds);
+		WR32(attr->time_delta.nseconds);
 		bitmap_out |= (1ULL << FATTR4_TIME_DELTA);
 	}
 	if (bitmap & (1ULL << FATTR4_TIME_METADATA)) {
-		WRITE64(attr->time_metadata.seconds);
-		WRITE32(attr->time_metadata.nseconds);
+		WR64(attr->time_metadata.seconds);
+		WR32(attr->time_metadata.nseconds);
 		bitmap_out |= (1ULL << FATTR4_TIME_METADATA);
 	}
 	if (bitmap & (1ULL << FATTR4_TIME_MODIFY)) {
-		WRITE64(attr->time_modify.seconds);
-		WRITE32(attr->time_modify.nseconds);
+		WR64(attr->time_modify.seconds);
+		WR32(attr->time_modify.nseconds);
 		bitmap_out |= (1ULL << FATTR4_TIME_MODIFY);
 	}
 	if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID)) {
-		WRITE64(attr->mounted_on_fileid);
+		WR64(attr->mounted_on_fileid);
 		bitmap_out |= (1ULL << FATTR4_MOUNTED_ON_FILEID);
 	}
 
-	if (set_bitmap(bitmap_out, &raw->attrmask))
-		goto out;
+	*_bitmap_out = bitmap_out;
 
-	p1 = buf;
-	p2 = p;
+	end = WRSKIP(0);
 
-	raw->attr_vals.attrlist4_len = p2 - p1;
-	if (!raw->attr_vals.attrlist4_len)
-		raw->attr_vals.attrlist4_val = NULL;
-	else
-		raw->attr_vals.attrlist4_val = p1;
+	*bmap[0] = htonl(bitmap_out);
+	*bmap[1] = htonl(bitmap_out >> 32);
+	*attr_len = htonl(end - start);
 
-	return true;
-
-out:
-	free(buf);
-	return false;
+	return NFS4_OK;
 }
 
 #define FATTR_DEFINE(a,b,c)				\
