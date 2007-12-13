@@ -286,6 +286,21 @@ void *wr_sid(struct list_head *writes, struct rpc_write **wr_io,
 	return p;
 }
 
+void *wr_map(struct list_head *writes, struct rpc_write **wr,
+			uint64_t bitmap)
+{
+	uint64_t bitmap_hi = bitmap >> 32;
+	uint32_t *p;
+
+	p = WR32(2);
+	if (!WR32(bitmap))
+		return NULL;
+	if (!WR32(bitmap_hi))
+		return NULL;
+
+	return p;
+}
+
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 {
 	struct timezone tz = { 0, 0 };

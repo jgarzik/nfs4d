@@ -8,7 +8,7 @@ enum {
 	FATTR_LAST		= FATTR4_MOUNTED_ON_FILEID,
 };
 
-static void encode_acl(fattr4_acl *acl,
+static void encode_acl(const fattr4_acl *acl,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	struct nfs_buf nb;
@@ -29,7 +29,223 @@ static void encode_acl(fattr4_acl *acl,
 	}
 }
 
-nfsstat4 wr_fattr(struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
+nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
+{
+	/* FIXME */
+	return NFS4ERR_NOTSUPP;
+}
+
+nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
+{
+	uint64_t bitmap = attr->bitmap;
+	struct nfs_buf *nb;
+	uint32_t attr_len;
+	nfsstat4 status = NFS4_OK;
+	unsigned int start_len, end_len;
+
+	memset(attr, 0, sizeof(*attr));
+
+	bitmap = CURMAP();
+	attr_len = CR32();	/* attribute buffer length */
+
+	start_len = cur->len;
+
+	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
+		attr->supported_attrs = CURMAP();
+	}
+	if (bitmap & (1ULL << FATTR4_TYPE)) {
+		attr->type = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE)) {
+		attr->fh_expire_type = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_CHANGE)) {
+		attr->change = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_SIZE)) {
+		attr->size = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_LINK_SUPPORT)) {
+		attr->link_support = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT)) {
+		attr->symlink_support = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_NAMED_ATTR)) {
+		attr->named_attr = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_FSID)) {
+		attr->fsid.major = CR64();
+		attr->fsid.minor = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES)) {
+		attr->unique_handles = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_LEASE_TIME)) {
+		attr->lease_time = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_RDATTR_ERROR)) {
+		attr->rdattr_error = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_ACL)) {
+		status = cur_readacl(cur, &attr->acl);
+		if (status != NFS4_OK)
+			goto out;
+	}
+	if (bitmap & (1ULL << FATTR4_ACLSUPPORT)) {
+		attr->aclsupport = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_ARCHIVE)) {
+		attr->archive = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_CANSETTIME)) {
+		attr->cansettime = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_CASE_INSENSITIVE)) {
+		attr->case_insensitive = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_CASE_PRESERVING)) {
+		attr->case_preserving = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_CHOWN_RESTRICTED)) {
+		attr->chown_restricted = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
+		nb = (struct nfs_buf *) &attr->filehandle;
+		CURBUF(nb);
+	}
+	if (bitmap & (1ULL << FATTR4_FILEID)) {
+		attr->fileid = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_FILES_AVAIL)) {
+		attr->files_avail = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_FILES_FREE)) {
+		attr->files_free = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_FILES_TOTAL)) {
+		attr->files_total = CR64();
+	}
+
+#if FS_LOCATIONS_CODE_WORKING
+	if (bitmap & (1ULL << FATTR4_FS_LOCATIONS)) {
+		encode_pathname(&attr->fs_locations.fs_root, &buf, &p, &buflen,
+				&alloc_len);
+	}
+#endif
+
+	if (bitmap & (1ULL << FATTR4_HIDDEN)) {
+		attr->hidden = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_HOMOGENEOUS)) {
+		attr->homogeneous = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_MAXFILESIZE)) {
+		attr->maxfilesize = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_MAXLINK)) {
+		attr->maxlink = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_MAXNAME)) {
+		attr->maxname = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_MAXREAD)) {
+		attr->maxread = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_MAXWRITE)) {
+		attr->maxwrite = CR64();
+	}
+
+#if 0
+	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
+		encode_utf8(&attr->mimetype, &buf, &p, &buflen, &alloc_len);
+	}
+#endif
+
+	if (bitmap & (1ULL << FATTR4_MODE)) {
+		attr->mode = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_NO_TRUNC)) {
+		attr->no_trunc = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_NUMLINKS)) {
+		attr->numlinks = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_OWNER)) {
+		nb = (struct nfs_buf *) &attr->owner;
+		CURBUF(nb);
+	}
+	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
+		nb = (struct nfs_buf *) &attr->owner_group;
+		CURBUF(nb);
+	}
+	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
+		attr->quota_avail_hard = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_SOFT)) {
+		attr->quota_avail_soft = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_QUOTA_USED)) {
+		attr->quota_used = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_RAWDEV)) {
+		/* FIXME: correct order of these two dwords? */
+		attr->rawdev.specdata1 = CR32();
+		attr->rawdev.specdata2 = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_AVAIL)) {
+		attr->space_avail = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_FREE)) {
+		attr->space_free = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_TOTAL)) {
+		attr->space_total = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_USED)) {
+		attr->space_used = CR64();
+	}
+	if (bitmap & (1ULL << FATTR4_SYSTEM)) {
+		attr->system = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_ACCESS)) {
+		attr->time_access.seconds = CR64();
+		attr->time_access.nseconds = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_BACKUP)) {
+		attr->time_backup.seconds = CR64();
+		attr->time_backup.nseconds = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_CREATE)) {
+		attr->time_create.seconds = CR64();
+		attr->time_create.nseconds = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_DELTA)) {
+		attr->time_delta.seconds = CR64();
+		attr->time_delta.nseconds = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_METADATA)) {
+		attr->time_metadata.seconds = CR64();
+		attr->time_metadata.nseconds = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_MODIFY)) {
+		attr->time_modify.seconds = CR64();
+		attr->time_modify.nseconds = CR32();
+	}
+	if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID)) {
+		attr->mounted_on_fileid = CR64();
+	}
+
+	end_len = cur->len;
+
+	if ((start_len - end_len) > attr_len)
+		status = NFS4ERR_BADXDR;
+
+out:
+	return status;
+}
+
+nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		  struct list_head *writes, struct rpc_write **wr)
 {
 	uint64_t bitmap = attr->bitmap;
@@ -44,9 +260,7 @@ nfsstat4 wr_fattr(struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 	attr_len = WRSKIP(4);	/* attribute buffer length */
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
-		WR32(2);
-		WR32(fattr_supported_mask);
-		WR32(fattr_supported_mask >> 32);
+		WRMAP(fattr_supported_mask);
 		bitmap_out |= (1ULL << FATTR4_SUPPORTED_ATTRS);
 	}
 	if (bitmap & (1ULL << FATTR4_TYPE)) {
@@ -297,36 +511,6 @@ nfsstat4 wr_fattr(struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 	return NFS4_OK;
 }
 
-#define FATTR_DEFINE(a,b,c)				\
-	if (bitmap & ( 1ULL << FATTR4_##a )) {		\
-		if (!xdr_fattr4_##b(&xdr, &attr->b)) {	\
-			rc = false;			\
-			goto out;			\
-		}					\
-	}
-
-bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr)
-{
-	uint64_t bitmap;
-	XDR xdr;
-	bool rc = true;
-
-	memset(attr, 0, sizeof(*attr));
-	bitmap = attr->bitmap = get_bitmap(&raw->attrmask);
-
-	memset(&xdr, 0, sizeof(xdr));
-	xdrmem_create(&xdr, raw->attr_vals.attrlist4_val,
-		      raw->attr_vals.attrlist4_len, XDR_DECODE);
-
-#include "fattr.h"
-
-out:
-	xdr_destroy(&xdr);
-	return rc;
-}
-
-#undef FATTR_DEFINE
-
 void fattr_free(struct nfs_fattr_set *attr)
 {
 	/* FIXME */
@@ -360,12 +544,7 @@ static void fattr_fill_server(struct nfs_fattr_set *attr)
 
 static void fattr_fill_fs(struct nfs_fattr_set *attr)
 {
-	uint64_t bitmap = attr->bitmap;
-
-	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS))
-		if (set_bitmap(fattr_supported_mask, &attr->supported_attrs))
-			return;		/* failure, OOM most likely */
-
+	attr->supported_attrs = fattr_supported_mask;
 	attr->fh_expire_type = SRV_FH_EXP_TYPE;
 	attr->link_support = true;
 	attr->symlink_support = true;
@@ -394,7 +573,7 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->space_total = attr->space_used + attr->space_free;
 }
 
-static void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
+static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap = attr->bitmap;
 
@@ -431,7 +610,7 @@ static void fattr_fill_obj(struct nfs_inode *ino, struct nfs_fattr_set *attr)
 	attr->mounted_on_fileid = ino->ino;
 }
 
-void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr)
+void fattr_fill(const struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
 	fattr_fill_server(attr);
 	fattr_fill_fs(attr);
@@ -460,16 +639,9 @@ void print_fattr_bitmap(const char *pfx, uint64_t bitmap)
 
 #undef FATTR_DEFINE
 
-void print_fattr(const char *pfx, fattr4 *attr)
+void print_fattr(const char *pfx, const struct nfs_fattr_set *attr)
 {
-	struct nfs_fattr_set as;
-
-	if (!fattr_decode(attr, &as)) {
-		syslog(LOG_WARNING, "%s: attribute decode failed", pfx);
-		return;
-	}
-
-	print_fattr_bitmap(pfx, as.bitmap);
+	print_fattr_bitmap(pfx, attr->bitmap);
 }
 
 

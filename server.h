@@ -28,6 +28,7 @@ typedef uint32_t nfsino_t;
 #define WRSTR(str)		wr_str(writes, wr, (str))
 #define WRMEM(buf, len)		wr_mem(writes, wr, (buf), (len))
 #define WRSID(sid_ptr)		wr_sid(writes, wr, (sid_ptr))
+#define WRMAP(bitmap)		wr_map(writes, wr, (bitmap))
 
 enum {
 	INO_ROOT		= 10,
@@ -266,21 +267,71 @@ struct nfs_inode {
 
 	union {
 		GHashTable	*dir;		/* state for a directory */
-		gchar		*linktext;	/* state for a symlink */
-		specdata4	devdata;	/* block/chrdev info */
+		char		*linktext;	/* state for a symlink */
+		uint32_t	devdata[2];
 	} u;
 };
 
-#define FATTR_DEFINE(a,b,c) \
-	fattr4_##b b;
-
 struct nfs_fattr_set {
-	uint64_t		bitmap;
+	uint64_t			bitmap;
 
-#include "fattr.h"
+	uint64_t			supported_attrs;
+	fattr4_type			type;
+	fattr4_fh_expire_type		fh_expire_type;
+	fattr4_change			change;
+	fattr4_size			size;
+	fattr4_link_support		link_support;
+	fattr4_symlink_support		symlink_support;
+	fattr4_named_attr		named_attr;
+	fattr4_fsid			fsid;
+	fattr4_unique_handles		unique_handles;
+	fattr4_lease_time		lease_time;
+	fattr4_rdattr_error		rdattr_error;
+	fattr4_acl			acl;
+	fattr4_aclsupport		aclsupport;
+	fattr4_archive			archive;
+	fattr4_cansettime		cansettime;
+	fattr4_case_insensitive		case_insensitive;
+	fattr4_case_preserving		case_preserving;
+	fattr4_chown_restricted		chown_restricted;
+	fattr4_filehandle		filehandle;
+	fattr4_fileid			fileid;
+	fattr4_files_avail		files_avail;
+	fattr4_files_free		files_free;
+	fattr4_files_total		files_total;
+	fattr4_fs_locations		fs_locations;
+	fattr4_hidden			hidden;
+	fattr4_homogeneous		homogeneous;
+	fattr4_maxfilesize		maxfilesize;
+	fattr4_maxlink			maxlink;
+	fattr4_maxname			maxname;
+	fattr4_maxread			maxread;
+	fattr4_maxwrite			maxwrite;
+	fattr4_mimetype			mimetype;
+	fattr4_mode			mode;
+	fattr4_no_trunc			no_trunc;
+	fattr4_numlinks			numlinks;
+	fattr4_owner			owner;
+	fattr4_owner_group		owner_group;
+	fattr4_quota_avail_hard		quota_avail_hard;
+	fattr4_quota_avail_soft		quota_avail_soft;
+	fattr4_quota_used		quota_used;
+	fattr4_rawdev			rawdev;
+	fattr4_space_avail		space_avail;
+	fattr4_space_free		space_free;
+	fattr4_space_total		space_total;
+	fattr4_space_used		space_used;
+	fattr4_system			system;
+	fattr4_time_access		time_access;
+	fattr4_time_access_set		time_access_set;
+	fattr4_time_backup		time_backup;
+	fattr4_time_create		time_create;
+	fattr4_time_delta		time_delta;
+	fattr4_time_metadata		time_metadata;
+	fattr4_time_modify		time_modify;
+	fattr4_time_modify_set		time_modify_set;
+	fattr4_mounted_on_fileid	mounted_on_fileid;
 };
-
-#undef FATTR_DEFINE
 
 struct nfs_dirent {
 	nfsino_t		ino;
@@ -338,22 +389,23 @@ extern nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
-enum nfsstat4 dir_add(struct nfs_inode *dir_ino, struct nfs_buf *name_in,
+enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		      nfsino_t inum);
 void dirent_free(gpointer p);
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
-nfsstat4 dir_lookup(struct nfs_inode *dir_ino, struct nfs_buf *str,
+nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out);
 void nfs_readdir_free(READDIR4res *res);
 
 /* fattr.c */
-extern nfsstat4 wr_fattr(struct nfs_fattr_set *attr, uint64_t *bitmap_out,
+extern nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr);
+extern nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *bitmap_out,
 		     struct list_head *writes, struct rpc_write **wr);
 extern bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 extern void fattr_free(struct nfs_fattr_set *attr);
-extern void fattr_fill(struct nfs_inode *ino, struct nfs_fattr_set *attr);
+extern void fattr_fill(const struct nfs_inode *ino, struct nfs_fattr_set *attr);
 extern void fattr4_free(fattr4 *attr);
-extern void print_fattr(const char *pfx, fattr4 *attr);
+extern void print_fattr(const char *pfx, const struct nfs_fattr_set *attr);
 extern void print_fattr_bitmap(const char *pfx, uint64_t bitmap);
 
 /* fh.c */
@@ -373,24 +425,27 @@ void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* inode.c */
 extern nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
-		       struct list_head *writes, struct rpc_write **wr);
+			      struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
-			     struct list_head *writes, struct rpc_write **wr);
+			       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
+			       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
+			      struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
+			      struct list_head *writes, struct rpc_write **wr,
+			      bool nverify);
 extern nfsino_t next_ino;
 extern struct nfs_inode *inode_get(nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
-extern bool nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
-		      COMPOUND4res *cres);
-extern bool nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
-		     COMPOUND4res *cres, int nverify);
 extern nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
-		   fattr4 *attr, struct nfs_buf *name, bitmap4 *attrset,
-		   change_info4 *cinfo);
+		   const struct nfs_fattr_set *attr, const struct nfs_buf *name,
+		   uint64_t *attrset, change_info4 *cinfo);
 extern struct nfs_inode *inode_new_file(struct nfs_cxn *cxn);
-extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
+extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
+				const struct nfs_fattr_set *attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,
 			        bool in_setattr);
@@ -415,6 +470,8 @@ extern void *wr_mem(struct list_head *writes, struct rpc_write **wr_io,
 			const void *buf, unsigned int len);
 extern void *wr_sid(struct list_head *writes, struct rpc_write **wr_io,
 			const struct nfs_stateid *sid);
+extern void *wr_map(struct list_head *writes, struct rpc_write **wr_io,
+			uint64_t bitmap);
 
 /* open.c */
 extern nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -431,8 +488,8 @@ extern int cxn_getuid(const struct nfs_cxn *cxn);
 extern int cxn_getgid(const struct nfs_cxn *cxn);
 
 extern bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
-extern bool valid_utf8string(struct nfs_buf *str);
-extern char *copy_utf8string(struct nfs_buf *str);
+extern bool valid_utf8string(const struct nfs_buf *str);
+extern char *copy_utf8string(const struct nfs_buf *str);
 extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 extern uint64_t get_bitmap(const bitmap4 *map);
 extern void __set_bitmap(uint64_t map_in, bitmap4 *map_out);

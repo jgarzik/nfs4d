@@ -157,19 +157,19 @@ static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 }
 
 static struct nfs_inode *inode_new_dev(struct nfs_cxn *cxn,
-				enum nfs_ftype4 type, specdata4 *devdata)
+				enum nfs_ftype4 type, const uint32_t *devdata)
 {
 	struct nfs_inode *ino = inode_new(cxn);
 	if (!ino)
 		return NULL;
 
 	ino->type = type;
-	memcpy(&ino->u.devdata, devdata, sizeof(specdata4));
+	memcpy(&ino->u.devdata[0], devdata, sizeof(uint32_t) * 2);
 
 	return ino;
 }
 
-static struct nfs_inode *inode_new_symlink(struct nfs_cxn *cxn, gchar *linktext)
+static struct nfs_inode *inode_new_symlink(struct nfs_cxn *cxn, char *linktext)
 {
 	struct nfs_inode *ino = inode_new(cxn);
 	if (!ino)
@@ -181,7 +181,9 @@ static struct nfs_inode *inode_new_symlink(struct nfs_cxn *cxn, gchar *linktext)
 	return ino;
 }
 
-static nfsstat4 inode_new_type(struct nfs_cxn *cxn, createtype4 *objtype,
+static nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
+			       const struct nfs_buf *linkdata,
+			       const uint32_t *specdata,
 			       struct nfs_inode **ino_out)
 {
 	struct nfs_inode *new_ino;
@@ -189,18 +191,16 @@ static nfsstat4 inode_new_type(struct nfs_cxn *cxn, createtype4 *objtype,
 
 	*ino_out = NULL;
 
-	switch(objtype->type) {
+	switch(objtype) {
 	case NF4DIR:
 		new_ino = inode_new_dir(cxn);
 		break;
 	case NF4BLK:
 	case NF4CHR:
-		new_ino = inode_new_dev(cxn, objtype->type,
-				        &objtype->createtype4_u.devdata);
+		new_ino = inode_new_dev(cxn, objtype, specdata);
 		break;
 	case NF4LNK: {
-		gchar *linktext =
-			copy_utf8string(&objtype->createtype4_u.linkdata);
+		char *linktext = copy_utf8string(linkdata);
 		if (!linktext) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -219,7 +219,7 @@ static nfsstat4 inode_new_type(struct nfs_cxn *cxn, createtype4 *objtype,
 		goto out;
 	}
 
-	new_ino->type = objtype->type;
+	new_ino->type = objtype;
 
 	if (!new_ino) {
 		status = NFS4ERR_RESOURCE;
@@ -272,29 +272,26 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 	}
 }
 
-enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
+enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
+				const struct nfs_fattr_set *attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,
 			        bool in_setattr)
 {
-	struct nfs_fattr_set fattr;
 	uint64_t bitmap_set = 0;
 	enum nfsstat4 status = NFS4_OK;
 
-	if (!fattr_decode(raw_attr, &fattr))
-		return NFS4ERR_BADXDR;
-
-	if (fattr.bitmap & fattr_read_only_mask) {
+	if (attr->bitmap & fattr_read_only_mask) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
-	if (fattr.bitmap & ~fattr_supported_mask) {
+	if (attr->bitmap & ~fattr_supported_mask) {
 		status = NFS4ERR_ATTRNOTSUPP;
 		goto out;
 	}
 
-	if (fattr.bitmap & (1ULL << FATTR4_SIZE)) {
-		uint64_t new_size = fattr.size;
+	if (attr->bitmap & (1ULL << FATTR4_SIZE)) {
+		uint64_t new_size = attr->size;
 		void *mem;
 		struct nfs_state *st = NULL;
 
@@ -348,49 +345,49 @@ size_done:
 		bitmap_set |= (1ULL << FATTR4_SIZE);
 	}
 
-	if (fattr.bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
-		if (fattr.time_access_set.settime4_u.time.nseconds > 999999999){
+	if (attr->bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
+		if (attr->time_access_set.settime4_u.time.nseconds > 999999999){
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
 
-		if (fattr.time_access_set.set_it == SET_TO_CLIENT_TIME4)
+		if (attr->time_access_set.set_it == SET_TO_CLIENT_TIME4)
 			ino->atime =
-			      fattr.time_access_set.settime4_u.time.seconds;
+			      attr->time_access_set.settime4_u.time.seconds;
 		else
 			ino->atime = current_time.tv_sec;
 
 		bitmap_set |= (1ULL << FATTR4_TIME_ACCESS_SET);
 	}
-	if (fattr.bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
-		if (fattr.time_modify_set.settime4_u.time.nseconds > 999999999){
+	if (attr->bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
+		if (attr->time_modify_set.settime4_u.time.nseconds > 999999999){
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
 
-		if (fattr.time_modify_set.set_it == SET_TO_CLIENT_TIME4)
+		if (attr->time_modify_set.set_it == SET_TO_CLIENT_TIME4)
 			ino->mtime =
-			      fattr.time_modify_set.settime4_u.time.seconds;
+			      attr->time_modify_set.settime4_u.time.seconds;
 		else
 			ino->mtime = current_time.tv_sec;
 
 		bitmap_set |= (1ULL << FATTR4_TIME_MODIFY_SET);
 	}
-	if (fattr.bitmap & (1ULL << FATTR4_MODE)) {
-		if (fattr.mode & ~MODE4_ALL) {
+	if (attr->bitmap & (1ULL << FATTR4_MODE)) {
+		if (attr->mode & ~MODE4_ALL) {
 			status = NFS4ERR_BADXDR;
 			goto out;
 		}
-		ino->mode = fattr.mode;
+		ino->mode = attr->mode;
 		bitmap_set |= (1ULL << FATTR4_MODE);
 	}
-	if (fattr.bitmap & (1ULL << FATTR4_OWNER)) {
-		int x = srv_lookup_user(&fattr.owner);
+	if (attr->bitmap & (1ULL << FATTR4_OWNER)) {
+		int x = srv_lookup_user(&attr->owner);
 		if (x < 0) {
 			if (debugging)
 				syslog(LOG_INFO, "invalid OWNER attr: '%.*s'",
-				       fattr.owner.utf8string_len,
-				       fattr.owner.utf8string_val);
+				       attr->owner.utf8string_len,
+				       attr->owner.utf8string_val);
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
@@ -398,13 +395,13 @@ size_done:
 		ino->uid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
-	if (fattr.bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		int x = srv_lookup_group(&fattr.owner_group);
+	if (attr->bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
+		int x = srv_lookup_group(&attr->owner_group);
 		if (x < 0) {
 			if (debugging)
 				syslog(LOG_INFO, "invalid OWNER GROUP attr: '%.*s'",
-				       fattr.owner_group.utf8string_len,
-				       fattr.owner_group.utf8string_val);
+				       attr->owner_group.utf8string_len,
+				       attr->owner_group.utf8string_val);
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
@@ -414,8 +411,6 @@ size_done:
 	}
 
 out:
-	fattr_free(&fattr);
-
 	if (in_setattr && bitmap_set)
 		inode_touch(ino);
 
@@ -424,21 +419,14 @@ out:
 }
 
 nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
-		   fattr4 *attr, struct nfs_buf *name, bitmap4 *attrset,
-		   change_info4 *cinfo)
+		   const struct nfs_fattr_set *attr, const struct nfs_buf *name,
+		   uint64_t *attrset, change_info4 *cinfo)
 {
-	uint64_t bitmap_set;
 	nfsstat4 status;
 
-	status = inode_apply_attrs(new_ino, attr, &bitmap_set, NULL, false);
+	status = inode_apply_attrs(new_ino, attr, attrset, NULL, false);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
-		goto out;
-	}
-
-	if (set_bitmap(bitmap_set, attrset)) {
-		inode_free(new_ino);
-		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
@@ -452,7 +440,6 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 	status = dir_add(dir_ino, name, new_ino->ino);
 	if (status != NFS4_OK) {
 		inode_unlink(new_ino, 0);
-		free_bitmap(attrset);
 		goto out;
 	}
 
@@ -463,79 +450,97 @@ out:
 	return status;
 }
 
-static void print_create_args(CREATE4args *arg)
+static void print_create_args(uint32_t objtype, const struct nfs_buf *objname,
+			      const struct nfs_buf *linkdata,
+			      const uint32_t *specdata,
+			      const struct nfs_fattr_set *attr)
 {
-	switch (arg->objtype.type) {
+	switch (objtype) {
 	case NF4BLK:
 	case NF4CHR:
 		syslog(LOG_INFO, "op CREATE (%s, '%.*s', %u %u)",
-		       name_nfs_ftype4[arg->objtype.type],
-		       arg->objname.utf8string_len,
-		       arg->objname.utf8string_val,
-		       arg->objtype.createtype4_u.devdata.specdata1,
-		       arg->objtype.createtype4_u.devdata.specdata2);
+		       name_nfs_ftype4[objtype],
+		       objname->len, objname->val,
+		       specdata[0],
+		       specdata[1]);
 		break;
 	case NF4LNK:
 		syslog(LOG_INFO, "op CREATE (%s, '%.*s', '%.*s')",
-		       name_nfs_ftype4[arg->objtype.type],
-		       arg->objname.utf8string_len,
-		       arg->objname.utf8string_val,
-		       arg->objtype.createtype4_u.linkdata.utf8string_len,
-		       arg->objtype.createtype4_u.linkdata.utf8string_val);
+		       name_nfs_ftype4[objtype],
+		       objname->len, objname->val,
+		       linkdata->len, linkdata->val);
 		break;
 	default:
 		syslog(LOG_INFO, "op CREATE (%s, '%.*s')",
-		       name_nfs_ftype4[arg->objtype.type],
-		       arg->objname.utf8string_len,
-		       arg->objname.utf8string_val);
+		       name_nfs_ftype4[objtype],
+		       objname->len, objname->val);
 		break;
 	}
 
-	print_fattr("op CREATE attr", &arg->createattrs);
+	print_fattr("op CREATE attr", attr);
 }
 
-bool nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	CREATE4res *res;
-	CREATE4resok *resok;
-	nfsstat4 status = NFS4_OK;
+	nfsstat4 status;
 	struct nfs_inode *dir_ino, *new_ino;
+	uint32_t objtype, specdata[2] = { 0, };
+	struct nfs_buf objname, linkdata = { 0, NULL };
+	struct nfs_fattr_set attr;
+	uint64_t attrset = 0;
+	change_info4 cinfo;
+
+	objtype = CR32();				/* type */
+	if (objtype == NF4BLK || objtype == NF4CHR) {
+		specdata[0] = CR32();			/* devdata */
+		specdata[1] = CR32();
+	} else if (objtype == NF4LNK)
+		CURBUF(&linkdata);			/* linkdata */
+	CURBUF(&objname);				/* objname */
+
+	status = cur_readattr(cur, &attr);		/* createattrs */
+	if (status != NFS4_OK)
+		goto out;
 
 	if (debugging)
-		print_create_args(arg);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_CREATE;
-	res = &resop.nfs_resop4_u.opcreate;
-	resok = &res->CREATE4res_u.resok4;
+		print_create_args(objtype, &objname, &linkdata,
+				  specdata, &attr);
 
 	status = dir_curfh(cxn, &dir_ino);
 	if (status != NFS4_OK)
-		goto out;
+		goto err_out;
 
 	if (dir_ino->type != NF4DIR) {
 		status = NFS4ERR_NOTDIR;
-		goto out;
+		goto err_out;
 	}
 
-	status = inode_new_type(cxn, &arg->objtype, &new_ino);
+	status = inode_new_type(cxn, objtype, &linkdata, specdata, &new_ino);
 	if (status != NFS4_OK)
-		goto out;
+		goto err_out;
 
-	status = inode_add(dir_ino, new_ino, &arg->createattrs,
-			   &arg->objname, &resok->attrset, &resok->cinfo);
+	status = inode_add(dir_ino, new_ino, &attr,
+			   &objname, &attrset, &cinfo);
 	if (status != NFS4_OK)
-		goto out;
+		goto err_out;
 
 	cxn->current_fh = new_ino->ino;
 
 	if (debugging)
 		syslog(LOG_INFO, "   CREATE -> %u", cxn->current_fh);
 
+err_out:
+	fattr_free(&attr);
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		WR32(cinfo.atomic ? 1 : 0);
+		WR32(cinfo.before);
+		WR32(cinfo.after);
+		WRMAP(attrset);
+	}
+	return status;
 }
 
 nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -596,25 +601,30 @@ out:
 	return status;
 }
 
-bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
-		      COMPOUND4res *cres)
+nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
+		        struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	SETATTR4res *res;
 	struct nfs_inode *ino;
 	nfsstat4 status = NFS4_OK;
-	uint64_t bitmap = get_bitmap(&arg->obj_attributes.attrmask);
-	struct nfs_stateid *sid = (struct nfs_stateid *) &arg->stateid;
-	uint32_t id = GUINT32_FROM_LE(sid->id);
+	uint64_t bitmap_out = 0;
+	struct nfs_stateid sid;
+	struct nfs_fattr_set attr;
 
-	if (debugging) {
-		syslog(LOG_INFO, "op SETATTR (ID:%x)", id);
-		print_fattr_bitmap("   SETATTR", bitmap);
+	if (cur->len < 16) {
+		status = NFS4ERR_BADXDR;
+		goto out;
 	}
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_SETATTR;
-	res = &resop.nfs_resop4_u.opsetattr;
+	CURSID(&sid);
+
+	status = cur_readattr(cur, &attr);
+	if (status != NFS4_OK)
+		goto out;
+
+	if (debugging) {
+		syslog(LOG_INFO, "op SETATTR (ID:%x)", sid.id);
+		print_fattr_bitmap("   SETATTR", attr.supported_attrs);
+	}
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -622,26 +632,19 @@ bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
 		goto err_out;
 	}
 
-	bitmap = 0;
-	status = inode_apply_attrs(ino, &arg->obj_attributes, &bitmap, sid,
-				   true);
+	status = inode_apply_attrs(ino, &attr, &bitmap_out, &sid, true);
 	if (status != NFS4_OK)
 		goto err_out;
 
-	set_bitmap(bitmap, &res->attrsset);
-
 	if (debugging)
-		print_fattr_bitmap("   SETATTR result", bitmap);
-
-out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+		print_fattr_bitmap("   SETATTR result", bitmap_out);
 
 err_out:
-	free(res->attrsset.bitmap4_val);
-	res->attrsset.bitmap4_val = NULL;
-	res->attrsset.bitmap4_len = 0;
-	goto out;
+	fattr_free(&attr);
+out:
+	WR32(status);
+	WRMAP(bitmap_out);
+	return status;
 }
 
 unsigned int inode_access(const struct nfs_cxn *cxn,
@@ -746,11 +749,9 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 	/*
 	 * per-filesystem attributes
 	 */
-        if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
-		uint64_t tmp = get_bitmap(&attr->supported_attrs);
-		if (tmp != fattr_supported_mask)
+        if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS))
+		if (attr->supported_attrs != fattr_supported_mask)
 			return false;
-	}
         if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE))
 		if (attr->fh_expire_type != SRV_FH_EXP_TYPE)
 			return false;
@@ -837,8 +838,8 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 		if (attr->numlinks != ino->parents->len)
 			return false;
         if (bitmap & (1ULL << FATTR4_RAWDEV))
-		if ((attr->rawdev.specdata1 != ino->u.devdata.specdata1) ||
-		    (attr->rawdev.specdata2 != ino->u.devdata.specdata2))
+		if ((attr->rawdev.specdata1 != ino->u.devdata[0]) ||
+		    (attr->rawdev.specdata2 != ino->u.devdata[1]))
 			return false;
         if (bitmap & (1ULL << FATTR4_TIME_ACCESS))
 		if ((attr->time_access.seconds != ino->atime) ||
@@ -859,24 +860,18 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 	return true;
 }
 
-bool nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
-		     COMPOUND4res *cres, int nverify)
+nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr,
+		       bool nverify)
 {
-	struct nfs_resop4 resop;
-	VERIFY4res *res;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
 	struct nfs_fattr_set fattr;
 	bool match;
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_VERIFY;
-	res = &resop.nfs_resop4_u.opverify;
-
-	if (!fattr_decode(&arg->obj_attributes, &fattr)) {
-		status = NFS4ERR_BADXDR;
+	status = cur_readattr(cur, &fattr);
+	if (status != NFS4_OK)
 		goto out;
-	}
 
 	if ((fattr.bitmap & (1ULL << FATTR4_RDATTR_ERROR)) ||
 	    (fattr.bitmap & fattr_write_only_mask)) {
@@ -909,7 +904,7 @@ bool nfs_op_verify(struct nfs_cxn *cxn, VERIFY4args *arg,
 out_free:
 	fattr_free(&fattr);
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 

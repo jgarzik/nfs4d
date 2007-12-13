@@ -95,7 +95,7 @@ static const char *name_nfs4status[] = {
 	[NFS4ERR_CB_PATH_DOWN] = "NFS4ERR_CB_PATH_DOWN",
 };
 
-bool valid_utf8string(struct nfs_buf *str)
+bool valid_utf8string(const struct nfs_buf *str)
 {
 	if (!str || !str->len || !str->val)
 		return false;
@@ -104,7 +104,7 @@ bool valid_utf8string(struct nfs_buf *str)
 	return true;
 }
 
-char *copy_utf8string(struct nfs_buf *str)
+char *copy_utf8string(const struct nfs_buf *str)
 {
 	return strndup(str->val, str->len);
 }
@@ -398,6 +398,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_close(cxn, cur, writes, wr);
 	case OP_COMMIT:
 		return nfs_op_commit(cxn, cur, writes, wr);
+	case OP_CREATE:
+		return nfs_op_create(cxn, cur, writes, wr);
 	case OP_GETATTR:
 		return nfs_op_getattr(cxn, cur, writes, wr);
 	case OP_GETFH:
@@ -414,6 +416,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_lookup(cxn, cur, writes, wr);
 	case OP_LOOKUPP:
 		return nfs_op_lookupp(cxn, cur, writes, wr);
+	case OP_NVERIFY:
+		return nfs_op_verify(cxn, cur, writes, wr, true);
 	case OP_OPEN_CONFIRM:
 		return nfs_op_open_confirm(cxn, cur, writes, wr);
 	case OP_OPEN_DOWNGRADE:
@@ -440,27 +444,21 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_savefh(cxn, cur, writes, wr);
 	case OP_SECINFO:
 		return nfs_op_secinfo(cxn, cur, writes, wr);
+	case OP_SETATTR:
+		return nfs_op_setattr(cxn, cur, writes, wr);
 	case OP_SETCLIENTID:
 		return nfs_op_setclientid(cxn, cur, writes, wr);
 	case OP_SETCLIENTID_CONFIRM:
 		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
+	case OP_VERIFY:
+		return nfs_op_verify(cxn, cur, writes, wr, false);
 	case OP_WRITE:
 		return nfs_op_write(cxn, cur, writes, wr);
 
 #if 0
 
-	case OP_CREATE:
-		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, res);
-	case OP_NVERIFY:
-		return nfs_op_verify(cxn,
-				(VERIFY4args *) &arg->nfs_argop4_u.opnverify,
-				res, 1);
 	case OP_OPEN:
 		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, res);
-	case OP_SETATTR:
-		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, res);
-	case OP_VERIFY:
-		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, res, 0);
 #endif
 
 	case OP_DELEGPURGE:

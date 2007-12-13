@@ -7,7 +7,7 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static bool has_slash(struct nfs_buf *str)
+static bool has_slash(const struct nfs_buf *str)
 {
 	if (!str)
 		return false;
@@ -16,7 +16,7 @@ static bool has_slash(struct nfs_buf *str)
 	return false;
 }
 
-static bool has_dots(struct nfs_buf *str)
+static bool has_dots(const struct nfs_buf *str)
 {
 	if (!str)
 		return false;
@@ -52,7 +52,7 @@ out:
 	return status;
 }
 
-nfsstat4 dir_lookup(struct nfs_inode *dir_ino, struct nfs_buf *str,
+nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out)
 {
 	struct nfs_dirent *dirent;
@@ -171,7 +171,7 @@ void dirent_free(gpointer p)
 	free(dirent);
 }
 
-enum nfsstat4 dir_add(struct nfs_inode *dir_ino, struct nfs_buf *name_in,
+enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		      nfsino_t inum)
 {
 	struct nfs_dirent *dirent;
