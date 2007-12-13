@@ -11,6 +11,71 @@ static const char *name_open_claim_type4[] = {
 	[CLAIM_DELEGATE_PREV] = "DELEGATE_PREV",
 };
 
+static nfsstat4 cur_open(struct curbuf *cur, OPEN4args *args,
+			 struct nfs_fattr_set *attr)
+{
+	if (cur->len < (6 * 4))
+		return NFS4ERR_BADXDR;
+
+	args->seqid = CR32();
+	args->share_access = CR32();
+	args->share_deny = CR32();
+	args->owner.clientid = CR64();
+	CURBUF((struct nfs_buf *) &args->owner.owner);
+
+	args->openhow.opentype = CR32();
+	if (args->openhow.opentype == OPEN4_CREATE) {
+		createhow4 *how = &args->openhow.openflag4_u.how;
+		how->mode = CR32();
+		if (how->mode == EXCLUSIVE4) {
+			if (cur->len < 8)
+				return NFS4ERR_BADXDR;
+
+			memcpy(&how->createhow4_u.createverf,
+			       CURMEM(sizeof(verifier4)),
+			       sizeof(verifier4));
+		} else if ((how->mode == UNCHECKED4) ||
+			   (how->mode == GUARDED4)) {
+			nfsstat4 status;
+
+			status = cur_readattr(cur, attr);
+			if (status != NFS4_OK)
+				return status;
+		} else
+			return NFS4ERR_BADXDR;
+	} else if (args->openhow.opentype != OPEN4_NOCREATE)
+		return NFS4ERR_BADXDR;
+
+	args->claim.claim = CR32();
+	switch (args->claim.claim) {
+	case CLAIM_NULL:
+		/* do nothing */
+		break;
+
+	case CLAIM_PREVIOUS:
+		args->claim.open_claim4_u.delegate_type = CR32();
+		break;
+
+	case CLAIM_DELEGATE_CUR:
+		if (cur->len < 20)
+			return NFS4ERR_BADXDR;
+		CURSID((struct nfs_stateid *)
+			&args->claim.open_claim4_u.delegate_cur_info.delegate_stateid);
+		CURBUF((struct nfs_buf *)
+			&args->claim.open_claim4_u.delegate_cur_info.file);
+		break;
+
+	case CLAIM_DELEGATE_PREV:
+		CURBUF((struct nfs_buf *)
+			&args->claim.open_claim4_u.file_delegate_prev);
+		break;
+	default:
+		return NFS4ERR_BADXDR;
+	}
+
+	return NFS4_OK;
+}
+
 static void print_open_args(OPEN4args *args)
 {
 	if (!debugging)
@@ -56,24 +121,28 @@ static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
 		cfs->match = true;
 }
 
-bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
+nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
+		     struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	OPEN4res *res;
-	OPEN4resok *resok;
-	nfsstat4 status = NFS4_OK, lu_stat;
+	nfsstat4 status, lu_stat;
 	struct nfs_inode *dir_ino, *ino = NULL;
 	struct nfs_dirent *de;
 	struct nfs_state *st;
-	struct nfs_stateid *sid;
+	struct nfs_stateid sid;
 	bool creating, recreating = false;
+	OPEN4args _args;
+	OPEN4args *args = &_args;
+	struct nfs_fattr_set attr;
+	uint64_t bitmap_set = 0;
+	change_info4 cinfo = { true, 0, 0 };
+
+	memset(&attr, 0, sizeof(attr));
+
+	status = cur_open(cur, args, &attr);
+	if (status != NFS4_OK)
+		goto out;
 
 	print_open_args(args);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_OPEN;
-	res = &resop.nfs_resop4_u.opopen;
-	resok = &res->OPEN4res_u.resok4;
 
 	/* for the moment, we only support CLAIM_NULL */
 	if (args->claim.claim != CLAIM_NULL) {
@@ -87,7 +156,9 @@ bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 		goto out;
 
 	/* lookup component name; get inode if exists */
-	lu_stat = dir_lookup(dir_ino, &args->claim.open_claim4_u.file, &de);
+	lu_stat = dir_lookup(dir_ino,
+			     (struct nfs_buf *) &args->claim.open_claim4_u.file,
+			     &de);
 	switch (lu_stat) {
 	case NFS4ERR_NOENT:
 		break;
@@ -161,10 +232,9 @@ bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 			goto out;
 		}
 
-		status = inode_add(dir_ino, ino,
-		   &args->openhow.openflag4_u.how.createhow4_u.createattrs,
-		   &args->claim.open_claim4_u.file,
-		   &resok->attrset, &resok->cinfo);
+		status = inode_add(dir_ino, ino, &attr,
+			   (struct nfs_buf *) &args->claim.open_claim4_u.file,
+			   &bitmap_set, &cinfo);
 		if (status != NFS4_OK)
 			goto out;
 	}
@@ -184,14 +254,9 @@ bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	 * if re-creating, only size attribute applies
 	 */
 	if (recreating) {
-		uint64_t bitmap_set = 0;
-		args->openhow.openflag4_u.how.createhow4_u.createattrs.attrmask.bitmap4_val[0]
-			&= GUINT32_TO_BE(1 << FATTR4_SIZE);
-		args->openhow.openflag4_u.how.createhow4_u.createattrs.attrmask.bitmap4_val[1] = 0;
+		attr.supported_attrs &= (1ULL << FATTR4_SIZE);
 
-		status = inode_apply_attrs(ino,
-			&args->openhow.openflag4_u.how.createhow4_u.createattrs,
-			&bitmap_set, NULL, false);
+		status = inode_apply_attrs(ino, &attr, &bitmap_set, NULL,false);
 		if (status != NFS4_OK)
 			goto out;
 	}
@@ -228,24 +293,32 @@ bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
-	sid = (struct nfs_stateid *) &resok->stateid;
-	sid->seqid = args->seqid + 1;
-	sid->id = GUINT32_TO_LE(st->id);
-	memcpy(&sid->server_verf, &srv.instance_verf,
-	       sizeof(srv.instance_verf));
-	resok->rflags = OPEN4_RESULT_LOCKTYPE_POSIX;
-	resok->delegation.delegation_type = OPEN_DELEGATE_NONE;
+	sid.seqid = args->seqid + 1;
+	sid.id = st->id;
+	memcpy(&sid.server_verf, &srv.instance_verf, sizeof(srv.instance_verf));
 
 	status = NFS4_OK;
 	cxn->current_fh = ino->ino;
 
 	if (debugging)
 		syslog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",
-		       sid->seqid, st->id);
+		       sid.seqid, st->id);
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	fattr_free(&attr);
+
+	WR32(status);
+	if (status == NFS4_OK) {
+		WRSID(&sid);
+		WR32(cinfo.atomic);
+		WR64(cinfo.before);
+		WR64(cinfo.after);
+		WR32(OPEN4_RESULT_LOCKTYPE_POSIX);
+		WRMAP(bitmap_set);
+		WR32(OPEN_DELEGATE_NONE);
+		/* FIXME: handle open delegations */
+	}
+	return status;
 }
 
 nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,

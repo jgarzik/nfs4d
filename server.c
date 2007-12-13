@@ -418,6 +418,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_lookupp(cxn, cur, writes, wr);
 	case OP_NVERIFY:
 		return nfs_op_verify(cxn, cur, writes, wr, true);
+	case OP_OPEN:
+		return nfs_op_open(cxn, cur, writes, wr);
 	case OP_OPEN_CONFIRM:
 		return nfs_op_open_confirm(cxn, cur, writes, wr);
 	case OP_OPEN_DOWNGRADE:
@@ -454,12 +456,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_verify(cxn, cur, writes, wr, false);
 	case OP_WRITE:
 		return nfs_op_write(cxn, cur, writes, wr);
-
-#if 0
-
-	case OP_OPEN:
-		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, res);
-#endif
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:

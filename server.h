@@ -474,13 +474,14 @@ extern void *wr_map(struct list_head *writes, struct rpc_write **wr_io,
 			uint64_t bitmap);
 
 /* open.c */
+extern nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
+			    struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
-bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
 
 /* server.c */
 extern const char *name_nfs_ftype4[];
