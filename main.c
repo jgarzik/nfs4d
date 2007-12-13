@@ -116,11 +116,24 @@ void *cur_skip(struct curbuf *cur, unsigned int n)
 
 uint32_t cur_read32(struct curbuf *cur)
 {
-	uint32_t *p = CUR_SKIP(4);
+	uint32_t *p = cur_skip(cur, 4);
 	if (p)
 		return ntohl(*p);
 
 	return 0;
+}
+
+uint64_t cur_read64(struct curbuf *cur)
+{
+	uint64_t v[2];
+
+	if (cur->len < 8)
+		return 0;
+
+	v[0] = cur_read32(cur);
+	v[1] = cur_read32(cur);
+
+	return (v[0] << 32) | v[1];
 }
 
 void *cur_readmem(struct curbuf *cur, unsigned int n)
@@ -128,7 +141,16 @@ void *cur_readmem(struct curbuf *cur, unsigned int n)
 	if (!n)
 		return NULL;
 
-	return CUR_SKIP(XDR_QUADLEN(n) * 4);
+	return cur_skip(cur, XDR_QUADLEN(n) * 4);
+}
+
+void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb)
+{
+	nb->len = cur_read32(cur);
+	if (!nb->len)
+		nb->val = NULL;
+	else
+		nb->val = cur_readmem(cur, nb->len);
 }
 
 static unsigned int wr_free(struct rpc_write *wr)
@@ -173,6 +195,23 @@ uint32_t *wr_write32(struct list_head *writes, struct rpc_write **wr_io,uint32_t
 	if (p)
 		*p = htonl(val);
 	return p;
+}
+
+uint64_t *wr_write64(struct list_head *writes, struct rpc_write **wr, uint64_t val)
+{
+	uint32_t *p = WR32(val >> 32);
+	WR32(val);
+
+	return (uint64_t *) p;
+}
+
+void *wr_mem(struct list_head *writes, struct rpc_write **wr_io,
+	     void *buf, unsigned int len)
+{
+	void *dst = wr_skip(writes, wr_io, len);
+	if (dst)
+		memcpy(dst, buf, len);
+	return dst;
 }
 
 void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
@@ -223,20 +262,20 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	 * decode RPC header
 	 */
 
-	xid = CUR32();			/* xid */
-	if (CUR32() != CALL)		/* msg type */
+	xid = CR32();			/* xid */
+	if (CR32() != CALL)		/* msg type */
 		goto err_out;
-	if ((CUR32() != 2) ||		/* rpc version */
-	    (CUR32() != NFS4_PROGRAM) ||/* rpc program */
-	    (CUR32() != NFS_V4))	/* rpc program version */
+	if ((CR32() != 2) ||		/* rpc version */
+	    (CR32() != NFS4_PROGRAM) ||/* rpc program */
+	    (CR32() != NFS_V4))	/* rpc program version */
 		goto err_out;
-	proc = CUR32();
+	proc = CR32();
 
-	auth_cred.oa_flavor = CUR32();
-	auth_cred.oa_length = CUR32();
+	auth_cred.oa_flavor = CR32();
+	auth_cred.oa_length = CR32();
 	auth_cred.oa_base = CURMEM(auth_cred.oa_length);
-	auth_verf.oa_flavor = CUR32();
-	auth_cred.oa_length = CUR32();
+	auth_verf.oa_flavor = CR32();
+	auth_cred.oa_length = CR32();
 	auth_verf.oa_base = CURMEM(auth_cred.oa_length);
 
 	if (!auth_cred.oa_base || !auth_verf.oa_base)

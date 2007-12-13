@@ -14,13 +14,17 @@ typedef uint32_t nfsino_t;
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
 
 #define CUR_SKIP(count)		cur_skip(cur, (count))
-#define CUR32()			cur_read32(cur)
+#define CR32()			cur_read32(cur)
+#define CR64()			cur_read64(cur)
 #define CURMEM(count)		cur_readmem(cur, (count))
+#define CURBUF(buf_ptr)		cur_readbuf(cur, (buf_ptr))
 
 #define WRSKIP(count)		wr_skip(writes, wr, (count))
 #define WR32(val)		wr_write32(writes, wr, (val))
+#define WR64(val)		wr_write64(writes, wr, (val))
 #define WRBUF(buf_ptr)		wr_buf(writes, wr, (buf_ptr))
-#define WRSTR(buf_ptr)		wr_str(writes, wr, (buf_ptr))
+#define WRSTR(str)		wr_str(writes, wr, (str))
+#define WRMEM(buf, len)		wr_mem(writes, wr, (buf), (len))
 
 enum {
 	INO_ROOT		= 10,
@@ -363,24 +367,35 @@ extern void print_fattr(const char *pfx, fattr4 *attr);
 extern void print_fattr_bitmap(const char *pfx, uint64_t bitmap);
 
 /* fh.c */
-bool nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres);
-bool nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
-bool nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
+extern nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
 void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* main.c */
 extern void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
+extern uint64_t cur_read64(struct curbuf *cur);
 extern void *cur_readmem(struct curbuf *cur, unsigned int n);
+extern void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb);
 extern uint32_t *wr_write32(struct list_head *writes, struct rpc_write **wr_io,uint32_t val);
+extern uint64_t *wr_write64(struct list_head *writes, struct rpc_write **wr_io,uint64_t val);
 extern void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 		     unsigned int n);
 extern void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
 		    struct nfs_buf *nb);
 extern void *wr_str(struct list_head *writes, struct rpc_write **wr_io, char *s);
+extern void *wr_mem(struct list_head *writes, struct rpc_write **wr_io,
+			void *buf, unsigned int len);
 
 /* open.c */
 bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
@@ -400,7 +415,7 @@ extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
 extern uint64_t get_bitmap(const bitmap4 *map);
 extern void __set_bitmap(uint64_t map_in, bitmap4 *map_out);
 extern int set_bitmap(uint64_t map_in, bitmap4 *map_out);
-extern int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out);
+extern int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
 extern void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
@@ -415,11 +430,10 @@ extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);
 extern uint32_t gen_stateid(void);
-extern bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
-			 COMPOUND4res *cres);
-extern bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
-				 SETCLIENTID_CONFIRM4args *arg,
-				 COMPOUND4res *cres);
+extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
 extern unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
 extern nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,

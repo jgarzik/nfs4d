@@ -293,46 +293,33 @@ out:
 	return status;
 }
 
-static bool nfs_op_secinfo(struct nfs_cxn *cxn, SECINFO4args *arg, COMPOUND4res *cres)
+static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	SECINFO4res *res;
-	SECINFO4resok *resok;
 	nfsstat4 status = NFS4_OK;
-	secinfo4 *val;
 	bool printed = false;
+	struct nfs_buf name;
+	uint32_t flavor;
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_SECINFO;
-	res = &resop.nfs_resop4_u.opsecinfo;
-	resok = &res->SECINFO4res_u.resok4;
+	CURBUF(&name);				/* component name */
 
 	if (!cxn->current_fh) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
 
-	val = calloc(1, sizeof(secinfo4));
-	if (!val) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
 	switch (cxn->auth.type) {
 	case auth_none:
-		val->flavor = AUTH_NONE;
+		flavor = AUTH_NONE;
 		break;
 	case auth_unix:
-		val->flavor = AUTH_SYS;
+		flavor = AUTH_SYS;
 		break;
 	}
-
-	resok->SECINFO4resok_len = 1;
-	resok->SECINFO4resok_val = val;
 
 	if (debugging) {
 		syslog(LOG_INFO, "op SECINFO -> AUTH_%s",
-		       (val->flavor == AUTH_NONE) ? "NONE" : "SYS");
+		       (flavor == AUTH_NONE) ? "NONE" : "SYS");
 		printed = true;
 	}
 
@@ -342,8 +329,12 @@ out:
 			syslog(LOG_INFO, "op SECINFO");
 	}
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		WR32(1);		/* secinfo array size */
+		WR32(flavor);		/* secinfo flavor */
+	}
+	return status;
 }
 
 static const char *arg_str[] = {
@@ -397,14 +388,32 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (cur->len < 4)
 		return NFS4ERR_BADXDR;
 
-	op = CUR32();			/* read argop */
+	op = CR32();			/* read argop */
 	WR32(op);			/* write resop */
 
 	switch (op) {
 	case OP_ACCESS:
 		return nfs_op_access(cxn, cur, writes, wr);
+	case OP_GETFH:
+		return nfs_op_getfh(cxn, cur, writes, wr);
+	case OP_PUTFH:
+		return nfs_op_putfh(cxn, cur, writes, wr);
+	case OP_PUTPUBFH:
+		return nfs_op_putpubfh(cxn, cur, writes, wr);
+	case OP_PUTROOTFH:
+		return nfs_op_putrootfh(cxn, cur, writes, wr);
 	case OP_READLINK:
 		return nfs_op_readlink(cxn, cur, writes, wr);
+	case OP_RESTOREFH:
+		return nfs_op_restorefh(cxn, cur, writes, wr);
+	case OP_SAVEFH:
+		return nfs_op_savefh(cxn, cur, writes, wr);
+	case OP_SECINFO:
+		return nfs_op_secinfo(cxn, cur, writes, wr);
+	case OP_SETCLIENTID:
+		return nfs_op_setclientid(cxn, cur, writes, wr);
+	case OP_SETCLIENTID_CONFIRM:
+		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
 
 #if 0
 	case OP_CLOSE:
@@ -415,8 +424,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, res);
 	case OP_GETATTR:
 		return nfs_op_getattr(cxn, &arg->nfs_argop4_u.opgetattr, res);
-	case OP_GETFH:
-		return nfs_op_getfh(cxn, res);
 	case OP_LINK:
 		return nfs_op_link(cxn, &arg->nfs_argop4_u.oplink, res);
 	case OP_LOCK:
@@ -439,12 +446,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_open_confirm(cxn, &arg->nfs_argop4_u.opopen_confirm, res);
 	case OP_OPEN_DOWNGRADE:
 		return nfs_op_open_downgrade(cxn, &arg->nfs_argop4_u.opopen_downgrade, res);
-	case OP_PUTFH:
-		return nfs_op_putfh(cxn, &arg->nfs_argop4_u.opputfh, res);
-	case OP_PUTPUBFH:
-		return nfs_op_putpubfh(cxn, res);
-	case OP_PUTROOTFH:
-		return nfs_op_putrootfh(cxn, res);
 	case OP_READ:
 		return nfs_op_read(cxn, &arg->nfs_argop4_u.opread, res);
 	case OP_READDIR:
@@ -453,20 +454,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_remove(cxn, &arg->nfs_argop4_u.opremove, res);
 	case OP_RENAME:
 		return nfs_op_rename(cxn, &arg->nfs_argop4_u.oprename, res);
-	case OP_RESTOREFH:
-		return nfs_op_restorefh(cxn, res);
-	case OP_SAVEFH:
-		return nfs_op_savefh(cxn, res);
-	case OP_SECINFO:
-		return nfs_op_secinfo(cxn, &arg->nfs_argop4_u.opsecinfo, res);
 	case OP_SETATTR:
 		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, res);
-	case OP_SETCLIENTID:
-		return nfs_op_setclientid(cxn,
-					&arg->nfs_argop4_u.opsetclientid, res);
-	case OP_SETCLIENTID_CONFIRM:
-		return nfs_op_setclientid_confirm(cxn,
-				&arg->nfs_argop4_u.opsetclientid_confirm, res);
 	case OP_WRITE:
 		return nfs_op_write(cxn, &arg->nfs_argop4_u.opwrite, res);
 	case OP_VERIFY:
@@ -493,81 +482,11 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	return NFS4ERR_INVAL;	/* never reached */
 }
 
-static void nfs_free(nfs_resop4 *res)
-{
-	if (!res)
-		return;
-
-	/* FIXME: need OPEN, others here too */
-
-	switch(res->resop) {
-	case OP_CREATE:
-		free(res->nfs_resop4_u.opcreate.CREATE4res_u.resok4.attrset.bitmap4_val);
-		break;
-	case OP_GETATTR:
-		fattr4_free(&res->nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes);
-		break;
-	case OP_GETFH:
-		nfs_getfh_free(&res->nfs_resop4_u.opgetfh);
-		break;
-
-	case OP_LOCK:
-	case OP_LOCKT:
-		/* FIXME */
-		break;
-
-	case OP_OPEN:
-		free(res->nfs_resop4_u.opopen.OPEN4res_u.resok4.attrset.bitmap4_val);
-		break;
-	case OP_READ:
-		free(res->nfs_resop4_u.opread.READ4res_u.resok4.data.data_val);
-		break;
-	case OP_READDIR:
-		nfs_readdir_free(&res->nfs_resop4_u.opreaddir);
-		break;
-	case OP_READLINK:
-		free(res->nfs_resop4_u.opreadlink.READLINK4res_u.resok4.link.utf8string_val);
-		break;
-	case OP_SECINFO:
-		free(res->nfs_resop4_u.opsecinfo.SECINFO4res_u.resok4.SECINFO4resok_val);
-		break;
-	case OP_SETATTR:
-		free(res->nfs_resop4_u.opsetattr.attrsset.bitmap4_val);
-		break;
-	default:
-		/* nothing to free */
-		break;
-	}
-}
-
-int nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
-			       COMPOUND4res *res)
-{
-	unsigned int i;
-
-	if (!res)
-		goto out;
-
-	for (i = 0; i < res->resarray.resarray_len; i++)
-		nfs_free(&res->resarray.resarray_val[i]);
-
-	free(res->resarray.resarray_val);
-
-out:
-	return true;
-}
-
 void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
 		  struct curbuf *cur, struct list_head *writes,
 		  struct rpc_write **wr)
 {
 	/* FIXME */
-}
-
-static void nfsxdr_buf(struct curbuf *cur, struct nfs_buf *nb)
-{
-	nb->len = CUR32();
-	nb->val = CURMEM(nb->len);
 }
 
 void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
@@ -580,9 +499,9 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 	unsigned int i = 0, results = 0;
 	struct nfs_cxn *cxn;
 
-	nfsxdr_buf(cur, &tag);		/* COMPOUND tag */
-	minor = CUR32();		/* minor version */
-	n_args = CUR32();		/* arg array size */
+	CURBUF(&tag);			/* COMPOUND tag */
+	minor = CR32();		/* minor version */
+	n_args = CR32();		/* arg array size */
 
 	stat_p = WRSKIP(4);		/* COMPOUND result status */
 	WRBUF(&tag);			/* tag */

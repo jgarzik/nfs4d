@@ -4,6 +4,19 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
+#define WRFH(fh)		wr_fh(writes, wr, (fh))
+
+static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
+		   nfsino_t fh)
+{
+	struct nfs_buf nb;
+
+	nb.len = sizeof(fh);
+	nb.val = (char *) &fh;
+
+	return wr_buf(writes, wr_io, &nb);
+}
+
 void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
 {
 	nfsino_t *fh_val = calloc(1, sizeof(nfsino_t));
@@ -22,19 +35,19 @@ static void nfs_fh_free(nfs_fh4 *fh)
 	}
 }
 
-int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out)
+int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out)
 {
 	nfsino_t *fhp;
 	nfsino_t fh;
 
 	if (!fh_in)
 		return 0;
-	if (fh_in->nfs_fh4_len != sizeof(nfsino_t))
+	if (fh_in->len != sizeof(nfsino_t))
 		return 0;
-	if (!fh_in->nfs_fh4_val)
+	if (!fh_in->val)
 		return 0;
-	fhp = (void *) fh_in->nfs_fh4_val;
-	fh = GUINT32_FROM_BE(*fhp);
+	fhp = (void *) fh_in->val;
+	fh = ntohl(*fhp);
 
 	if (!inode_get(fh))
 		return -1;
@@ -48,25 +61,16 @@ void nfs_getfh_free(GETFH4res *opgetfh)
 	nfs_fh_free(&opgetfh->GETFH4res_u.resok4.object);
 }
 
-bool nfs_op_getfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
+		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	GETFH4res *res;
-	GETFH4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_GETFH;
-	res = &resop.nfs_resop4_u.opgetfh;
-	resok = &res->GETFH4res_u.resok4;
 
 	if (!inode_get(cxn->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
-
-	nfs_fh_set(&resok->object, cxn->current_fh);
 
 	if (debugging) {
 		syslog(LOG_INFO, "op GETFH -> %u", cxn->current_fh);
@@ -79,23 +83,23 @@ out:
 			syslog(LOG_INFO, "op GETFH");
 	}
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK)
+		WRFH(cxn->current_fh);
+	return status;
 }
 
-bool nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
+nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
+		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	PUTFH4res *res;
 	nfsstat4 status = NFS4_OK;
 	nfsino_t fh = 0;
+	struct nfs_buf nb;
 	int rc;
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_PUTFH;
-	res = &resop.nfs_resop4_u.opputfh;
+	CURBUF(&nb);			/* opaque filehandle */
 
-	rc = nfs_fh_decode(&arg->object, &fh);
+	rc = nfs_fh_decode(&nb, &fh);
 	if (rc == 0)
 		status = NFS4ERR_BADHANDLE;
 	else if (rc < 0)
@@ -106,58 +110,39 @@ bool nfs_op_putfh(struct nfs_cxn *cxn, PUTFH4args *arg, COMPOUND4res *cres)
 	if (debugging)
 		syslog(LOG_INFO, "op PUTFH (%u)", fh);
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 
-bool nfs_op_putrootfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
+		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	PUTFH4res *res;
-	nfsstat4 status = NFS4_OK;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_PUTROOTFH;
-	res = &resop.nfs_resop4_u.opputfh;
-
 	cxn->current_fh = INO_ROOT;
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTROOTFH -> %u", cxn->current_fh);
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(NFS4_OK);
+	return NFS4_OK;
 }
 
-bool nfs_op_putpubfh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
+		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	PUTFH4res *res;
-	nfsstat4 status = NFS4_OK;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_PUTPUBFH;
-	res = &resop.nfs_resop4_u.opputfh;
-
 	cxn->current_fh = INO_ROOT;
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTPUBFH -> %u", cxn->current_fh);
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(NFS4_OK);
+	return NFS4_OK;
 }
 
-bool nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
+		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	RESTOREFH4res *res;
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_RESTOREFH;
-	res = &resop.nfs_resop4_u.oprestorefh;
 
 	if (!inode_get(cxn->save_fh)) {
 		status = NFS4ERR_RESTOREFH;
@@ -177,20 +162,15 @@ out:
 			syslog(LOG_INFO, "op RESTOREFH");
 	}
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 
-bool nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres)
+nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	SAVEFH4res *res;
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_SAVEFH;
-	res = &resop.nfs_resop4_u.opsavefh;
 
 	if (!inode_get(cxn->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -210,7 +190,7 @@ out:
 			syslog(LOG_INFO, "op SAVEFH");
 	}
 
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 

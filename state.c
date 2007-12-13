@@ -1,4 +1,6 @@
 
+#define _GNU_SOURCE
+#include <string.h>
 #include <errno.h>
 #include <syslog.h>
 #include <glib.h>
@@ -279,7 +281,9 @@ gboolean clientid_equal(gconstpointer _a, gconstpointer _b)
 }
 
 static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
-			SETCLIENTID4args *args, struct nfs_clientid **clid_out)
+			struct nfs_buf *id_long, verifier4 *client_verf,
+			uint32_t cb_ident, cb_client4 *callback,
+			struct nfs_clientid **clid_out)
 {
 	struct nfs_clientid *clid;
 	unsigned long short_clid;
@@ -292,23 +296,23 @@ static int clientid_new(struct nfs_client *cli, struct nfs_cxn *cxn,
 
 	/* copy client id */
 	clid->id.magic = BLOB_MAGIC;
-	clid->id.len = args->client.id.id_len;
+	clid->id.len = id_long->len;
 	clid->id.buf = malloc(clid->id.len);
 	if (!clid->id.buf)
 		goto err_out_clid;
-	memcpy(clid->id.buf, args->client.id.id_val, clid->id.len);
+	memcpy(clid->id.buf, id_long->val, clid->id.len);
 
 	/* copy client verifier */
-	memcpy(&clid->cli_verf, &args->client.verifier, sizeof(verifier4));
+	memcpy(&clid->cli_verf, client_verf, sizeof(verifier4));
 
 	/* generate shorthand client id, random SETCLIENTID_CONFIRM verifier */
 	gen_clientid4(&clid->id_short);
 	rand_verifier(&clid->confirm_verf);
 
 	/* copy callback info */
-	if (copy_cb_client4(&clid->callback, &args->callback))
+	if (copy_cb_client4(&clid->callback, callback))
 		goto err_out_clid_buf;
-	clid->callback_ident = args->callback_ident;
+	clid->callback_ident = cb_ident;
 
 	short_clid = (unsigned long) clid->id_short;
 
@@ -327,8 +331,10 @@ err_out:
 	return -ENOMEM;
 }
 
-static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
-		     struct nfs_clientid **clid_out)
+static int client_new(struct nfs_cxn *cxn,
+			struct nfs_buf *id_long, verifier4 *client_verf,
+			uint32_t cb_ident, cb_client4 *callback,
+			struct nfs_clientid **clid_out)
 {
 	struct nfs_client *cli;
 	struct nfs_clientid *clid = NULL;
@@ -340,7 +346,8 @@ static int client_new(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 
 	INIT_LIST_HEAD(&cli->pending);
 
-	rc = clientid_new(cli, cxn, args, &clid);
+	rc = clientid_new(cli, cxn, id_long, client_verf, cb_ident,
+			  callback, &clid);
 	if (rc)
 		goto err_out_st;
 
@@ -425,32 +432,43 @@ static bool callback_equal(struct nfs_client *cli, cb_client4 *cb,
 	return true;
 }
 
-bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
-			  COMPOUND4res *cres)
+nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
+			    struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	SETCLIENTID4res *res;
-	SETCLIENTID4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_client *cli;
 	int rc;
 	struct nfs_clientid *clid = NULL;
 	struct blob clid_key;
+	struct nfs_buf client, tmpstr;
+	verifier4 *client_verf;
 	const char *msg;
+	uint32_t cb_ident;
+	cb_client4 callback;
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_SETCLIENTID;
-	res = &resop.nfs_resop4_u.opsetclientid;
-	resok = &res->SETCLIENTID4res_u.resok4;
+	client_verf = CURMEM(sizeof(verifier4));
+	CURBUF(&client);
+
+	memset(&callback, 0, sizeof(callback));
+
+	callback.cb_program = CR32();	/* cb_program */
+	CURBUF(&tmpstr);		/* r_netid */
+	if (tmpstr.len)
+		callback.cb_location.r_netid = strndup(tmpstr.val, tmpstr.len);
+	CURBUF(&tmpstr);		/* r_addr */
+	if (tmpstr.len)
+		callback.cb_location.r_addr = strndup(tmpstr.val, tmpstr.len);
+	cb_ident = CR32();		/* callback_ident */
 
 	/* look up client id */
 	clid_key.magic = BLOB_MAGIC;
-	clid_key.len = args->client.id.id_len;
-	clid_key.buf = args->client.id.id_val;
+	clid_key.len = client.len;
+	clid_key.buf = client.val;
 	cli = g_hash_table_lookup(srv.client_ids, &clid_key);
 
 	if (!cli) {
-		rc = client_new(cxn, args, &clid);
+		rc = client_new(cxn, &client, client_verf, cb_ident,
+				&callback, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -460,12 +478,11 @@ bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	}
 
 	else if ((!cli->id) ||
-		 (memcmp(&cli->id->cli_verf, &args->client.verifier,
-		 	 sizeof(verifier4))) ||
-		 (!callback_equal(cli, &args->callback,
-		 		  args->callback_ident))) {
+		 (memcmp(&cli->id->cli_verf, client_verf, sizeof(verifier4))) ||
+		 (!callback_equal(cli, &callback, cb_ident))) {
 
-		rc = clientid_new(cli, cxn, args, &clid);
+		rc = clientid_new(cli, cxn, &client, client_verf,
+				  cb_ident, &callback, &clid);
 		if (rc < 0) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -487,23 +504,26 @@ bool nfs_op_setclientid(struct nfs_cxn *cxn, SETCLIENTID4args *args,
 	if (debugging)
 		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
 		       "PROG:%u NET:%s ADDR:%s CBID:%u ACT:%s)",
-		       args->client.id.id_len,
-		       args->client.id.id_val,
-		       args->callback.cb_program,
-		       args->callback.cb_location.r_netid,
-		       args->callback.cb_location.r_addr,
-		       args->callback_ident,
+		       client.len,
+		       client.val,
+		       callback.cb_program,
+		       callback.cb_location.r_netid,
+		       callback.cb_location.r_addr,
+		       cb_ident,
 		       msg);
 
-	g_assert(clid != NULL);
-
-	resok->clientid = clid->id_short;
-	memcpy(&resok->setclientid_confirm, &clid->confirm_verf,
-	       sizeof(verifier4));
-
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		g_assert(clid != NULL);
+
+		WR64(clid->id_short);
+		WRMEM(&clid->confirm_verf, sizeof(verifier4));
+	}
+	else if (status == NFS4ERR_CLID_INUSE) {
+		/* FIXME return clientaddr4 client_using */
+	}
+	return status;
 }
 
 static bool confirm_equal(const struct nfs_clientid *a,
@@ -517,27 +537,25 @@ static bool confirm_equal(const struct nfs_clientid *a,
 	return false;
 }
 
-bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
-				  SETCLIENTID_CONFIRM4args *args,
-				  COMPOUND4res *cres)
+nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+			    struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	SETCLIENTID_CONFIRM4res *res;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_client *cli;
 	struct nfs_clientid *clid, *new_clid, *tmp_clid, clid_key;
+	verifier4 *confirm_verf;
+	clientid4 id_short;
+
+	id_short = CR64();
+	confirm_verf = CURMEM(sizeof(verifier4));
 
 	if (debugging)
 		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lx)",
-		       (unsigned long long) args->clientid);
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_SETCLIENTID_CONFIRM;
-	res = &resop.nfs_resop4_u.opsetclientid_confirm;
+		       (unsigned long long) id_short);
 
 	/* get state record from clientid4 */
 	cli = g_hash_table_lookup(srv.clid_idx,
-			(void *)(unsigned long) args->clientid);
+			(void *)(unsigned long) id_short);
 	if (!cli) {
 		status = NFS4ERR_STALE_CLIENTID;
 		goto out;
@@ -545,9 +563,8 @@ bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 
 	/* filter out duplicates */
 	clid = cli->id;
-	if (clid && (clid->id_short == args->clientid) &&
-	    (!memcmp(&clid->confirm_verf, &args->setclientid_confirm,
-	    	     sizeof(verifier4)))) {
+	if (clid && (clid->id_short == id_short) &&
+	    (!memcmp(&clid->confirm_verf, confirm_verf, sizeof(verifier4)))) {
 		/* duplicate, just return success */
 		if (debugging)
 			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM dup, ignoring");
@@ -558,9 +575,8 @@ bool nfs_op_setclientid_confirm(struct nfs_cxn *cxn,
 	 * find the matching unconfirmed record (if any), and
 	 * remove it from the unconfirmed list.
 	 */
-	clid_key.id_short = args->clientid;
-	memcpy(&clid_key.confirm_verf, &args->setclientid_confirm,
-		sizeof(verifier4));
+	clid_key.id_short = id_short;
+	memcpy(&clid_key.confirm_verf, confirm_verf, sizeof(verifier4));
 
 	new_clid = NULL;
 	list_for_each_entry(tmp_clid, &cli->pending, node) {
@@ -619,7 +635,7 @@ out2:
 	g_hash_table_insert(srv.client_ids, &new_clid->id, cli);
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	return status;
 }
 

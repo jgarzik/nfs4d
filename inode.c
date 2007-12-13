@@ -690,7 +690,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	uint32_t arg_access = CUR32();
+	uint32_t arg_access = CR32();
 	ACCESS4resok resok;
 
 	if (debugging)
@@ -822,7 +822,11 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 			return false;
         if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
 		nfsino_t fh = 0;
-		if (nfs_fh_decode(&attr->filehandle, &fh) <= 0)
+		struct nfs_buf nb;
+
+		nb.len = attr->filehandle.nfs_fh4_len;
+		nb.val = attr->filehandle.nfs_fh4_val;
+		if (nfs_fh_decode(&nb, &fh) <= 0)
 			return false;
 		if (fh != ino->ino)
 			return false;
