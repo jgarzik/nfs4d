@@ -1,40 +1,58 @@
 
 #include "nfs4-ram-config.h"
 #include <sys/types.h>
-#include <sys/socket.h>
 #include <sys/stat.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <signal.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string.h>
-#include <memory.h>
-#include <locale.h>
-#include <argp.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <argp.h>
+#include <locale.h>
 #include <syslog.h>
-#include <time.h>
-#include <sys/time.h>
-#include <rpc/pmap_clnt.h>
-#include <netinet/in.h>
+#include <gnet.h>
+#include <rpc/auth.h>
+#include <rpc/rpc_msg.h>
 #include "server.h"
-#include "nfs4_prot.h"
 
 
 enum {
 	LISTEN_SIZE		= 100,
+
+	TMOUT_READ_HDR		= 30 * 60 * 1000,	/* 30 min (units: ms) */
+	TMOUT_READ		= 60 * 60 * 1000,	/* 60 min (units: ms) */
+
+	MAX_FRAG_SZ		= 50 * 1024 * 1024,	/* arbitrary */
+	MAX_MSG_SZ		= MAX_FRAG_SZ,
+
+	HDR_FRAG_END		= (1U << 31),
 };
 
 struct timeval current_time;
-GList *client_list = NULL;
 int debugging = 0;
 struct nfs_server srv;
 static bool opt_foreground;
 static unsigned int opt_nfs_port = 2049;
+static GServer *tcpsrv;
 
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
+
+enum rpc_cxn_state {
+	get_hdr,
+	get_data
+};
+
+struct rpc_cxn {
+	struct nfs_server	*server;
+
+	GConn			*conn;
+
+	enum rpc_cxn_state	state;
+
+	void			*msg;
+	unsigned int		msg_len;
+	unsigned int		next_frag;
+	bool			last_frag;
+};
 
 static struct argp_option options[] = {
 	{ "debug", 'd', NULL, 0,
@@ -83,124 +101,311 @@ srand_time:
 	srand48_r(getpid() ^ time(NULL), &srv.rng);
 }
 
-static int init_sock(void)
+void *cur_skip(struct curbuf *cur, unsigned int n)
 {
-	int sock, val;
-	struct sockaddr_in saddr;
+	void *buf = cur->buf;
 
-	sock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (sock < 0) {
-		slerror("socket");
-		return -1;
-	}
+	if (!n || n > cur->len)
+		return NULL;
 
-	val = 1;
-	if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &val,
-		       sizeof(val)) < 0) {
-		slerror("setsockopt");
-		return -1;
-	}
+	cur->buf += n;
+	cur->len -= n;
 
-	memset(&saddr, 0, sizeof(saddr));
-	saddr.sin_family = AF_INET;
-	saddr.sin_port = htons(opt_nfs_port);
-	saddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(sock, (struct sockaddr *)&saddr, sizeof(saddr)) < 0) {
-		slerror("bind");
-		return -1;
-	}
-
-	if (listen(sock, LISTEN_SIZE) < 0) {
-		slerror("listen");
-		return -1;
-	}
-
-	return sock;
+	return buf;
 }
 
-static void
-nfs4_program_4(struct svc_req *rqstp, register SVCXPRT *transp)
+uint32_t cur_read32(struct curbuf *cur)
 {
-	COMPOUND4args argument;
-	COMPOUND4res result;
-	bool_t retval;
-	xdrproc_t _xdr_argument, _xdr_result;
-	bool_t (*local)(char *, void *, struct svc_req *);
-	struct timezone tz = { 0, 0 };
-
-	switch (rqstp->rq_proc) {
-	case NFSPROC4_NULL:
-		_xdr_argument = (xdrproc_t) xdr_void;
-		_xdr_result = (xdrproc_t) xdr_void;
-		local = (bool_t (*) (char *, void *,  struct svc_req *))nfsproc4_null_4_svc;
-		break;
-
-	case NFSPROC4_COMPOUND:
-		_xdr_argument = (xdrproc_t) xdr_COMPOUND4args;
-		_xdr_result = (xdrproc_t) xdr_COMPOUND4res;
-		local = (bool_t (*) (char *, void *,  struct svc_req *))nfsproc4_compound_4_svc;
-		break;
-
-	default:
-		syslog(LOG_ERR, "RPC: unknown proc %u",
-			(unsigned int) rqstp->rq_proc);
-		svcerr_noproc (transp);
-		return;
-	}
-	memset ((char *)&argument, 0, sizeof (argument));
-	if (!svc_getargs(transp, (xdrproc_t) _xdr_argument,
-			 (caddr_t) &argument)) {
-		syslog(LOG_ERR, "RPC: getargs failed");
-		svcerr_decode (transp);
-		return;
-	}
-
-	gettimeofday(&current_time, &tz);
-
-	retval = (bool_t) (*local)((char *)&argument, (void *)&result, rqstp);
-
-	if (retval > 0 && !svc_sendreply(transp, (xdrproc_t) _xdr_result, (char *)&result)) {
-		svcerr_systemerr (transp);
-	}
-	if (!svc_freeargs (transp, (xdrproc_t) _xdr_argument, (caddr_t) &argument)) {
-		syslog(LOG_ERR, "unable to free arguments");
-		exit (1);
-	}
-	if (rqstp->rq_proc == NFSPROC4_COMPOUND)
-		if (!nfs4_program_4_freeresult (transp, _xdr_result, &result))
-			syslog(LOG_ERR, "unable to free results");
-}
-
-/* Linux is missing this prototype */
-#if 0
-bool_t gssrpc_pmap_unset(u_long prognum, u_long versnum);
-#endif
-
-static int init_rpc(int sock)
-{
-	register SVCXPRT *transp;
-
-	transp = svctcp_create(sock, 0, 0);
-	if (transp == NULL) {
-		syslog(LOG_ERR, "cannot create tcp service.");
-		return -1;
-	}
-	if (!svc_register(transp, NFS4_PROGRAM, NFS_V4, nfs4_program_4, IPPROTO_TCP)) {
-		syslog(LOG_ERR, "unable to register (NFS4_PROGRAM, NFS_V4, tcp).");
-		return -1;
-	}
+	uint32_t *p = CUR_SKIP(4);
+	if (p)
+		return ntohl(*p);
 
 	return 0;
 }
 
-static int init_server(void)
+void *cur_readmem(struct curbuf *cur, unsigned int n)
+{
+	if (!n)
+		return NULL;
+
+	return CUR_SKIP(XDR_QUADLEN(n) * 4);
+}
+
+static unsigned int wr_free(struct rpc_write *wr)
+{
+	return RPC_WRITE_BUFSZ - wr->len;
+}
+
+void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
+		     unsigned int n)
+{
+	struct rpc_write *wr = *wr_io;
+	void *buf;
+
+	if (n > wr_free(wr)) {
+		wr = malloc(sizeof(*wr));
+		if (!wr) {
+			syslog(LOG_ERR, "OOM in wr_skip()");
+			return NULL;
+		}
+
+		wr->len = 0;
+		INIT_LIST_HEAD(&wr->node);
+		list_add_tail(&wr->node, writes);
+		*wr_io = wr;
+
+		/* should never happen */
+		if (n > wr_free(wr)) {
+			syslog(LOG_ERR, "BUG in wr_skip()");
+			return NULL;
+		}
+	}
+
+	buf = wr->buf + wr->len;
+	wr->len += n;
+
+	return buf;
+}
+
+uint32_t *wr_write32(struct list_head *writes, struct rpc_write **wr_io,uint32_t val)
+{
+	uint32_t *p = wr_skip(writes, wr_io, 4);
+	if (p)
+		*p = htonl(val);
+	return p;
+}
+
+void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
+		    struct nfs_buf *nb)
+{
+	void *dst;
+
+	if (!wr_write32(writes, wr_io, nb->len))
+		return NULL;
+
+	dst = wr_skip(writes, wr_io, XDR_QUADLEN(nb->len) * 4);
+	if (dst)
+		memcpy(dst, nb->val, nb->len);
+	return dst;
+}
+
+void *wr_str(struct list_head *writes, struct rpc_write **wr_io, char *s)
+{
+	struct nfs_buf nb;
+
+	if (!s)
+		return NULL;
+	
+	nb.len = strlen(s);
+	nb.val = s;
+
+	return wr_buf(writes, wr_io, &nb);
+}
+
+static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 {
 	struct timezone tz = { 0, 0 };
-	int sock;
+	struct curbuf _cur = { msg, msg, msg_len, msg_len };
+	struct curbuf *cur = &_cur;
+	uint32_t proc, xid;
+	struct opaque_auth auth_cred, auth_verf;
+	struct rpc_write *_wr, *iter, **wr;
+	struct list_head _writes, *writes;
 
-	pmap_unset (NFS4_PROGRAM, NFS_V4);
+	_wr = NULL;
+	wr = &_wr;
+	writes = &_writes;
+	INIT_LIST_HEAD(writes);
+
+	gettimeofday(&current_time, &tz);
+
+	/*
+	 * decode RPC header
+	 */
+
+	xid = CUR32();			/* xid */
+	if (CUR32() != CALL)		/* msg type */
+		goto err_out;
+	if ((CUR32() != 2) ||		/* rpc version */
+	    (CUR32() != NFS4_PROGRAM) ||/* rpc program */
+	    (CUR32() != NFS_V4))	/* rpc program version */
+		goto err_out;
+	proc = CUR32();
+
+	auth_cred.oa_flavor = CUR32();
+	auth_cred.oa_length = CUR32();
+	auth_cred.oa_base = CURMEM(auth_cred.oa_length);
+	auth_verf.oa_flavor = CUR32();
+	auth_cred.oa_length = CUR32();
+	auth_verf.oa_base = CURMEM(auth_cred.oa_length);
+
+	if (!auth_cred.oa_base || !auth_verf.oa_base)
+		goto err_out;
+
+	/*
+	 * begin the RPC response message
+	 */
+	_wr = malloc(sizeof(*wr));
+	if (!_wr)
+		goto err_out;
+
+	list_add_tail(&_wr->node, writes);
+
+	WR32(xid);
+	WR32(REPLY);
+	WR32(MSG_ACCEPTED);
+	/* FIXME: write opaque_auth verf */
+	WR32(SUCCESS);
+
+	/*
+	 * handle RPC call
+	 */
+
+	switch (proc) {
+	case NFSPROC4_NULL:
+		nfsproc_null(&auth_cred, &auth_verf, cur, writes, wr);
+		break;
+	case NFSPROC4_COMPOUND:
+		nfsproc_compound(&auth_cred, &auth_verf, cur, writes, wr);
+		break;
+	default:
+		goto err_out;
+	}
+
+	/*
+	 * send response back to client asynchronously
+	 * TODO: way too much alloc+copy
+	 */
+
+	list_for_each_entry_safe(_wr, iter, writes, node) {
+		if (_wr->len)
+			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
+		list_del(&_wr->node);
+		free(_wr);
+	}
+
+	return;
+
+err_out:
+	/* FIXME: reply to bad XDR/RPC */
+	return;
+}
+
+static void rpc_cxn_free(struct rpc_cxn *cxn)
+{
+	gnet_conn_unref(cxn->conn);
+	free(cxn->msg);
+}
+
+static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
+{
+	struct rpc_cxn *rc = user_data;
+	uint32_t tmp;
+	void *mem;
+
+	switch (evt->type) {
+	case GNET_CONN_ERROR:
+	case GNET_CONN_CLOSE:
+	case GNET_CONN_TIMEOUT:
+		goto err_out;
+
+	case GNET_CONN_READ:
+		switch (rc->state) {
+		case get_hdr:
+			tmp = GUINT32_FROM_BE(*(uint32_t *)evt->buffer);
+			if (tmp & HDR_FRAG_END) {
+				rc->last_frag = true;
+				tmp &= ~HDR_FRAG_END;
+			}
+			if (tmp > MAX_FRAG_SZ)
+				goto err_out;
+
+			rc->state = get_data;
+			gnet_conn_readn(conn, tmp);
+			gnet_conn_timeout(conn, TMOUT_READ);
+			break;
+
+		case get_data:
+			/* avoiding alloc+copy, in a common case */
+			if (rc->last_frag && !rc->msg) {
+				rpc_msg(rc, evt->buffer, evt->length);
+				break;
+			}
+
+			mem = realloc(rc->msg, rc->msg_len + evt->length);
+			if (!mem) {
+				syslog(LOG_ERR, "OOM in RPC get-data");
+				goto err_out;
+			}
+
+			rc->msg = mem;
+			memcpy(rc->msg + rc->msg_len, evt->buffer, evt->length);
+			rc->msg_len += evt->length;
+
+			if (rc->last_frag) {
+				rpc_msg(rc, rc->msg, rc->msg_len);
+
+				free(rc->msg);
+				rc->msg = NULL;
+				rc->msg_len = 0;
+				rc->next_frag = 0;
+				rc->last_frag = false;
+			}
+
+			rc->state = get_hdr;
+			gnet_conn_readn(conn, 4);
+			gnet_conn_timeout(conn, TMOUT_READ_HDR);
+			break;
+		}
+		break;
+	
+	default:
+		syslog(LOG_ERR, "unhandled GConnEvent %d", evt->type);
+		break;
+	}
+
+	return;
+
+err_out:
+	rpc_cxn_free(rc);
+}
+
+static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
+{
+	struct nfs_server *server = user_data;
+	struct rpc_cxn *rc;
+
+	if (!conn) {
+		syslog(LOG_ERR, "GServer exiting");
+		return;
+	}
+
+	rc = calloc(1, sizeof(*rc));
+	if (!rc) {
+		gnet_conn_unref(conn);
+		syslog(LOG_ERR, "OOM in server_event");
+		return;
+	}
+
+	rc->server = server;
+	rc->conn = conn;
+	rc->state = get_hdr;
+
+	gnet_conn_set_callback(conn, rpc_cxn_event, rc);
+
+	gnet_conn_readn(conn, 4);
+	gnet_conn_timeout(conn, TMOUT_READ_HDR);
+}
+
+static GMainLoop *init_server(void)
+{
+	struct timezone tz = { 0, 0 };
+	GMainLoop *loop;
+
+	loop = g_main_loop_new(NULL, FALSE);
 
 	memset(&srv, 0, sizeof(srv));
+	INIT_LIST_HEAD(&srv.dead_state);
 	srv.lease_time = 5 * 60;
 	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
 					       NULL, NULL);
@@ -211,12 +416,12 @@ static int init_server(void)
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
-		return -1;
+		return NULL;
 	}
 
 	if (!srv.client_ids || !srv.clid_idx || !srv.state) {
 		syslog(LOG_ERR, "OOM in init_server()");
-		return -1;
+		return NULL;
 	}
 
 	inode_table_init();
@@ -224,14 +429,11 @@ static int init_server(void)
 	init_rng();
 	rand_verifier(&srv.instance_verf);
 
-	sock = init_sock();
-	if (sock < 0)
-		return -1;
+	tcpsrv = gnet_server_new(NULL, opt_nfs_port, server_event, &srv);
+	if (!tcpsrv)
+		return NULL;
 
-	if (init_rpc(sock) < 0)
-		return -1;
-
-	return 0;
+	return loop;
 }
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -274,9 +476,12 @@ static void term_signal(int signal)
 
 int main (int argc, char *argv[])
 {
+	GMainLoop *loop;
 	error_t rc;
 
 	setlocale(LC_ALL, "");
+
+	gnet_init();
 
 	rc = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (rc) {
@@ -295,15 +500,16 @@ int main (int argc, char *argv[])
 		return 1;
 	}
 
-	if (init_server())
+	loop = init_server();
+	if (!loop)
 		return 1;
 
 	syslog(LOG_INFO, PACKAGE_STRING " initialized%s",
 	       debugging ? " (DEBUG MODE)" : "");
 
-	svc_run ();
+	g_main_loop_run(loop);
 
-	syslog(LOG_ERR, "svc_run returned");
-	return 1;
+	syslog(LOG_INFO, "server exit");
+	return 0;
 }
 

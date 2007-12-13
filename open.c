@@ -224,6 +224,8 @@ bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres)
 	st->share_ac = args->share_access;
 	st->share_dn = args->share_deny;
 
+	INIT_LIST_HEAD(&st->dead_node);
+
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
 	sid = (struct nfs_stateid *) &resok->stateid;

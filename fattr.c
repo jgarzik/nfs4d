@@ -4,8 +4,6 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
-#define XDR_QUADLEN(l)		(((l) + 3) >> 2)
-
 enum {
 	FATTR_LAST		= FATTR4_MOUNTED_ON_FILEID,
 };

@@ -685,22 +685,21 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 	return rc;
 }
 
-bool nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
-		     COMPOUND4res *cres)
+nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	ACCESS4res *res;
-	ACCESS4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
+	uint32_t arg_access = CUR32();
+	ACCESS4resok resok;
 
 	if (debugging)
-		syslog(LOG_INFO, "op ACCESS (0x%x)", arg->access);
+		syslog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
 
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_ACCESS;
-	res = &resop.nfs_resop4_u.opaccess;
-	resok = &res->ACCESS4res_u.resok4;
+	if (cur->len < sizeof(ACCESS4args)) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -708,8 +707,8 @@ bool nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
 		goto out;
 	}
 
-	resok->access = inode_access(cxn, ino, arg->access);
-	resok->supported =
+	resok.access = inode_access(cxn, ino, arg_access);
+	resok.supported =
 		ACCESS4_READ |
 		ACCESS4_LOOKUP |
 		ACCESS4_MODIFY |
@@ -717,16 +716,20 @@ bool nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg,
 		/* ACCESS4_DELETE | */	/* FIXME */
 		ACCESS4_EXECUTE;
 
-	resok->supported &= resok->access;
+	resok.supported &= resok.access;
 
 	if (debugging)
 		syslog(LOG_INFO, "   ACCESS -> (ACC:%x SUP:%x)",
-		       resok->access,
-		       resok->supported);
+		       resok.access,
+		       resok.supported);
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK) {
+		WR32(resok.supported);
+		WR32(resok.access);
+	}
+	return status;
 }
 
 static bool inode_attr_cmp(const struct nfs_inode *ino,

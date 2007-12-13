@@ -625,6 +625,8 @@ bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres)
 	st->lock_ofs = arg->offset;
 	st->lock_len = arg->length;
 
+	INIT_LIST_HEAD(&st->dead_node);
+
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
 have_st:

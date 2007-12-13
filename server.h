@@ -7,8 +7,20 @@
 #include <glib.h>
 #include <rpc/auth.h>
 #include "nfs4_prot.h"
+#include "elist.h"
 
 typedef uint32_t nfsino_t;
+
+#define XDR_QUADLEN(l)		(((l) + 3) >> 2)
+
+#define CUR_SKIP(count)		cur_skip(cur, (count))
+#define CUR32()			cur_read32(cur)
+#define CURMEM(count)		cur_readmem(cur, (count))
+
+#define WRSKIP(count)		wr_skip(writes, wr, (count))
+#define WR32(val)		wr_write32(writes, wr, (val))
+#define WRBUF(buf_ptr)		wr_buf(writes, wr, (buf_ptr))
+#define WRSTR(buf_ptr)		wr_str(writes, wr, (buf_ptr))
 
 enum {
 	INO_ROOT		= 10,
@@ -16,6 +28,8 @@ enum {
 	INO_RESERVED_LAST	= 999,
 
 	NFS_CLI_CONFIRMED	= (1 << 0),
+
+	RPC_WRITE_BUFSZ		= 8192 - 32,
 };
 
 enum server_limits {
@@ -149,6 +163,25 @@ struct blob {
 	void			*buf;
 };
 
+struct curbuf {
+	char		*buf_start;
+	char		*buf;
+
+	unsigned int	len_total;
+	unsigned int	len;
+};
+
+struct rpc_write {
+	unsigned int		len;		/* data buffer space used */
+	struct list_head	node;
+	char			buf[RPC_WRITE_BUFSZ];
+};
+
+struct nfs_buf {
+	unsigned int		len;
+	char			*val;
+};
+
 enum cxn_auth_type {
 	auth_none,
 	auth_unix
@@ -158,7 +191,10 @@ struct cxn_auth {
 	enum cxn_auth_type		type;
 
 	union {
-		struct authunix_parms	*up;
+		struct {
+			int		uid;
+			int		gid;
+		} up;
 	} u;
 };
 
@@ -195,6 +231,8 @@ struct nfs_state {
 	nfs_lock_type4		locktype;
 	uint64_t		lock_ofs;
 	uint64_t		lock_len;
+
+	struct list_head	dead_node;
 };
 
 /* overlays stateid4 with our own info in place of 'other' */
@@ -250,7 +288,7 @@ struct nfs_server {
 	GHashTable		*clid_idx;
 
 	GHashTable		*state;
-	GList			*dead_state;
+	struct list_head	dead_state;
 	unsigned int		n_dead;
 
 	unsigned int		lease_time;
@@ -264,7 +302,6 @@ struct nfs_server {
 
 /* global variables */
 extern struct timeval current_time;
-extern GList *client_list;
 extern struct nfs_server srv;
 extern int debugging;
 
@@ -275,7 +312,8 @@ extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
 extern bool nfs_op_create(struct nfs_cxn *cxn, CREATE4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_access(struct nfs_cxn *cxn, ACCESS4args *arg, COMPOUND4res *cres);
+extern nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
 extern bool nfs_op_getattr(struct nfs_cxn *cxn, GETATTR4args *arg,
 		      COMPOUND4res *cres);
 extern bool nfs_op_setattr(struct nfs_cxn *cxn, SETATTR4args *arg,
@@ -333,6 +371,17 @@ bool nfs_op_restorefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
 bool nfs_op_savefh(struct nfs_cxn *cxn, COMPOUND4res *cres);
 void nfs_getfh_free(GETFH4res *opgetfh);
 
+/* main.c */
+extern void *cur_skip(struct curbuf *cur, unsigned int n);
+extern uint32_t cur_read32(struct curbuf *cur);
+extern void *cur_readmem(struct curbuf *cur, unsigned int n);
+extern uint32_t *wr_write32(struct list_head *writes, struct rpc_write **wr_io,uint32_t val);
+extern void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
+		     unsigned int n);
+extern void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
+		    struct nfs_buf *nb);
+extern void *wr_str(struct list_head *writes, struct rpc_write **wr_io, char *s);
+
 /* open.c */
 bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);
 bool nfs_op_open_confirm(struct nfs_cxn *cxn, OPEN_CONFIRM4args *args, COMPOUND4res *cres);
@@ -354,6 +403,12 @@ extern int set_bitmap(uint64_t map_in, bitmap4 *map_out);
 extern int nfs_fh_decode(const nfs_fh4 *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
+extern void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
+			 struct curbuf *cur, struct list_head *writes,
+			 struct rpc_write **wr);
+extern void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
+			     struct curbuf *cur, struct list_head *writes,
+			     struct rpc_write **wr);
 
 /* state.c */
 extern nfsstat4 clientid_test(clientid4 id);

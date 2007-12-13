@@ -95,11 +95,6 @@ static const char *name_nfs4status[] = {
 	[NFS4ERR_CB_PATH_DOWN] = "NFS4ERR_CB_PATH_DOWN",
 };
 
-bool_t nfsproc4_null_4_svc(void *argp, void *result, struct svc_req *rqstp)
-{
-	return true;
-}
-
 bool valid_utf8string(utf8string *str)
 {
 	if (!str || !str->utf8string_len || !str->utf8string_val)
@@ -156,8 +151,7 @@ int cxn_getuid(const struct nfs_cxn *cxn)
 	case auth_none:
 		return SRV_UID_NOBODY;
 	case auth_unix:
-		if (cxn->auth.u.up)
-			return cxn->auth.u.up->aup_uid;
+		return cxn->auth.u.up.uid;
 		break;
 	}
 
@@ -170,50 +164,67 @@ int cxn_getgid(const struct nfs_cxn *cxn)
 	case auth_none:
 		return SRV_GID_NOBODY;
 	case auth_unix:
-		if (cxn->auth.u.up)
-			return cxn->auth.u.up->aup_gid;
+		return cxn->auth.u.up.gid;
 		break;
 	}
 
 	return -EINVAL;
 }
 
-static nfsstat4 cli_init(struct svc_req *rqstp, struct nfs_cxn **cxn_out)
+static nfsstat4 cli_init(struct opaque_auth *cred, struct opaque_auth *verf,
+			 struct nfs_cxn **cxn_out)
 {
 	struct nfs_cxn *cxn = calloc(1, sizeof(struct nfs_cxn));
 	nfsstat4 status = NFS4_OK;
+	uint32_t *p, v, ql;
 
 	if (!cxn) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
-	switch (rqstp->rq_cred.oa_flavor) {
+	switch (cred->oa_flavor) {
 	case AUTH_NONE:
 		syslog(LOG_INFO, "AUTH_NONE");
 		cxn->auth.type = auth_none;
 
 		if (debugging)
 			syslog(LOG_INFO, "RPC CRED None (len %d)",
-				rqstp->rq_cred.oa_length);
+				cred->oa_length);
 		break;
 
 	case AUTH_SYS:
-		if (!rqstp->rq_clntcred) {
+		if (!cred->oa_base || (cred->oa_length < 16)) {
 			syslog(LOG_INFO, "AUTH_SYS null");
 			status = NFS4ERR_DENIED;
 			goto err_out;
 		}
 
+		p = (uint32_t *) cred->oa_base;
+
+		p++;					/* stamp */
+		v = ntohl(*p++);			/* machinename len */
+
+		ql = XDR_QUADLEN(v);
+		if (cred->oa_length < ((ql + 4) * 4)) {
+			syslog(LOG_INFO, "AUTH_SYS null");
+			status = NFS4ERR_DENIED;
+			goto err_out;
+		}
+
+		p += ql;				/* machinename */
+		cxn->auth.u.up.uid = ntohl(*p++);	/* uid */
+		cxn->auth.u.up.gid = ntohl(*p++);	/* gid */
+
+		/* we ignore the list of gids that follow */
+
 		cxn->auth.type = auth_unix;
-		cxn->auth.u.up =
-			(struct authunix_parms *) rqstp->rq_clntcred;
 
 		if (debugging)
 			syslog(LOG_INFO, "RPC CRED Unix (uid %d gid %d len %d)",
-				cxn->auth.u.up->aup_uid,
-				cxn->auth.u.up->aup_gid,
-				rqstp->rq_cred.oa_length);
+				cxn->auth.u.up.uid,
+				cxn->auth.u.up.gid,
+				cred->oa_length);
 		break;
 
 	default:
@@ -229,11 +240,6 @@ out:
 err_out:
 	free(cxn);
 	goto out;
-}
-
-static void cli_free(struct nfs_cxn *cxn)
-{
-	free(cxn);
 }
 
 bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
@@ -255,22 +261,15 @@ bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
 	return stat == NFS4_OK ? true : false;
 }
 
-static bool nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
+static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_resop4 resop;
-	READLINK4res *res;
-	READLINK4resok *resok;
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	gchar *linktext;
+	char *linktext;
 
 	if (debugging)
 		syslog(LOG_INFO, "op READLINK");
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = OP_READLINK;
-	res = &resop.nfs_resop4_u.opreadlink;
-	resok = &res->READLINK4res_u.resok4;
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -283,14 +282,15 @@ static bool nfs_op_readlink(struct nfs_cxn *cxn, COMPOUND4res *cres)
 	}
 
 	linktext = ino->u.linktext;
-	g_assert(linktext != NULL);
 
-	resok->link.utf8string_len = strlen(linktext);
-	resok->link.utf8string_val = linktext;
+	if (debugging)
+		syslog(LOG_INFO, "   READLINK -> '%s'", linktext);
 
 out:
-	res->status = status;
-	return push_resop(cres, &resop, status);
+	WR32(status);
+	if (status == NFS4_OK)
+		WRSTR(linktext);
+	return status;
 }
 
 static bool nfs_op_secinfo(struct nfs_cxn *cxn, SECINFO4args *arg, COMPOUND4res *cres)
@@ -346,34 +346,6 @@ out:
 	return push_resop(cres, &resop, status);
 }
 
-static bool nfs_op_notsupp(struct nfs_cxn *cxn, COMPOUND4res *cres,
-			     nfs_opnum4 argop)
-{
-	struct nfs_resop4 resop;
-	OPENATTR4res *res;
-	nfsstat4 status = NFS4ERR_NOTSUPP;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = argop;
-	res = &resop.nfs_resop4_u.opopenattr;
-	res->status = status;
-	return push_resop(cres, &resop, status);
-}
-
-static bool nfs_op_illegal(struct nfs_cxn *cxn, COMPOUND4res *cres,
-			     nfs_opnum4 argop)
-{
-	struct nfs_resop4 resop;
-	OPENATTR4res *res;
-	nfsstat4 status = NFS4ERR_OP_ILLEGAL;
-
-	memset(&resop, 0, sizeof(resop));
-	resop.resop = argop;
-	res = &resop.nfs_resop4_u.opopenattr;
-	res->status = status;
-	return push_resop(cres, &resop, status);
-}
-
 static const char *arg_str[] = {
 	"<n/a>",
 	"<n/a>",
@@ -417,11 +389,24 @@ static const char *arg_str[] = {
 	"RELEASE_LOCKOWNER",
 };
 
-static bool nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
+static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
 {
-	switch (arg->argop) {
+	uint32_t op;
+
+	if (cur->len < 4)
+		return NFS4ERR_BADXDR;
+
+	op = CUR32();			/* read argop */
+	WR32(op);			/* write resop */
+
+	switch (op) {
 	case OP_ACCESS:
-		return nfs_op_access(cxn, &arg->nfs_argop4_u.opaccess, res);
+		return nfs_op_access(cxn, cur, writes, wr);
+	case OP_READLINK:
+		return nfs_op_readlink(cxn, cur, writes, wr);
+
+#if 0
 	case OP_CLOSE:
 		return nfs_op_close(cxn, &arg->nfs_argop4_u.opclose, res);
 	case OP_COMMIT:
@@ -464,8 +449,6 @@ static bool nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_read(cxn, &arg->nfs_argop4_u.opread, res);
 	case OP_READDIR:
 		return nfs_op_readdir(cxn, &arg->nfs_argop4_u.opreaddir, res);
-	case OP_READLINK:
-		return nfs_op_readlink(cxn, res);
 	case OP_REMOVE:
 		return nfs_op_remove(cxn, &arg->nfs_argop4_u.opremove, res);
 	case OP_RENAME:
@@ -488,6 +471,7 @@ static bool nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 		return nfs_op_write(cxn, &arg->nfs_argop4_u.opwrite, res);
 	case OP_VERIFY:
 		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, res, 0);
+#endif
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
@@ -496,67 +480,17 @@ static bool nfs_arg(struct nfs_cxn *cxn, nfs_argop4 *arg, COMPOUND4res *res)
 	case OP_OPENATTR:
 		if (debugging)
 			syslog(LOG_INFO, "compound op %s",
-			       (arg->argop > 39) ?  "<n/a>" :
-			       	arg_str[arg->argop]);
+			       (op > 39) ?  "<n/a>" : arg_str[op]);
 
-		return nfs_op_notsupp(cxn, res, arg->argop);
+		WR32(NFS4ERR_NOTSUPP);		/* op status */
+		return NFS4ERR_NOTSUPP;		/* compound status */
 
 	default:
-		return nfs_op_illegal(cxn, res, arg->argop);
+		WR32(NFS4ERR_OP_ILLEGAL);	/* op status */
+		return NFS4ERR_OP_ILLEGAL;	/* compound status */
 	}
 
-	return false;	/* never reached */
-}
-
-bool_t nfsproc4_compound_4_svc(COMPOUND4args *arg, COMPOUND4res *res,
-			       struct svc_req *rqstp)
-{
-	struct nfs_cxn *cxn;
-	unsigned int i;
-
-	memset(res, 0, sizeof(*res));
-	res->status = NFS4_OK;
-	memcpy(&res->tag, &arg->tag, sizeof(utf8str_cs));
-
-	if (!g_utf8_validate(arg->tag.utf8string_val,
-			     arg->tag.utf8string_len, NULL)) {
-		res->status = NFS4ERR_INVAL;
-		goto out;
-	}
-
-	if (arg->minorversion != 0) {
-		res->status = NFS4ERR_MINOR_VERS_MISMATCH;
-		goto out;
-	}
-
-	res->status = cli_init(rqstp, &cxn);
-	if (res->status != NFS4_OK)
-		goto out;
-
-	/* honestly, this was put here more to shortcut a
-	 * pathological case in pynfs.  we don't really have
-	 * any inherent limits here.
-	 */
-	if (arg->argarray.argarray_len > SRV_MAX_COMPOUND) {
-		res->status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	for (i = 0; i < arg->argarray.argarray_len; i++)
-		if (!nfs_arg(cxn, &arg->argarray.argarray_val[i], res)) {
-			syslog(LOG_WARNING, "compound failed (%s)",
-			       name_nfs4status[res->status]);
-			break;
-		}
-
-	if (debugging || (i > 500))
-		syslog(LOG_INFO, "arg list end (%u of %u args)",
-		       (i == arg->argarray.argarray_len) ? i : i + 1,
-		       arg->argarray.argarray_len);
-
-	cli_free(cxn);
-out:
-	return true;
+	return NFS4ERR_INVAL;	/* never reached */
 }
 
 static void nfs_free(nfs_resop4 *res)
@@ -621,5 +555,81 @@ int nfs4_program_4_freeresult (SVCXPRT *transp, xdrproc_t xdr_result,
 
 out:
 	return true;
+}
+
+void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
+		  struct curbuf *cur, struct list_head *writes,
+		  struct rpc_write **wr)
+{
+	/* FIXME */
+}
+
+static void nfsxdr_buf(struct curbuf *cur, struct nfs_buf *nb)
+{
+	nb->len = CUR32();
+	nb->val = CURMEM(nb->len);
+}
+
+void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
+		      struct curbuf *cur, struct list_head *writes,
+		      struct rpc_write **wr)
+{
+	struct nfs_buf tag;
+	uint32_t *stat_p, *result_p, n_args, minor;
+	nfsstat4 status = NFS4_OK;
+	unsigned int i = 0, results = 0;
+	struct nfs_cxn *cxn;
+
+	nfsxdr_buf(cur, &tag);		/* COMPOUND tag */
+	minor = CUR32();		/* minor version */
+	n_args = CUR32();		/* arg array size */
+
+	stat_p = WRSKIP(4);		/* COMPOUND result status */
+	WRBUF(&tag);			/* tag */
+	result_p = WRSKIP(4);		/* result array size */
+
+	if (!g_utf8_validate(tag.val, tag.len, NULL)) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+	if (minor != 0) {
+		status = NFS4ERR_MINOR_VERS_MISMATCH;
+		goto out;
+	}
+
+	status = cli_init(cred, verf, &cxn);
+	if (status != NFS4_OK)
+		goto out;
+
+	/* honestly, this was put here more to shortcut a
+	 * pathological case in pynfs.  we don't really have
+	 * any inherent limits here.
+	 */
+	if (n_args > SRV_MAX_COMPOUND) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	for (i = 0; i < n_args; i++) {
+		results++;	/* even failed operations have results */
+
+		status = nfs_op(cxn, cur, writes, wr);
+		if (status != NFS4_OK) {
+			if (debugging)
+				syslog(LOG_WARNING, "compound failed (%s)",
+					name_nfs4status[status]);
+			break;
+		}
+	}
+
+out:
+	if (debugging || (i > 500))
+		syslog(LOG_INFO, "arg list end (%u of %u args)",
+		       (i == 0 || i == n_args) ? i : i + 1,
+		       n_args);
+
+	free(cxn);
+	*stat_p = status;
+	*result_p = results;
 }
 
