@@ -18,6 +18,7 @@ typedef uint32_t nfsino_t;
 #define CR64()			cur_read64(cur)
 #define CURMEM(count)		cur_readmem(cur, (count))
 #define CURBUF(buf_ptr)		cur_readbuf(cur, (buf_ptr))
+#define CURSID(sid_ptr)		cur_readsid(cur, (sid_ptr))
 
 #define WRSKIP(count)		wr_skip(writes, wr, (count))
 #define WR32(val)		wr_write32(writes, wr, (val))
@@ -25,6 +26,7 @@ typedef uint32_t nfsino_t;
 #define WRBUF(buf_ptr)		wr_buf(writes, wr, (buf_ptr))
 #define WRSTR(str)		wr_str(writes, wr, (str))
 #define WRMEM(buf, len)		wr_mem(writes, wr, (buf), (len))
+#define WRSID(sid_ptr)		wr_sid(writes, wr, (sid_ptr))
 
 enum {
 	INO_ROOT		= 10,
@@ -239,10 +241,9 @@ struct nfs_state {
 	struct list_head	dead_node;
 };
 
-/* overlays stateid4 with our own info in place of 'other' */
 struct nfs_stateid {
-	uint32_t		seqid;		/* native endian */
-	uint32_t		id;		/* fixed endian (LE) */
+	uint32_t		seqid;
+	uint32_t		id;
 	verifier4		server_verf;
 };
 
@@ -309,6 +310,20 @@ extern struct timeval current_time;
 extern struct nfs_server srv;
 extern int debugging;
 
+/* data.c */
+extern nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
+
 /* inode.c */
 extern nfsino_t next_ino;
 extern struct nfs_inode *inode_get(nfsino_t inum);
@@ -332,14 +347,6 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino, fattr4 *raw_attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,
 			        bool in_setattr);
-
-/* data.c */
-extern bool nfs_op_commit(struct nfs_cxn *cxn, COMMIT4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_write(struct nfs_cxn *cxn, WRITE4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_read(struct nfs_cxn *cxn, READ4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_lock(struct nfs_cxn *cxn, LOCK4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_testlock(struct nfs_cxn *cxn, LOCKT4args *arg, COMPOUND4res *cres);
-extern bool nfs_op_unlock(struct nfs_cxn *cxn, LOCKU4args *arg, COMPOUND4res *cres);
 
 /* dir.c */
 bool nfs_op_lookup(struct nfs_cxn *cxn, LOOKUP4args *arg, COMPOUND4res *cres);
@@ -387,15 +394,19 @@ extern uint32_t cur_read32(struct curbuf *cur);
 extern uint64_t cur_read64(struct curbuf *cur);
 extern void *cur_readmem(struct curbuf *cur, unsigned int n);
 extern void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb);
+extern void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid);
 extern uint32_t *wr_write32(struct list_head *writes, struct rpc_write **wr_io,uint32_t val);
 extern uint64_t *wr_write64(struct list_head *writes, struct rpc_write **wr_io,uint64_t val);
 extern void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 		     unsigned int n);
 extern void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
-		    struct nfs_buf *nb);
-extern void *wr_str(struct list_head *writes, struct rpc_write **wr_io, char *s);
+		    const struct nfs_buf *nb);
+extern void *wr_str(struct list_head *writes, struct rpc_write **wr_io,
+			const char *s);
 extern void *wr_mem(struct list_head *writes, struct rpc_write **wr_io,
-			void *buf, unsigned int len);
+			const void *buf, unsigned int len);
+extern void *wr_sid(struct list_head *writes, struct rpc_write **wr_io,
+			const struct nfs_stateid *sid);
 
 /* open.c */
 bool nfs_op_open(struct nfs_cxn *cxn, OPEN4args *args, COMPOUND4res *cres);

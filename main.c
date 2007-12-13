@@ -153,6 +153,17 @@ void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb)
 		nb->val = cur_readmem(cur, nb->len);
 }
 
+void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
+{
+	void *verf;
+
+	sid->seqid = cur_read32(cur);
+	sid->id = cur_read32(cur);
+	verf = cur_readmem(cur, sizeof(verifier4));
+	if (verf)
+		memcpy(sid, verf, sizeof(verifier4));
+}
+
 static unsigned int wr_free(struct rpc_write *wr)
 {
 	return RPC_WRITE_BUFSZ - wr->len;
@@ -206,7 +217,7 @@ uint64_t *wr_write64(struct list_head *writes, struct rpc_write **wr, uint64_t v
 }
 
 void *wr_mem(struct list_head *writes, struct rpc_write **wr_io,
-	     void *buf, unsigned int len)
+	     const void *buf, unsigned int len)
 {
 	void *dst = wr_skip(writes, wr_io, len);
 	if (dst)
@@ -215,7 +226,7 @@ void *wr_mem(struct list_head *writes, struct rpc_write **wr_io,
 }
 
 void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
-		    struct nfs_buf *nb)
+		    const struct nfs_buf *nb)
 {
 	void *dst;
 
@@ -228,7 +239,7 @@ void *wr_buf(struct list_head *writes, struct rpc_write **wr_io,
 	return dst;
 }
 
-void *wr_str(struct list_head *writes, struct rpc_write **wr_io, char *s)
+void *wr_str(struct list_head *writes, struct rpc_write **wr_io, const char *s)
 {
 	struct nfs_buf nb;
 
@@ -236,9 +247,18 @@ void *wr_str(struct list_head *writes, struct rpc_write **wr_io, char *s)
 		return NULL;
 	
 	nb.len = strlen(s);
-	nb.val = s;
+	nb.val = (void *) s;
 
 	return wr_buf(writes, wr_io, &nb);
+}
+
+void *wr_sid(struct list_head *writes, struct rpc_write **wr_io,
+	     const struct nfs_stateid *sid)
+{
+	void *p = wr_write32(writes, wr_io, sid->seqid);
+	wr_write32(writes, wr_io, sid->id);
+	wr_mem(writes, wr_io, &sid->server_verf, sizeof(verifier4));
+	return p;
 }
 
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
