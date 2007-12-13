@@ -411,7 +411,7 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 	case GNET_CONN_READ:
 		switch (rc->state) {
 		case get_hdr:
-			tmp = GUINT32_FROM_BE(*(uint32_t *)evt->buffer);
+			tmp = ntohl(*(uint32_t *)evt->buffer);
 			if (tmp & HDR_FRAG_END) {
 				rc->last_frag = true;
 				tmp &= ~HDR_FRAG_END;

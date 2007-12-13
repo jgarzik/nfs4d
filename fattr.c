@@ -337,9 +337,8 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		bitmap_out |= (1ULL << FATTR4_CHOWN_RESTRICTED);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		nb.len = attr->filehandle.nfs_fh4_len;
-		nb.val = attr->filehandle.nfs_fh4_val;
-		WRBUF(&nb);
+		WR32(1);
+		WR32(attr->filehandle);
 		bitmap_out |= (1ULL << FATTR4_FILEHANDLE);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEID)) {
@@ -516,24 +515,6 @@ void fattr_free(struct nfs_fattr_set *attr)
 	/* FIXME */
 }
 
-void fattr4_free(fattr4 *attr)
-{
-	if (!attr)
-		return;
-
-	if (attr->attrmask.bitmap4_val) {
-		free(attr->attrmask.bitmap4_val);
-		attr->attrmask.bitmap4_val = NULL;
-		attr->attrmask.bitmap4_len = 0;
-	}
-
-	if (attr->attr_vals.attrlist4_val) {
-		free(attr->attr_vals.attrlist4_val);
-		attr->attr_vals.attrlist4_val = NULL;
-		attr->attr_vals.attrlist4_len = 0;
-	}
-}
-
 static void fattr_fill_server(struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap = attr->bitmap;
@@ -575,8 +556,6 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 
 static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *attr)
 {
-	uint64_t bitmap = attr->bitmap;
-
 	attr->type = ino->type;
 	attr->change = ino->version;
 	attr->size = ino->size;
@@ -584,10 +563,7 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->fsid.major = 1;
 	attr->fsid.minor = 0;
 	attr->rdattr_error = NFS4_OK;
-
-	if (bitmap & (1ULL << FATTR4_FILEHANDLE))
-		nfs_fh_set(&attr->filehandle, ino->ino);
-
+	attr->filehandle = ino->ino;
 	attr->fileid = ino->ino;
 	attr->mode = ino->mode;
 	if (ino->parents && ino->parents->len)

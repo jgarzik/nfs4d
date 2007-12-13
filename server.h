@@ -276,6 +276,7 @@ struct nfs_fattr_set {
 	uint64_t			bitmap;
 
 	uint64_t			supported_attrs;
+
 	fattr4_type			type;
 	fattr4_fh_expire_type		fh_expire_type;
 	fattr4_change			change;
@@ -294,7 +295,9 @@ struct nfs_fattr_set {
 	fattr4_case_insensitive		case_insensitive;
 	fattr4_case_preserving		case_preserving;
 	fattr4_chown_restricted		chown_restricted;
-	fattr4_filehandle		filehandle;
+
+	nfsino_t			filehandle;
+
 	fattr4_fileid			fileid;
 	fattr4_files_avail		files_avail;
 	fattr4_files_free		files_free;
@@ -404,7 +407,6 @@ extern nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *bitmap_out,
 extern bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
 extern void fattr_free(struct nfs_fattr_set *attr);
 extern void fattr_fill(const struct nfs_inode *ino, struct nfs_fattr_set *attr);
-extern void fattr4_free(fattr4 *attr);
 extern void print_fattr(const char *pfx, const struct nfs_fattr_set *attr);
 extern void print_fattr_bitmap(const char *pfx, uint64_t bitmap);
 
@@ -421,7 +423,6 @@ extern nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
-void nfs_getfh_free(GETFH4res *opgetfh);
 
 /* inode.c */
 extern nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -488,13 +489,8 @@ extern const char *name_nfs_ftype4[];
 extern int cxn_getuid(const struct nfs_cxn *cxn);
 extern int cxn_getgid(const struct nfs_cxn *cxn);
 
-extern bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat);
 extern bool valid_utf8string(const struct nfs_buf *str);
 extern char *copy_utf8string(const struct nfs_buf *str);
-extern void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int);
-extern uint64_t get_bitmap(const bitmap4 *map);
-extern void __set_bitmap(uint64_t map_in, bitmap4 *map_out);
-extern int set_bitmap(uint64_t map_in, bitmap4 *map_out);
 extern int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);

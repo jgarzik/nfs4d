@@ -7,6 +7,22 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
+static inline void fattr4_free(fattr4 *attr)
+{
+	/* FIXME: eliminate the need for this function, its use
+	 * indicates an obsolete user
+	 */
+}
+
+static inline bool fattr_encode(const fattr4 *attr_in,
+				struct nfs_fattr_set *attr_out)
+{
+	/* FIXME: eliminate the need for this function, its use
+	 * indicates an obsolete user
+	 */
+	return false;
+}
+
 static bool has_slash(const struct nfs_buf *str)
 {
 	if (!str)
@@ -56,7 +72,7 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out)
 {
 	struct nfs_dirent *dirent;
-	gchar *name;
+	char *name;
 
 	if (dirent_out)
 		*dirent_out = NULL;
@@ -175,7 +191,7 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		      nfsino_t inum)
 {
 	struct nfs_dirent *dirent;
-	gchar *name;
+	char *name;
 	enum nfsstat4 status = NFS4_OK, lu_stat;
 
 	lu_stat = dir_lookup(dir_ino, name_in, NULL);
@@ -283,7 +299,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *target_ino;
 	struct nfs_dirent *dirent;
-	gchar *name;
+	char *name;
 	struct nfs_buf target;
 	uint64_t before, after;
 
@@ -377,7 +393,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *src_dir, *target_dir;
 	struct nfs_inode *old_file;
 	struct nfs_dirent *old_dirent, *new_dirent;
-	gchar *old_name, *new_name;
+	char *old_name, *new_name;
 	struct nfs_buf oldname, newname;
 	uint64_t src_before, src_after, target_before, target_after;
 
@@ -522,7 +538,7 @@ static void entry4_free(entry4 *ent)
 	free(ent);
 }
 
-static nfsstat4 entry4_new(unsigned long hash, const gchar *name,
+static nfsstat4 entry4_new(unsigned long hash, const char *name,
 			   uint64_t bitmap, const struct nfs_dirent *de,
 			   entry4 **new_entry_out)
 {
@@ -619,7 +635,7 @@ struct readdir_info {
 
 static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 {
-	gchar *name = key;
+	char *name = key;
 	struct nfs_dirent *de = value;
 	struct readdir_info *ri = user_data;
 	unsigned long hash = blob_hash(ri->hash, name, strlen(name));

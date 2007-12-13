@@ -109,42 +109,6 @@ char *copy_utf8string(const struct nfs_buf *str)
 	return strndup(str->val, str->len);
 }
 
-uint64_t get_bitmap(const bitmap4 *map)
-{
-	uint64_t v = 0;
-
-	if (!map || !map->bitmap4_val || !map->bitmap4_len)
-		goto out;
-
-	if (map->bitmap4_len > 0)
-		v |= map->bitmap4_val[0];
-	if (map->bitmap4_len > 1)
-		v |= ((uint64_t)map->bitmap4_val[1]) << 32;
-
-out:
-	return v;
-}
-
-void __set_bitmap(uint64_t map_in, bitmap4 *map_out)
-{
-	map_out->bitmap4_len = 2;
-	map_out->bitmap4_val[0] = map_in;
-	map_out->bitmap4_val[1] = (map_in >> 32);
-}
-
-int set_bitmap(uint64_t map_in, bitmap4 *map_out)
-{
-	map_out->bitmap4_val = calloc(2, sizeof(uint32_t));
-	if (!map_out->bitmap4_val) {
-		map_out->bitmap4_len = 0;
-		return -1;
-	}
-
-	__set_bitmap(map_in, map_out);
-
-	return 0;
-}
-
 int cxn_getuid(const struct nfs_cxn *cxn)
 {
 	switch (cxn->auth.type) {
@@ -240,25 +204,6 @@ out:
 err_out:
 	free(cxn);
 	goto out;
-}
-
-bool push_resop(COMPOUND4res *res, const nfs_resop4 *resop, nfsstat4 stat)
-{
-	void *mem;
-	u_int array_len = res->resarray.resarray_len;
-
-	mem = realloc(res->resarray.resarray_val,
-		((array_len + 1) * sizeof(nfs_resop4)));
-	if (!mem)
-		return false;
-
-	res->resarray.resarray_len++;
-	res->resarray.resarray_val = mem;
-	memcpy(&res->resarray.resarray_val[array_len], resop,
-	       sizeof(struct nfs_resop4));
-	res->status = stat;
-
-	return stat == NFS4_OK ? true : false;
 }
 
 static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -495,7 +440,7 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 	struct nfs_cxn *cxn;
 
 	CURBUF(&tag);			/* COMPOUND tag */
-	minor = CR32();		/* minor version */
+	minor = CR32();			/* minor version */
 	n_args = CR32();		/* arg array size */
 
 	stat_p = WRSKIP(4);		/* COMPOUND result status */

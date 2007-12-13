@@ -305,7 +305,7 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 		}
 
 		if (sid && sid->seqid && (sid->seqid != 0xffffffffU)) {
-			uint32_t id = GUINT32_FROM_LE(sid->id);
+			uint32_t id = sid->id;
 
 			status = stateid_lookup(id, ino->ino, nst_open, &st);
 			if (status != NFS4_OK)
@@ -820,17 +820,9 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
         if (bitmap & (1ULL << FATTR4_FSID))
 		if ((attr->fsid.major != 1) || (attr->fsid.minor != 0))
 			return false;
-        if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		nfsino_t fh = 0;
-		struct nfs_buf nb;
-
-		nb.len = attr->filehandle.nfs_fh4_len;
-		nb.val = attr->filehandle.nfs_fh4_val;
-		if (nfs_fh_decode(&nb, &fh) <= 0)
+        if (bitmap & (1ULL << FATTR4_FILEHANDLE))
+		if (attr->filehandle != ino->ino)
 			return false;
-		if (fh != ino->ino)
-			return false;
-	}
         if (bitmap & (1ULL << FATTR4_FILEID))
 		if (attr->fileid != ino->ino)
 			return false;

@@ -17,24 +17,6 @@ static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
 	return wr_buf(writes, wr_io, &nb);
 }
 
-void nfs_fh_set(nfs_fh4 *fh, nfsino_t fh_int)
-{
-	nfsino_t *fh_val = calloc(1, sizeof(nfsino_t));
-	*fh_val = GUINT32_TO_BE(fh_int);
-
-	fh->nfs_fh4_len = sizeof(nfsino_t);
-	fh->nfs_fh4_val = (char *)(void *) fh_val;
-}
-
-static void nfs_fh_free(nfs_fh4 *fh)
-{
-	if (fh) {
-		nfsino_t *fh_val = (void *) fh->nfs_fh4_val;
-		free(fh_val);
-		fh->nfs_fh4_val = NULL;
-	}
-}
-
 int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out)
 {
 	nfsino_t *fhp;
@@ -54,11 +36,6 @@ int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out)
 
 	*fh_out = fh;
 	return 1;
-}
-
-void nfs_getfh_free(GETFH4res *opgetfh)
-{
-	nfs_fh_free(&opgetfh->GETFH4res_u.resok4.object);
 }
 
 nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,

@@ -657,7 +657,7 @@ have_st:
 
 	sid = &tmp_sid;
 	sid->seqid = lock_seqid;
-	sid->id = GUINT32_TO_LE(st->id);
+	sid->id = st->id;
 	memcpy(&sid->server_verf, &srv.instance_verf,
 	       sizeof(srv.instance_verf));
 
