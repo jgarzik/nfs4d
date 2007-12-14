@@ -690,8 +690,13 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (ri.entry_cont) {
 		*ri.entry_cont = htonl(0);
 		*entry_cont = htonl(1);
-	} else
+	} else {
 		*entry_cont = htonl(0);
+		if (ri.cookie_found) {
+			status = NFS4ERR_TOOSMALL;
+			goto out;
+		}
+	}
 
 	WR32(ri.stop ? 1 : 0);		/* reply eof */
 
