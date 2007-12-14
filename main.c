@@ -361,17 +361,14 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	list_add_tail(&_wr->node, writes);
 
 	record_size = WRSKIP(4);
-	WR32(xid);
-	WR32(REPLY);
-	WR32(MSG_ACCEPTED);
+	WR32(xid);			/* xid */
+	WR32(REPLY);			/* message type */
+	WR32(MSG_ACCEPTED);		/* reply status */
 
-	/* FIXME: probably not the right thing to put in this field
-	 * (server auth verifier)
-	 */
-	WR32(AUTH_NULL);
+	WR32(AUTH_NULL);		/* opaque auth flavor, contents */
 	WR32(0);
 
-	WR32(SUCCESS);
+	WR32(0);			/* accept status (0 == success) */
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "RPC: message (%u bytes, xid %x, proc %u)",

@@ -484,12 +484,12 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 
 out:
 	if (debugging || (i > 500))
-		syslog(LOG_INFO, "arg list end (%u of %u args)",
+		syslog(LOG_INFO, "arg list end (%u of %u args, %u results)",
 		       (i == 0 || i == n_args) ? i : i + 1,
-		       n_args);
+		       n_args, results);
 
 	free(cxn);
-	*stat_p = status;
-	*result_p = results;
+	*stat_p = htonl(status);
+	*result_p = htonl(results);
 }
 
