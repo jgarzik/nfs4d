@@ -55,8 +55,8 @@ struct rpc_cxn {
 };
 
 static struct argp_option options[] = {
-	{ "debug", 'd', NULL, 0,
-	  "Enable debug output" },
+	{ "debug", 'd', "LEVEL", 0,
+	  "Enable debug output (0 = no debug, increase for more verbosity)" },
 	{ "foreground", 'f', NULL, 0,
 	  "Run daemon in foreground" },
 	{ "port", 'p', "PORT", 0,
@@ -310,6 +310,8 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	struct opaque_auth auth_cred, auth_verf;
 	struct rpc_write *_wr, *iter, **wr;
 	struct list_head _writes, *writes;
+	uint32_t n_writes = 0, n_wbytes = 0;
+	uint32_t *record_size, tmp_tot = 0;
 
 	_wr = NULL;
 	wr = &_wr;
@@ -323,38 +325,57 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	 */
 
 	xid = CR32();			/* xid */
-	if (CR32() != CALL)		/* msg type */
+	if (CR32() != CALL) {		/* msg type */
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "RPC: invalid msg type");
 		goto err_out;
+	}
 	if ((CR32() != 2) ||		/* rpc version */
-	    (CR32() != NFS4_PROGRAM) ||/* rpc program */
-	    (CR32() != NFS_V4))	/* rpc program version */
+	    (CR32() != NFS4_PROGRAM) ||	/* rpc program */
+	    (CR32() != NFS_V4))	{	/* rpc program version */
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "RPC: invalid msg hdr");
 		goto err_out;
+	}
 	proc = CR32();
 
 	auth_cred.oa_flavor = CR32();
 	auth_cred.oa_length = CR32();
 	auth_cred.oa_base = CURMEM(auth_cred.oa_length);
 	auth_verf.oa_flavor = CR32();
-	auth_cred.oa_length = CR32();
-	auth_verf.oa_base = CURMEM(auth_cred.oa_length);
-
-	if (!auth_cred.oa_base || !auth_verf.oa_base)
-		goto err_out;
+	auth_verf.oa_length = CR32();
+	auth_verf.oa_base = CURMEM(auth_verf.oa_length);
 
 	/*
 	 * begin the RPC response message
 	 */
-	_wr = malloc(sizeof(*wr));
-	if (!_wr)
+	_wr = malloc(sizeof(*_wr));
+	if (!_wr) {
+		syslog(LOG_ERR, "RPC: out of memory");
 		goto err_out;
+	}
+
+	_wr->len = 0;
+	INIT_LIST_HEAD(&_wr->node);
 
 	list_add_tail(&_wr->node, writes);
 
+	record_size = WRSKIP(4);
 	WR32(xid);
 	WR32(REPLY);
 	WR32(MSG_ACCEPTED);
-	/* FIXME: write opaque_auth verf */
+
+	/* FIXME: probably not the right thing to put in this field
+	 * (server auth verifier)
+	 */
+	WR32(AUTH_NULL);
+	WR32(0);
+
 	WR32(SUCCESS);
+
+	if (debugging > 1)
+		syslog(LOG_DEBUG, "RPC: message (%u bytes, xid %x, proc %u)",
+		       msg_len, xid, proc);
 
 	/*
 	 * handle RPC call
@@ -376,18 +397,37 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	 * TODO: way too much alloc+copy
 	 */
 
+	tmp_tot = 0;
+	list_for_each_entry(_wr, writes, node) {
+		tmp_tot += _wr->len;
+	}
+
+	*record_size = htonl(tmp_tot | HDR_FRAG_END);
+
 	list_for_each_entry_safe(_wr, iter, writes, node) {
-		if (_wr->len)
+		if (_wr->len) {
 			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
+
+			n_wbytes += _wr->len;
+			n_writes++;
+		}
+
 		list_del(&_wr->node);
 		free(_wr);
 	}
 
+	if (debugging > 1)
+		syslog(LOG_DEBUG, "RPC reply: %u bytes, %u writes",
+			n_wbytes, n_writes);
+
 	return;
 
 err_out:
+	if (debugging > 1)
+		syslog(LOG_DEBUG, "RPC: invalid message (%u bytes, xid %x), "
+		       "ignoring",
+		       msg_len, xid);
 	/* FIXME: reply to bad XDR/RPC */
-	return;
 }
 
 static void rpc_cxn_free(struct rpc_cxn *cxn)
@@ -418,6 +458,11 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 			}
 			if (tmp > MAX_FRAG_SZ)
 				goto err_out;
+
+			if (debugging > 1)
+				syslog(LOG_DEBUG, "RPC frag (%u bytes%s)",
+				       tmp,
+				       rc->last_frag ? ", LAST" : "");
 
 			rc->state = get_data;
 			gnet_conn_readn(conn, tmp);
@@ -473,11 +518,17 @@ static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
 {
 	struct nfs_server *server = user_data;
 	struct rpc_cxn *rc;
+	char *host;
 
 	if (!conn) {
 		syslog(LOG_ERR, "GServer exiting");
 		return;
 	}
+
+	host = gnet_inetaddr_get_canonical_name(conn->inetaddr);
+	syslog(LOG_INFO, "TCP connection from %s",
+	       host ? host : "<oom?>");
+	free(host);
 
 	rc = calloc(1, sizeof(*rc));
 	if (!rc) {
@@ -539,7 +590,13 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
 	switch (key) {
 	case 'd':
-		debugging = 1;
+		if (atoi(arg) >= 0 && atoi(arg) <= 2)
+			debugging = atoi(arg);
+		else {
+			fprintf(stderr, "invalid debug level %s (valid: 0-2)\n",
+				arg);
+			argp_usage(state);
+		}
 		break;
 	case 'f':
 		opt_foreground = true;

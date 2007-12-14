@@ -244,7 +244,7 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
 	struct nfs_buf name;
-	uint32_t flavor;
+	uint32_t flavor = 0;
 
 	CURBUF(&name);				/* component name */
 
@@ -427,6 +427,7 @@ void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
 		  struct rpc_write **wr)
 {
 	/* FIXME */
+	syslog(LOG_ERR, "FIXME!  NULL proc invoked");
 }
 
 void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
@@ -437,7 +438,7 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 	uint32_t *stat_p, *result_p, n_args, minor;
 	nfsstat4 status = NFS4_OK;
 	unsigned int i = 0, results = 0;
-	struct nfs_cxn *cxn;
+	struct nfs_cxn *cxn = NULL;
 
 	CURBUF(&tag);			/* COMPOUND tag */
 	minor = CR32();			/* minor version */

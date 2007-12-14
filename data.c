@@ -194,7 +194,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_stateid sid;
 	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
-	uint64_t read_size, offset;
+	uint64_t read_size = 0, offset;
 	uint32_t count;
 	void *mem;
 	struct state_search ss;
@@ -517,6 +517,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		prev_sid = &open_sid;
 	else
 		prev_sid = &lock_sid;
+
+	prev_id = prev_sid->id;
 
 	print_lock_args(prev_sid->seqid, prev_id, locktype, offset,
 			length, reclaim, new_lock, lock_seqid,

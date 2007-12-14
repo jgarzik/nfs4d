@@ -555,14 +555,14 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	memset(&attrset, 0, sizeof(attrset));
 
+	status_p = WRSKIP(4);		/* ending status */
+
 	if (cur->len < 12) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
 
 	attrset.bitmap = CURMAP();
-
-	status_p = WRSKIP(4);		/* ending status */
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {

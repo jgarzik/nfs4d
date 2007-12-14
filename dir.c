@@ -301,7 +301,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_dirent *dirent;
 	char *name;
 	struct nfs_buf target;
-	uint64_t before, after;
+	change_info4 cinfo = { true, 0, 0 };
 
 	CURBUF(&target);
 
@@ -367,9 +367,9 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	g_hash_table_remove(dir_ino->u.dir, name);
 
 	/* record directory change info */
-	before = dir_ino->version;
+	cinfo.before = dir_ino->version;
 	inode_touch(dir_ino);
-	after = dir_ino->version;
+	cinfo.after = dir_ino->version;
 
 	/* remove link, possibly deleting inode */
 	inode_unlink(target_ino, dir_ino->ino);
@@ -379,9 +379,9 @@ out_name:
 out:
 	WR32(status);
 	if (status == NFS4_OK) {
-		WR32(1);		/* cinfo.atomic */
-		WR64(before);		/* cinfo.before */
-		WR64(after);		/* cinfo.after */
+		WR32(cinfo.atomic ? 1 : 0);	/* cinfo.atomic */
+		WR64(cinfo.before);		/* cinfo.before */
+		WR64(cinfo.after);		/* cinfo.after */
 	}
 	return status;
 }
@@ -395,7 +395,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_dirent *old_dirent, *new_dirent;
 	char *old_name, *new_name;
 	struct nfs_buf oldname, newname;
-	uint64_t src_before, src_after, target_before, target_after;
+	change_info4 src = { true, 0, 0 };
+	change_info4 target = { true, 0, 0 };
 
 	CURBUF(&oldname);
 	CURBUF(&newname);
@@ -466,10 +467,10 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		/* do oldname and newname refer to same file? */
 		if (old_file->ino == new_file->ino) {
-			src_after =
-			src_before = src_dir->version;
-			target_after =
-			target_before = target_dir->version;
+			src.after =
+			src.before = src_dir->version;
+			target.after =
+			target.before = target_dir->version;
 			goto out_name;
 		}
 
@@ -505,15 +506,15 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	new_name = NULL;	/* prevent function exit from freeing */
 
 	/* record directory change info */
-	src_before = src_dir->version;
-	target_before = target_dir->version;
+	src.before = src_dir->version;
+	target.before = target_dir->version;
 
 	inode_touch(src_dir);
 	if (src_dir != target_dir)
 		inode_touch(target_dir);
 
-	src_after = src_dir->version;
-	target_after = target_dir->version;
+	src.after = src_dir->version;
+	target.after = target_dir->version;
 
 out_name:
 	free(old_name);
@@ -521,12 +522,12 @@ out_name:
 out:
 	WR32(status);
 	if (status == NFS4_OK) {
-		WR32(1);		/* src cinfo.atomic */
-		WR64(src_before);	/* src cinfo.before */
-		WR64(src_after);	/* src cinfo.after */
-		WR32(1);		/* target cinfo.atomic */
-		WR64(target_before);	/* target cinfo.before */
-		WR64(target_after);	/* target cinfo.after */
+		WR32(src.atomic ? 1 : 0); /* src cinfo.atomic */
+		WR64(src.before);	/* src cinfo.before */
+		WR64(src.after);	/* src cinfo.after */
+		WR32(target.atomic ? 1 : 0); /* target cinfo.atomic */
+		WR64(target.before);	/* target cinfo.before */
+		WR64(target.after);	/* target cinfo.after */
 	}
 	return status;
 }
