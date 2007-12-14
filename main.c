@@ -445,6 +445,12 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 	case GNET_CONN_TIMEOUT:
 		goto err_out;
 
+	case GNET_CONN_WRITE:
+		/* do nothing */
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "async write complete");
+		break;
+
 	case GNET_CONN_READ:
 		switch (rc->state) {
 		case get_hdr:

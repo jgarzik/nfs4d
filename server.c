@@ -426,8 +426,8 @@ void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
 		  struct curbuf *cur, struct list_head *writes,
 		  struct rpc_write **wr)
 {
-	/* FIXME */
-	syslog(LOG_ERR, "FIXME!  NULL proc invoked");
+	if (debugging)
+		syslog(LOG_ERR, "NULL proc invoked");
 }
 
 void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
