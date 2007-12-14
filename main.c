@@ -186,7 +186,7 @@ void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
 	sid->id = cur_read32(cur);
 	verf = cur_readmem(cur, sizeof(verifier4));
 	if (verf)
-		memcpy(sid, verf, sizeof(verifier4));
+		memcpy(&sid->server_verf, verf, sizeof(verifier4));
 }
 
 static unsigned int wr_free(struct rpc_write *wr)
