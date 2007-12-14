@@ -49,7 +49,8 @@ static nfsstat4 cur_open(struct curbuf *cur, OPEN4args *args,
 	args->claim.claim = CR32();
 	switch (args->claim.claim) {
 	case CLAIM_NULL:
-		/* do nothing */
+		CURBUF((struct nfs_buf *)
+			&args->claim.open_claim4_u.file);
 		break;
 
 	case CLAIM_PREVIOUS:

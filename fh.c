@@ -7,9 +7,10 @@
 #define WRFH(fh)		wr_fh(writes, wr, (fh))
 
 static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
-		   nfsino_t fh)
+		   nfsino_t fh_in)
 {
 	struct nfs_buf nb;
+	uint32_t fh = htonl(fh_in);
 
 	nb.len = sizeof(fh);
 	nb.val = (char *) &fh;

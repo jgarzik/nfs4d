@@ -399,7 +399,7 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 		tmp_tot += _wr->len;
 	}
 
-	*record_size = htonl(tmp_tot | HDR_FRAG_END);
+	*record_size = htonl((tmp_tot - 4) | HDR_FRAG_END);
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
 		if (_wr->len) {
@@ -476,27 +476,29 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 			/* avoiding alloc+copy, in a common case */
 			if (rc->last_frag && !rc->msg) {
 				rpc_msg(rc, evt->buffer, evt->length);
-				break;
-			}
-
-			mem = realloc(rc->msg, rc->msg_len + evt->length);
-			if (!mem) {
-				syslog(LOG_ERR, "OOM in RPC get-data");
-				goto err_out;
-			}
-
-			rc->msg = mem;
-			memcpy(rc->msg + rc->msg_len, evt->buffer, evt->length);
-			rc->msg_len += evt->length;
-
-			if (rc->last_frag) {
-				rpc_msg(rc, rc->msg, rc->msg_len);
-
-				free(rc->msg);
-				rc->msg = NULL;
 				rc->msg_len = 0;
 				rc->next_frag = 0;
 				rc->last_frag = false;
+			} else {
+				mem = realloc(rc->msg, rc->msg_len + evt->length);
+				if (!mem) {
+					syslog(LOG_ERR, "OOM in RPC get-data");
+					goto err_out;
+				}
+
+				rc->msg = mem;
+				memcpy(rc->msg + rc->msg_len, evt->buffer, evt->length);
+				rc->msg_len += evt->length;
+
+				if (rc->last_frag) {
+					rpc_msg(rc, rc->msg, rc->msg_len);
+
+					free(rc->msg);
+					rc->msg = NULL;
+					rc->msg_len = 0;
+					rc->next_frag = 0;
+					rc->last_frag = false;
+				}
 			}
 
 			rc->state = get_hdr;
