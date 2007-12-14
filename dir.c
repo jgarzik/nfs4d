@@ -7,22 +7,6 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static inline void fattr4_free(fattr4 *attr)
-{
-	/* FIXME: eliminate the need for this function, its use
-	 * indicates an obsolete user
-	 */
-}
-
-static inline bool fattr_encode(const fattr4 *attr_in,
-				struct nfs_fattr_set *attr_out)
-{
-	/* FIXME: eliminate the need for this function, its use
-	 * indicates an obsolete user
-	 */
-	return false;
-}
-
 static bool has_slash(const struct nfs_buf *str)
 {
 	if (!str)
@@ -532,153 +516,104 @@ out:
 	return status;
 }
 
-static void entry4_free(entry4 *ent)
-{
-	free(ent->name.utf8string_val);
-	fattr4_free(&ent->attrs);
-	free(ent);
-}
-
-static nfsstat4 entry4_new(unsigned long hash, const char *name,
-			   uint64_t bitmap, const struct nfs_dirent *de,
-			   entry4 **new_entry_out)
-{
-	nfsstat4 status = NFS4_OK;
-	entry4 *ent;
-	struct nfs_inode *ino;
-	struct nfs_fattr_set attrset;
-	bool encode_rc;
-
-	ent = calloc(1, sizeof(*ent));
-	if (!ent) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	ent->cookie = hash;
-	ent->name.utf8string_len = strlen(name);
-	ent->name.utf8string_val = strndup(name, ent->name.utf8string_len);
-	if (!ent->name.utf8string_val) {
-		status = NFS4ERR_RESOURCE;
-		goto err_out;
-	}
-
-	if (debugging)
-		syslog(LOG_INFO, "   READDIR entry: '%s'",
-		       ent->name.utf8string_val);
-
-	memset(&attrset, 0, sizeof(attrset));
-	attrset.bitmap = bitmap;
-
-	ino = inode_get(de->ino);
-	if (!ino) {
-		if (!(bitmap & (1ULL << FATTR4_RDATTR_ERROR))) {
-			status = NFS4ERR_NOFILEHANDLE;
-			goto err_out_name;
-		}
-		bitmap = (1ULL << FATTR4_RDATTR_ERROR);
-		attrset.rdattr_error = NFS4ERR_NOFILEHANDLE;
-	} else
-		fattr_fill(ino, &attrset);
-
-	encode_rc = fattr_encode(&ent->attrs, &attrset);
-	fattr_free(&attrset);
-
-	if (!encode_rc) {
-		status = NFS4ERR_IO;
-		goto err_out_name;
-	}
-
-out:
-	*new_entry_out = ent;
-	return status;
-
-err_out_name:
-	free(ent->name.utf8string_val);
-err_out:
-	free(ent);
-	ent = NULL;
-	goto out;
-}
-
-void nfs_readdir_free(READDIR4res *_res)
-{
-	READDIR4resok *res = &_res->READDIR4res_u.resok4;
-	entry4 *tmp;
-
-	while (res->reply.entries) {
-		tmp = res->reply.entries;
-		res->reply.entries = res->reply.entries->nextentry;
-		entry4_free(tmp);
-	}
-}
-
 struct readdir_info {
-	unsigned long		hash;
-	unsigned long		cookie;
-	bool			found_cookie;
-	bool			full;
+	uint64_t cookie;
+	uint32_t dircount;
+	uint32_t maxcount;
+	uint64_t attr_request;
 
-	uint64_t		attr_req;
+	struct list_head *writes;
+	struct rpc_write **wr;
 
-	entry4			*tail;
+	uint64_t last_cookie;
 
-	nfsstat4		status;
-	READDIR4resok		*resok;
+	uint32_t *entry_cont;
 
-	unsigned int		max_dir_sz;
-	unsigned int		max_reply_sz;
-	unsigned int		dir_sz;
-	unsigned int		reply_sz;
+	nfsstat4 status;
 
-	unsigned int		n_entries;
+	bool cookie_found;
+	bool stop;
+	bool hit_limit;
 };
 
 static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 {
 	char *name = key;
+	size_t name_len = strlen(name);
+	uint64_t cookie = blob_hash(BLOB_HASH_INIT, name, name_len);
+	uint64_t bitmap_out = 0;
 	struct nfs_dirent *de = value;
 	struct readdir_info *ri = user_data;
-	unsigned long hash = blob_hash(ri->hash, name, strlen(name));
-	entry4 *new_entry = NULL;
-	unsigned int new_dir_sz, new_reply_sz;
+	uint32_t dirlen, maxlen;
+	struct nfs_fattr_set attr;
+	struct nfs_buf nb;
+	struct nfs_inode *ino;
+	struct list_head *writes = ri->writes;
+	struct rpc_write **wr = ri->wr;
 
-	if (ri->status != NFS4_OK)
-		return;
-	if (ri->full)
+	if (ri->stop)
 		return;
 
-	if (!ri->found_cookie) {
-		if (hash != ri->cookie)
+	ri->last_cookie = cookie;
+
+	if (!ri->cookie_found) {
+		if (ri->cookie && (ri->cookie != cookie))
 			return;
-		ri->found_cookie = true;
+		ri->cookie_found = true;
 	}
 
-	ri->status = entry4_new(hash, name, ri->attr_req, de, &new_entry);
-	if (ri->status != NFS4_OK)
-		return;
-
-	new_dir_sz = sizeof(nfs_cookie4) + sizeof(component4) +
-		     new_entry->name.utf8string_len;
-	new_reply_sz = sizeof(entry4) + new_entry->name.utf8string_len +
-		       new_entry->attrs.attrmask.bitmap4_len +
-		       new_entry->attrs.attr_vals.attrlist4_len;
-
-	if (((ri->dir_sz + new_dir_sz) > ri->max_dir_sz) ||
-	    ((ri->reply_sz + new_reply_sz) > ri->max_reply_sz)) {
-		ri->full = true;
-		entry4_free(new_entry);
+	ino = inode_get(de->ino);
+	if (!ino) {
+		/* FIXME: return via rdattr-error */
+		ri->stop = true;
+		ri->status = NFS4ERR_SERVERFAULT;
 		return;
 	}
 
-	if (!ri->resok->reply.entries)
-		ri->resok->reply.entries = new_entry;
-	if (ri->tail)
-		ri->tail->nextentry = new_entry;
-	ri->tail = new_entry;
-	ri->n_entries++;
-	ri->dir_sz += new_dir_sz;
-	ri->reply_sz += new_reply_sz;
+	memset(&attr, 0, sizeof(attr));
+
+	fattr_fill(ino, &attr);
+
+	dirlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4);
+	if (dirlen > ri->dircount) {
+		ri->hit_limit = true;
+		ri->stop = true;
+		goto out;
+	}
+
+	maxlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4) + fattr_size(&attr) + 4;
+	if (maxlen > ri->maxcount) {
+		ri->hit_limit = true;
+		ri->stop = true;
+		goto out;
+	}
+
+	ri->dircount -= dirlen;
+	ri->maxcount -= maxlen;
+
+	/* write value to previous entry4.nextentry */
+	if (ri->entry_cont) {
+		*ri->entry_cont = htonl(1);
+		ri->entry_cont = NULL;
+	}
+
+	WR64(cookie);			/* entry4.cookie */
+
+	nb.len = name_len;		/* entry4.name */
+	nb.val = name;
+	WRBUF(&nb);
+
+	/* entry4.attrs */
+	ri->status = wr_fattr(&attr, &bitmap_out, writes, wr);
+	if (ri->status != NFS4_OK) {
+		ri->stop = true;
+		goto out;
+	}
+
+	ri->entry_cont = WRSKIP(4);	/* entry4.nextentry */
+
+out:
+	fattr_free(&attr);
 }
 
 nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -686,17 +621,18 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	uint32_t tmp_ino_n, dircount, maxcount;
+	uint32_t dircount, maxcount, *status_p, *entry_cont;
 	struct readdir_info ri;
 	uint64_t cookie, attr_request;
 	verifier4 *cookie_verf;
-	bool reply_eof;
 
 	cookie = CR64();
 	cookie_verf = CURMEM(sizeof(verifier4));
 	dircount = CR32();
 	maxcount = CR32();
 	attr_request = CURMAP();
+
+	status_p = WRSKIP(4);
 
 	if (debugging) {
 		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u MAP:%Lx)",
@@ -714,36 +650,53 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	memset(&ri, 0, sizeof(ri));
-	ri.cookie = (unsigned long) cookie;
-	if (!ri.cookie)
-		ri.found_cookie = true;
-	ri.attr_req = attr_request;
-	ri.status = NFS4_OK;
-#warning fix me, I'm broken
-/*	ri.resok = resok; */
-	ri.max_dir_sz = dircount;
-	ri.max_reply_sz = maxcount;
+	/* subtract READDIR4resok header and footer size */
+	maxcount -= (8 + 4);
+
+	/* 12 is just a handy number I saw I in some source or slide.
+	 * the code has additional too-small checks, so its ok to pass
+	 * this test yet still be too small
+	 */
+	if (dircount < 12 || maxcount < 12) {
+		status = NFS4ERR_TOOSMALL;
+		goto out;
+	}
+	if (dircount > SRV_MAX_READ || maxcount > SRV_MAX_READ) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
 
 	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
-	reply_eof = true;
-	tmp_ino_n = GUINT32_TO_LE(ino->ino);
-	ri.hash = blob_hash(BLOB_HASH_INIT, &tmp_ino_n, sizeof(tmp_ino_n));
+	/* FIXME: server verifier isn't the best for dir verf */
+	WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
+
+	entry_cont = WRSKIP(4);
+
+	memset(&ri, 0, sizeof(ri));
+	ri.cookie = cookie;
+	ri.dircount = dircount;
+	ri.maxcount = maxcount;
+	ri.attr_request = attr_request;
+	ri.status = NFS4_OK;
+	ri.writes = writes;
+	ri.wr = wr;
 
 	g_hash_table_foreach(ino->u.dir, readdir_iter, &ri);
 
-	status = ri.status;
-	if (ri.full)
-		reply_eof = false;
+	/* terminate final entry4.nextentry and dirlist4.entries */
+	if (ri.entry_cont) {
+		*ri.entry_cont = htonl(0);
+		*entry_cont = htonl(1);
+	} else
+		*entry_cont = htonl(0);
+
+	WR32(ri.stop ? 1 : 0);		/* reply eof */
 
 out:
-	WR32(status);
-	if (status == NFS4_OK) {
-		/* FIXME: send back dir info.... */
-	}
+	*status_p = htonl(status);
 	return status;
 }
 

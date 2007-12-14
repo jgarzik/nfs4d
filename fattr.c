@@ -35,6 +35,218 @@ nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
 	return NFS4ERR_NOTSUPP;
 }
 
+#define INC8(val)	total += (val)
+#define INC32(x)	total += 4
+#define INC64(x)	total += 8
+#define INCMAP(x)	total += (4 * 3)
+#define INCBUF(nb)	total += (XDR_QUADLEN((nb)->len) * 4)
+
+unsigned int fattr_size(struct nfs_fattr_set *attr)
+{
+	uint64_t bitmap = attr->bitmap;
+	struct nfs_buf nb;
+	unsigned int total = 0;
+
+	INC32(2);	/* bitmap array size */
+	INC8(4);	/* bitmap array[0] */
+	INC8(4);	/* bitmap array[1] */
+	INC8(4);	/* attribute buffer length */
+
+	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
+		INCMAP(fattr_supported_mask);
+	}
+	if (bitmap & (1ULL << FATTR4_TYPE)) {
+		INC32(attr->type);
+	}
+	if (bitmap & (1ULL << FATTR4_FH_EXPIRE_TYPE)) {
+		INC32(attr->fh_expire_type);
+	}
+	if (bitmap & (1ULL << FATTR4_CHANGE)) {
+		INC64(attr->change);
+	}
+	if (bitmap & (1ULL << FATTR4_SIZE)) {
+		INC64(attr->size);
+	}
+	if (bitmap & (1ULL << FATTR4_LINK_SUPPORT)) {
+		INC32(attr->link_support ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_SYMLINK_SUPPORT)) {
+		INC32(attr->symlink_support ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_NAMED_ATTR)) {
+		INC32(attr->named_attr ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_FSID)) {
+		INC64(attr->fsid.major);
+		INC64(attr->fsid.minor);
+	}
+	if (bitmap & (1ULL << FATTR4_UNIQUE_HANDLES)) {
+		INC32(attr->unique_handles ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_LEASE_TIME)) {
+		INC32(attr->lease_time);
+	}
+	if (bitmap & (1ULL << FATTR4_RDATTR_ERROR)) {
+		INC32(attr->rdattr_error);
+	}
+
+#if 0 /* FIXME */
+	if (bitmap & (1ULL << FATTR4_ACL)) {
+		encode_acl(&attr->acl, writes, wr);
+	}
+#endif
+
+	if (bitmap & (1ULL << FATTR4_ACLSUPPORT)) {
+		INC32(attr->aclsupport);
+	}
+	if (bitmap & (1ULL << FATTR4_ARCHIVE)) {
+		INC32(attr->archive ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_CANSETTIME)) {
+		INC32(attr->cansettime ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_CASE_INSENSITIVE)) {
+		INC32(attr->case_insensitive ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_CASE_PRESERVING)) {
+		INC32(attr->case_preserving ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_CHOWN_RESTRICTED)) {
+		INC32(attr->chown_restricted ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
+		INC32(1);
+		INC32(attr->filehandle);
+	}
+	if (bitmap & (1ULL << FATTR4_FILEID)) {
+		INC64(attr->fileid);
+	}
+	if (bitmap & (1ULL << FATTR4_FILES_AVAIL)) {
+		INC64(attr->files_avail);
+	}
+	if (bitmap & (1ULL << FATTR4_FILES_FREE)) {
+		INC64(attr->files_free);
+	}
+	if (bitmap & (1ULL << FATTR4_FILES_TOTAL)) {
+		INC64(attr->files_total);
+	}
+
+#if FS_LOCATIONS_CODE_WORKING
+	if (bitmap & (1ULL << FATTR4_FS_LOCATIONS)) {
+		encode_pathname(&attr->fs_locations.fs_root, &buf, &p, &buflen,
+				&alloc_len);
+	}
+#endif
+
+	if (bitmap & (1ULL << FATTR4_HIDDEN)) {
+		INC32(attr->hidden ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_HOMOGENEOUS)) {
+		INC32(attr->homogeneous ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_MAXFILESIZE)) {
+		INC64(attr->maxfilesize);
+	}
+	if (bitmap & (1ULL << FATTR4_MAXLINK)) {
+		INC32(attr->maxlink);
+	}
+	if (bitmap & (1ULL << FATTR4_MAXNAME)) {
+		INC32(attr->maxname);
+	}
+	if (bitmap & (1ULL << FATTR4_MAXREAD)) {
+		INC64(attr->maxread);
+	}
+	if (bitmap & (1ULL << FATTR4_MAXWRITE)) {
+		INC64(attr->maxwrite);
+	}
+
+#if 0
+	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
+		encode_utf8(&attr->mimetype, &buf, &p, &buflen, &alloc_len);
+	}
+#endif
+
+	if (bitmap & (1ULL << FATTR4_MODE)) {
+		INC32(attr->mode);
+	}
+	if (bitmap & (1ULL << FATTR4_NO_TRUNC)) {
+		INC32(attr->no_trunc ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_NUMLINKS)) {
+		INC32(attr->numlinks);
+	}
+	if (bitmap & (1ULL << FATTR4_OWNER)) {
+		nb.len = attr->owner.utf8string_len;
+		nb.val = attr->owner.utf8string_val;
+		INCBUF(&nb);
+	}
+	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
+		nb.len = attr->owner_group.utf8string_len;
+		nb.val = attr->owner_group.utf8string_val;
+		INCBUF(&nb);
+	}
+	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
+		INC64(attr->quota_avail_hard);
+	}
+	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_SOFT)) {
+		INC64(attr->quota_avail_soft);
+	}
+	if (bitmap & (1ULL << FATTR4_QUOTA_USED)) {
+		INC64(attr->quota_used);
+	}
+	if (bitmap & (1ULL << FATTR4_RAWDEV)) {
+		/* FIXME: correct order of these two dwords? */
+		INC32(attr->rawdev.specdata1);
+		INC32(attr->rawdev.specdata2);
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_AVAIL)) {
+		INC64(attr->space_avail);
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_FREE)) {
+		INC64(attr->space_free);
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_TOTAL)) {
+		INC64(attr->space_total);
+	}
+	if (bitmap & (1ULL << FATTR4_SPACE_USED)) {
+		INC64(attr->space_used);
+	}
+	if (bitmap & (1ULL << FATTR4_SYSTEM)) {
+		INC32(attr->system ? 1 : 0);
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_ACCESS)) {
+		INC64(attr->time_access.seconds);
+		INC32(attr->time_access.nseconds);
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_BACKUP)) {
+		INC64(attr->time_backup.seconds);
+		INC32(attr->time_backup.nseconds);
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_CREATE)) {
+		INC64(attr->time_create.seconds);
+		INC32(attr->time_create.nseconds);
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_DELTA)) {
+		INC64(attr->time_delta.seconds);
+		INC32(attr->time_delta.nseconds);
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_METADATA)) {
+		INC64(attr->time_metadata.seconds);
+		INC32(attr->time_metadata.nseconds);
+	}
+	if (bitmap & (1ULL << FATTR4_TIME_MODIFY)) {
+		INC64(attr->time_modify.seconds);
+		INC32(attr->time_modify.nseconds);
+	}
+	if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID)) {
+		INC64(attr->mounted_on_fileid);
+	}
+
+	INC8(0);
+
+	return total;
+}
+
 nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap = attr->bitmap;
