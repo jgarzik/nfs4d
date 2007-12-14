@@ -692,16 +692,18 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	uint32_t arg_access = CR32();
+	uint32_t arg_access;
 	ACCESS4resok resok;
-
-	if (debugging)
-		syslog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
 
 	if (cur->len < sizeof(ACCESS4args)) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
+
+	arg_access = CR32();
+
+	if (debugging)
+		syslog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
