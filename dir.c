@@ -651,7 +651,10 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* subtract READDIR4resok header and footer size */
-	maxcount -= (8 + 4);
+	if (maxcount >= (8 + 4))
+		maxcount -= (8 + 4);
+	else
+		maxcount = 0;
 
 	/* 12 is just a handy number I saw I in some source or slide.
 	 * the code has additional too-small checks, so its ok to pass
@@ -698,7 +701,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 	}
 
-	WR32(ri.stop ? 1 : 0);		/* reply eof */
+	WR32((ri.stop || !ri.entry_cont) ? 1 : 0);		/* reply eof */
 
 out:
 	*status_p = htonl(status);
