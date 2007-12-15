@@ -41,11 +41,14 @@ nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
 #define INCMAP(x)	total += (4 * 3)
 #define INCBUF(nb)	total += (XDR_QUADLEN((nb)->len) * 4)
 
-unsigned int fattr_size(struct nfs_fattr_set *attr)
+unsigned int fattr_size(const struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap = attr->bitmap;
 	struct nfs_buf nb;
 	unsigned int total = 0;
+
+	if (!attr->bitmap)
+		return 0;
 
 	INC32(2);	/* bitmap array size */
 	INC8(4);	/* bitmap array[0] */
@@ -463,13 +466,12 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 	uint64_t bitmap = attr->bitmap;
 	uint64_t bitmap_out = 0;
 	struct nfs_buf nb;
-	char *end, *start = WRSKIP(0);
-	uint32_t *bmap[2], *attr_len;
+	uint32_t *bmap[2];
 
 	WR32(2);		/* bitmap array size */
 	bmap[0] = WRSKIP(4);	/* bitmap array[0] */
 	bmap[1] = WRSKIP(4);	/* bitmap array[1] */
-	attr_len = WRSKIP(4);	/* attribute buffer length */
+	WR32(fattr_size(attr));
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
 		WRMAP(fattr_supported_mask);
@@ -713,11 +715,8 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 
 	*_bitmap_out = bitmap_out;
 
-	end = WRSKIP(0);
-
 	*bmap[0] = htonl(bitmap_out);
 	*bmap[1] = htonl(bitmap_out >> 32);
-	*attr_len = htonl(end - start);
 
 	return NFS4_OK;
 }

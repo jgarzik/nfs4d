@@ -527,13 +527,15 @@ struct readdir_info {
 
 	uint64_t last_cookie;
 
-	uint32_t *entry_cont;
+	uint32_t *val_follows;
 
 	nfsstat4 status;
 
 	bool cookie_found;
 	bool stop;
 	bool hit_limit;
+
+	unsigned int n_results;
 };
 
 static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
@@ -592,10 +594,8 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	ri->maxcount -= maxlen;
 
 	/* write value to previous entry4.nextentry */
-	if (ri->entry_cont) {
-		*ri->entry_cont = htonl(1);
-		ri->entry_cont = NULL;
-	}
+	*ri->val_follows = htonl(1);
+	ri->val_follows = NULL;
 
 	WR64(cookie);			/* entry4.cookie */
 
@@ -604,13 +604,16 @@ static void readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	WRBUF(&nb);
 
 	/* entry4.attrs */
+	attr.bitmap = ri->attr_request;
 	ri->status = wr_fattr(&attr, &bitmap_out, writes, wr);
 	if (ri->status != NFS4_OK) {
 		ri->stop = true;
 		goto out;
 	}
 
-	ri->entry_cont = WRSKIP(4);	/* entry4.nextentry */
+	ri->val_follows = WRSKIP(4);	/* entry4.nextentry */
+
+	ri->n_results++;
 
 out:
 	fattr_free(&attr);
@@ -621,7 +624,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	uint32_t dircount, maxcount, *status_p, *entry_cont;
+	uint32_t dircount, maxcount, *status_p;
 	struct readdir_info ri;
 	uint64_t cookie, attr_request;
 	verifier4 *cookie_verf;
@@ -676,8 +679,6 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* FIXME: server verifier isn't the best for dir verf */
 	WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
 
-	entry_cont = WRSKIP(4);
-
 	memset(&ri, 0, sizeof(ri));
 	ri.cookie = cookie;
 	ri.dircount = dircount;
@@ -686,22 +687,20 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	ri.status = NFS4_OK;
 	ri.writes = writes;
 	ri.wr = wr;
+	ri.val_follows = WRSKIP(4);
 
 	g_hash_table_foreach(ino->u.dir, readdir_iter, &ri);
 
 	/* terminate final entry4.nextentry and dirlist4.entries */
-	if (ri.entry_cont) {
-		*ri.entry_cont = htonl(0);
-		*entry_cont = htonl(1);
-	} else {
-		*entry_cont = htonl(0);
-		if (ri.cookie_found) {
-			status = NFS4ERR_TOOSMALL;
-			goto out;
-		}
+	if (ri.val_follows)
+		*ri.val_follows = htonl(0);
+
+	if (ri.cookie_found && !ri.n_results) {
+		status = NFS4ERR_TOOSMALL;
+		goto out;
 	}
 
-	WR32((ri.stop || !ri.entry_cont) ? 1 : 0);		/* reply eof */
+	WR32(ri.hit_limit ? 0 : 1);		/* reply eof */
 
 out:
 	*status_p = htonl(status);

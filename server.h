@@ -405,7 +405,7 @@ extern nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr);
 extern nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *bitmap_out,
 		     struct list_head *writes, struct rpc_write **wr);
 extern bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
-extern unsigned int fattr_size(struct nfs_fattr_set *attr);
+extern unsigned int fattr_size(const struct nfs_fattr_set *attr);
 extern void fattr_free(struct nfs_fattr_set *attr);
 extern void fattr_fill(const struct nfs_inode *ino, struct nfs_fattr_set *attr);
 extern void print_fattr(const char *pfx, const struct nfs_fattr_set *attr);
