@@ -8,12 +8,19 @@ TESTS =			\
 	start-daemon	\
 	pid-exists	\
 	null		\
+	basic		\
 	stop-daemon
 
 noinst_PROGRAMS =	\
-	null
+	null		\
+	basic
 
-null_SOURCES = nfs4_prot.h nfs4_prot_clnt.c nfs4_prot_client.c nfs4_prot_xdr.c
+noinst_LIBRARIES = libnfstest.a
+
+libnfstest_a_SOURCES = nfs4_prot.h nfs4_prot_clnt.c nfs4_prot_client.c nfs4_prot_xdr.c
+
+null_LDADD	= libnfstest.a
+basic_LDADD	= libnfstest.a
 
 TESTS_ENVIRONMENT=top_srcdir=$(top_srcdir)
 

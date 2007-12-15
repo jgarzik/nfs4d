@@ -54,7 +54,7 @@ static const char *arg_str[] = {
 	"RELEASE_LOCKOWNER",
 };
 
-static const char *name_nfs4status[] = {
+const char *name_nfs4status[] = {
 	[NFS4_OK] = "NFS4_OK",
 	[NFS4ERR_PERM] = "NFS4ERR_PERM",
 	[NFS4ERR_NOENT] = "NFS4ERR_NOENT",
@@ -123,7 +123,7 @@ static const char *name_nfs4status[] = {
 	[NFS4ERR_CB_PATH_DOWN] = "NFS4ERR_CB_PATH_DOWN",
 };
 
-static void print_resop(nfs_resop4 *res)
+void print_resop(nfs_resop4 *res)
 {
 	printf("  resop: %s\n", arg_str[res->resop]);
 
@@ -142,16 +142,12 @@ static void print_resop(nfs_resop4 *res)
 	}
 }
 
+extern void test(CLIENT *);
+
 void
 nfs4_program_4(char *host)
 {
 	CLIENT *clnt;
-	void  *result_1;
-	char *nfsproc4_null_4_arg;
-	COMPOUND4res  *res;
-	COMPOUND4args  arg;
-	nfs_argop4 args[2];
-	int i;
 
 #ifndef	DEBUG
 	clnt = clnt_create (host, NFS4_PROGRAM, NFS_V4, "tcp");
@@ -163,49 +159,11 @@ nfs4_program_4(char *host)
 
 	clnt->cl_auth = authunix_create_default();
 
-	result_1 = nfsproc4_null_4((void*)&nfsproc4_null_4_arg, clnt);
-	if (result_1 == (void *) NULL)
-		exit(1);
+	test(clnt);
 
-	result_1 = nfsproc4_null_4((void*)&nfsproc4_null_4_arg, clnt);
-	if (result_1 == (void *) NULL)
-		exit(1);
-
-	exit(0);
-
-	memset(&arg, 0, sizeof(arg));
-	arg.tag.utf8string_val = "blah";
-	arg.tag.utf8string_len = strlen(arg.tag.utf8string_val);
-	arg.minorversion = 0;
-	arg.argarray.argarray_len = 2;
-	arg.argarray.argarray_val = args;
-
-	args[0].argop = OP_PUTROOTFH;
-
-	args[1].argop = OP_LOOKUP;
-	args[1].nfs_argop4_u.oplookup.objname.utf8string_val = "tmp";
-	args[1].nfs_argop4_u.oplookup.objname.utf8string_len =
-		strlen(args[1].nfs_argop4_u.oplookup.objname.utf8string_val);
-
-	res = nfsproc4_compound_4(&arg, clnt);
-	if (res == (COMPOUND4res *) NULL) {
-		clnt_perror (clnt, "call failed");
-		goto out;
-	}
-
-	printf(	"COMPOUND result:\n"
-		"status %s\n"
-		"tag %.*s\n"
-		"numres %u\n",
-		name_nfs4status[res->status],
-		res->tag.utf8string_len,
-		res->tag.utf8string_val,
-		res->resarray.resarray_len);
-
-	for (i = 0; i < res->resarray.resarray_len; i++)
-		print_resop(&res->resarray.resarray_val[i]);
-
+#if 0
 out:
+#endif
 #ifndef	DEBUG
 	clnt_destroy (clnt);
 #endif	 /* DEBUG */
