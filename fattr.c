@@ -8,6 +8,7 @@ enum {
 	FATTR_LAST		= FATTR4_MOUNTED_ON_FILEID,
 };
 
+#if 0
 static void encode_acl(const fattr4_acl *acl,
 		       struct list_head *writes, struct rpc_write **wr)
 {
@@ -28,6 +29,7 @@ static void encode_acl(const fattr4_acl *acl,
 		WRBUF(&nb);
 	}
 }
+#endif
 
 nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
 {
@@ -326,8 +328,10 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 		attr->chown_restricted = CR32();
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		nb = (struct nfs_buf *) &attr->filehandle;
-		CURBUF(nb);
+		if (CR32() == 4)
+			attr->filehandle = CR32();
+		else
+			status = NFS4ERR_BADXDR;
 	}
 	if (bitmap & (1ULL << FATTR4_FILEID)) {
 		attr->fileid = CR64();
@@ -522,10 +526,14 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		WR32(attr->rdattr_error);
 		bitmap_out |= (1ULL << FATTR4_RDATTR_ERROR);
 	}
+
+#if 0
 	if (bitmap & (1ULL << FATTR4_ACL)) {
 		encode_acl(&attr->acl, writes, wr);
 		bitmap_out |= (1ULL << FATTR4_ACL);
 	}
+#endif
+
 	if (bitmap & (1ULL << FATTR4_ACLSUPPORT)) {
 		WR32(attr->aclsupport);
 		bitmap_out |= (1ULL << FATTR4_ACLSUPPORT);
@@ -551,7 +559,7 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		bitmap_out |= (1ULL << FATTR4_CHOWN_RESTRICTED);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		WR32(1);
+		WR32(4);
 		WR32(attr->filehandle);
 		bitmap_out |= (1ULL << FATTR4_FILEHANDLE);
 	}

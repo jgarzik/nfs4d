@@ -264,7 +264,7 @@ struct nfs_inode {
 	uint32_t		gid;
 
 	union {
-		GHashTable	*dir;		/* state for a directory */
+		GTree		*dir;		/* state for a directory */
 		char		*linktext;	/* state for a symlink */
 		uint32_t	devdata[2];
 	} u;

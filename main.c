@@ -681,6 +681,12 @@ static void term_signal(int signal)
 	exit(1);
 }
 
+static void srv_exit_cleanup(void)
+{
+	if (unlink(pid_fn) < 0)
+		syslogerr("unlink");
+}
+
 int main (int argc, char *argv[])
 {
 	GMainLoop *loop;
@@ -696,6 +702,7 @@ int main (int argc, char *argv[])
 		return 1;
 	}
 
+	atexit(srv_exit_cleanup);
 	signal(SIGHUP, SIG_IGN);
 	signal(SIGINT, term_signal);
 	signal(SIGTERM, term_signal);

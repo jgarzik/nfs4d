@@ -78,7 +78,7 @@ static void inode_free(struct nfs_inode *ino)
 	switch (ino->type) {
 	case NF4DIR:
 		if (ino->u.dir)
-			g_hash_table_destroy(ino->u.dir);
+			g_tree_destroy(ino->u.dir);
 		break;
 	case NF4LNK:
 		free(ino->u.linktext);
@@ -138,6 +138,11 @@ struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)
 	return ino;
 }
 
+static gint cstr_compare(gconstpointer a, gconstpointer b, gpointer user_data)
+{
+	return strcmp(a, b);
+}
+
 static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 {
 	struct nfs_inode *ino = inode_new(cxn);
@@ -146,8 +151,7 @@ static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 
 	ino->type = NF4DIR;
 
-	ino->u.dir = g_hash_table_new_full(g_str_hash, g_str_equal,
-					   free, dirent_free);
+	ino->u.dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
 	if (!ino->u.dir) {
 		inode_free(ino);
 		return NULL;

@@ -123,18 +123,45 @@ const char *name_nfs4status[] = {
 	[NFS4ERR_CB_PATH_DOWN] = "NFS4ERR_CB_PATH_DOWN",
 };
 
+static void print_bmap(const bitmap4 *map)
+{
+	uint64_t v = 0;
+
+	if (map->bitmap4_len > 0)
+		v = map->bitmap4_val[0];
+	if (map->bitmap4_len > 1)
+		v |= ((uint64_t)map->bitmap4_val[1]) << 32;
+
+	printf("    bitmap: %Lx\n", (unsigned long long) v);
+}
+
+static void print_fattr (const fattr4 *attr)
+{
+	print_bmap(&attr->attrmask);
+}
+
 void print_resop(nfs_resop4 *res)
 {
 	printf("  resop: %s\n", arg_str[res->resop]);
 
 	switch(res->resop) {
-	case OP_PUTROOTFH:
+	case OP_CREATE:
 		printf("    status: %s\n",
-			name_nfs4status[res->nfs_resop4_u.opputrootfh.status]);
+			name_nfs4status[res->nfs_resop4_u.opcreate.status]);
+		break;
+	case OP_GETATTR:
+		printf("    status: %s\n",
+			name_nfs4status[res->nfs_resop4_u.opgetattr.status]);
+		if (res->nfs_resop4_u.opgetattr.status == NFS4_OK)
+			print_fattr(&res->nfs_resop4_u.opgetattr.GETATTR4res_u.resok4.obj_attributes);
 		break;
 	case OP_LOOKUP:
 		printf("    status: %s\n",
 			name_nfs4status[res->nfs_resop4_u.oplookup.status]);
+		break;
+	case OP_PUTROOTFH:
+		printf("    status: %s\n",
+			name_nfs4status[res->nfs_resop4_u.opputrootfh.status]);
 		break;
 	default:
 		printf("    unknown operation\n");
