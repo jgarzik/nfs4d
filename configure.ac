@@ -61,5 +61,5 @@ AM_PATH_GNET_2_0(2.0.5)
 
 dnl AC_SUBST(GSSRPC_LIBS)
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([test/Makefile Makefile])
 AC_OUTPUT

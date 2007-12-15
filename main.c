@@ -30,6 +30,7 @@ struct timeval current_time;
 int debugging = 0;
 struct nfs_server srv;
 static bool opt_foreground;
+static char *pid_fn = "nfs4_ramd.pid";
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
 
@@ -61,6 +62,8 @@ static struct argp_option options[] = {
 	  "Run daemon in foreground" },
 	{ "port", 'p', "PORT", 0,
 	  "Bind to TCP port PORT (def. 2049)" },
+	{ "pid", 'P', "FILE", 0,
+	  "Write daemon process id to FILE" },
 
 	{ }
 };
@@ -552,10 +555,49 @@ static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
 	gnet_conn_timeout(conn, TMOUT_READ_HDR);
 }
 
+static void syslogerr(const char *prefix)
+{
+	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
+}
+
+static void write_pid_file(void)
+{
+	char str[32], *s;
+	size_t bytes;
+
+	sprintf(str, "%u\n", getpid());
+	s = str;
+	bytes = strlen(s);
+
+	int fd = open(pid_fn, O_WRONLY | O_CREAT | O_EXCL, 0666);
+	if (fd < 0) {
+		syslogerr("open pid");
+		exit(1);
+	}
+
+	while (bytes > 0) {
+		ssize_t rc = write(fd, s, bytes);
+		if (rc < 0) {
+			syslogerr("write pid");
+			exit(1);
+		}
+
+		bytes -= rc;
+		s += rc;
+	}
+
+	if (close(fd) < 0) {
+		syslogerr("close pid");
+		exit(1);
+	}
+}
+
 static GMainLoop *init_server(void)
 {
 	struct timezone tz = { 0, 0 };
 	GMainLoop *loop;
+
+	write_pid_file();
 
 	loop = g_main_loop_new(NULL, FALSE);
 
@@ -613,6 +655,10 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 			fprintf(stderr, "invalid NFS port %s\n", arg);
 			argp_usage(state);
 		}
+		break;
+
+	case 'P':
+		pid_fn = arg;
 		break;
 
 	case ARGP_KEY_ARG:

@@ -1,0 +1,13 @@
+#!/bin/sh
+
+if [ -f nfs4_ramd.pid ]
+then
+	echo "pid file found.  daemon still running?"
+	exit 1
+fi
+
+../nfs4_ramd -P $PWD/nfs4_ramd.pid
+
+sleep 2
+
+exit 0

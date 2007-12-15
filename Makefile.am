@@ -2,6 +2,8 @@
 ## Toplevel Makefile.am
 ##
 
+SUBDIRS		= test
+
 INCLUDES	= @GNET_CFLAGS@
 
 sbin_PROGRAMS	= nfs4_ramd
