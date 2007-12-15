@@ -232,8 +232,9 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* we only support reading from regular files */
 	if (ino->type != NF4REG) {
-		syslog(LOG_INFO, "trying to read to file of type %s",
-		       name_nfs_ftype4[ino->type]);
+		if (debugging)
+			syslog(LOG_INFO, "trying to read to file of type %s",
+			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
 		else
