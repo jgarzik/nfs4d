@@ -475,7 +475,7 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 	WR32(2);		/* bitmap array size */
 	bmap[0] = WRSKIP(4);	/* bitmap array[0] */
 	bmap[1] = WRSKIP(4);	/* bitmap array[1] */
-	WR32(fattr_size(attr));
+	WR32(fattr_size(attr) - 16);
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
 		WRMAP(fattr_supported_mask);

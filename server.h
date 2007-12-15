@@ -122,9 +122,7 @@ enum {
 		1ULL << FATTR4_TIME_CREATE,
 
 	fattr_read_only_mask = fattr_mandatory_ro_mask |
-#if 0
 		1ULL << FATTR4_ACLSUPPORT |
-#endif
 		1ULL << FATTR4_CANSETTIME |
 		1ULL << FATTR4_CASE_INSENSITIVE |
 		1ULL << FATTR4_CASE_PRESERVING |
