@@ -257,6 +257,9 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	attr->bitmap = bitmap = CURMAP();
 	attr_len = CR32();	/* attribute buffer length */
 
+	if (bitmap & ~fattr_supported_mask)
+		return NFS4ERR_ATTRNOTSUPP;
+
 	start_len = cur->len;
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
