@@ -540,8 +540,8 @@ out:
 	WR32(status);
 	if (status == NFS4_OK) {
 		WR32(cinfo.atomic ? 1 : 0);
-		WR32(cinfo.before);
-		WR32(cinfo.after);
+		WR64(cinfo.before);
+		WR64(cinfo.after);
 		WRMAP(attrset);
 	}
 	return status;
@@ -601,7 +601,7 @@ out:
 	if (debugging && !printed)
 		syslog(LOG_INFO, "op GETATTR");
 
-	*status_p = status;
+	*status_p = htonl(status);
 	return status;
 }
 
@@ -866,10 +866,17 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *ino;
 	struct nfs_fattr_set fattr;
 	bool match;
+	bool printed = false;
 
 	status = cur_readattr(cur, &fattr);
 	if (status != NFS4_OK)
 		goto out;
+
+	if (debugging) {
+		printed = true;
+		syslog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
+		print_fattr("   [N]VERIFY", &fattr);
+	}
 
 	if ((fattr.bitmap & (1ULL << FATTR4_RDATTR_ERROR)) ||
 	    (fattr.bitmap & fattr_write_only_mask)) {
@@ -898,10 +905,12 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_NOT_SAME;
 	}
 
-
 out_free:
 	fattr_free(&fattr);
 out:
+	if (!printed && debugging)
+		syslog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
+
 	WR32(status);
 	return status;
 }

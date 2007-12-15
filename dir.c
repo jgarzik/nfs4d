@@ -583,7 +583,8 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		goto out;
 	}
 
-	maxlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4) + fattr_size(&attr) + 4;
+	maxlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4) +
+		 16 + fattr_size(&attr) + 4;
 	if (maxlen > ri->maxcount) {
 		ri->hit_limit = true;
 		ri->stop = true;
@@ -610,6 +611,10 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->stop = true;
 		goto out;
 	}
+
+	if (debugging)
+		syslog(LOG_DEBUG, "   READDIR ent: '%s' (MAP:%Lx WRLEN:%u)",
+			name, (unsigned long long) bitmap_out, (*wr)->len);
 
 	ri->val_follows = WRSKIP(4);	/* entry4.nextentry */
 
@@ -650,6 +655,15 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		print_fattr_bitmap("op READDIR", attr_request);
 	}
 
+	if (cookie == 1 || cookie == 2) {
+		status = NFS4ERR_BAD_COOKIE;
+		goto out;
+	}
+	if (attr_request & fattr_write_only_mask) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
 	if (cookie &&
 	    memcmp(cookie_verf, &srv.instance_verf, sizeof(verifier4))) {
 		status = NFS4ERR_NOT_SAME;
@@ -661,8 +675,8 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 
 	/* subtract READDIR4resok header and footer size */
-	if (maxcount >= (8 + 4))
-		maxcount -= (8 + 4);
+	if (maxcount >= (8 + 4 + 4))
+		maxcount -= (8 + 4 + 4);
 	else
 		maxcount = 0;
 
@@ -670,7 +684,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	 * the code has additional too-small checks, so its ok to pass
 	 * this test yet still be too small
 	 */
-	if (dircount < 12 || maxcount < 12) {
+	if (!dircount || !maxcount) {
 		status = NFS4ERR_TOOSMALL;
 		goto out;
 	}

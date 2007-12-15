@@ -49,14 +49,6 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 	struct nfs_buf nb;
 	unsigned int total = 0;
 
-	if (!attr->bitmap)
-		return 0;
-
-	INC32(2);	/* bitmap array size */
-	INC8(4);	/* bitmap array[0] */
-	INC8(4);	/* bitmap array[1] */
-	INC8(4);	/* attribute buffer length */
-
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
 		INCMAP(fattr_supported_mask);
 	}
@@ -254,7 +246,7 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 
 nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 {
-	uint64_t bitmap = attr->bitmap;
+	uint64_t bitmap;
 	struct nfs_buf *nb;
 	uint32_t attr_len;
 	nfsstat4 status = NFS4_OK;
@@ -262,7 +254,7 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 
 	memset(attr, 0, sizeof(*attr));
 
-	bitmap = CURMAP();
+	attr->bitmap = bitmap = CURMAP();
 	attr_len = CR32();	/* attribute buffer length */
 
 	start_len = cur->len;
@@ -475,7 +467,7 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 	WR32(2);		/* bitmap array size */
 	bmap[0] = WRSKIP(4);	/* bitmap array[0] */
 	bmap[1] = WRSKIP(4);	/* bitmap array[1] */
-	WR32(fattr_size(attr) - 16);
+	WR32(fattr_size(attr));
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
 		WRMAP(fattr_supported_mask);

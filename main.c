@@ -31,6 +31,7 @@ int debugging = 0;
 struct nfs_server srv;
 static bool opt_foreground;
 static char *pid_fn = "nfs4_ramd.pid";
+static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
 
@@ -590,6 +591,8 @@ static void write_pid_file(void)
 		syslogerr("close pid");
 		exit(1);
 	}
+
+	pid_opened = true;
 }
 
 static GMainLoop *init_server(void)
@@ -683,7 +686,7 @@ static void term_signal(int signal)
 
 static void srv_exit_cleanup(void)
 {
-	if (unlink(pid_fn) < 0)
+	if (pid_opened && unlink(pid_fn) < 0)
 		syslogerr("unlink");
 }
 

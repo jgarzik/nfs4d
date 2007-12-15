@@ -152,7 +152,7 @@ static nfsstat4 cli_init(struct opaque_auth *cred, struct opaque_auth *verf,
 		syslog(LOG_INFO, "AUTH_NONE");
 		cxn->auth.type = auth_none;
 
-		if (debugging)
+		if (debugging > 1)
 			syslog(LOG_INFO, "RPC CRED None (len %d)",
 				cred->oa_length);
 		break;
@@ -184,7 +184,7 @@ static nfsstat4 cli_init(struct opaque_auth *cred, struct opaque_auth *verf,
 
 		cxn->auth.type = auth_unix;
 
-		if (debugging)
+		if (debugging > 1)
 			syslog(LOG_INFO, "RPC CRED Unix (uid %d gid %d len %d)",
 				cxn->auth.u.up.uid,
 				cxn->auth.u.up.gid,
@@ -474,18 +474,15 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 		results++;	/* even failed operations have results */
 
 		status = nfs_op(cxn, cur, writes, wr);
-		if (status != NFS4_OK) {
-			if (debugging)
-				syslog(LOG_WARNING, "compound failed (%s)",
-					name_nfs4status[status]);
+		if (status != NFS4_OK)
 			break;
-		}
 	}
 
 out:
 	if (debugging || (i > 500))
-		syslog(LOG_INFO, "arg list end (%u of %u args, %u results)",
-		       results, n_args, results);
+		syslog(LOG_INFO, "compound end (%u args, %u results, status %s)",
+		       n_args, results,
+		       name_nfs4status[status]);
 
 	free(cxn);
 	*stat_p = htonl(status);
