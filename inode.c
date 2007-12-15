@@ -557,7 +557,7 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	status_p = WRSKIP(4);		/* ending status */
 
-	if (cur->len < 12) {
+	if (cur->len < 4) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
