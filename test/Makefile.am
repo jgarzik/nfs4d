@@ -9,11 +9,13 @@ TESTS =			\
 	pid-exists	\
 	null		\
 	basic		\
+	getattr		\
 	stop-daemon
 
 noinst_PROGRAMS =	\
 	null		\
-	basic
+	basic		\
+	getattr
 
 noinst_LIBRARIES = libnfstest.a
 
@@ -21,6 +23,7 @@ libnfstest_a_SOURCES = nfs4_prot.h nfs4_prot_clnt.c nfs4_prot_client.c nfs4_prot
 
 null_LDADD	= libnfstest.a
 basic_LDADD	= libnfstest.a
+getattr_LDADD	= libnfstest.a
 
 TESTS_ENVIRONMENT=top_srcdir=$(top_srcdir)
 

@@ -233,11 +233,15 @@ main (int argc, char *argv[])
 {
 	char *host;
 
-	if (argc != 1) {
+	if (argc == 1)
+		host = "localhost";
+	else if (argc == 2)
+		host = argv[1];
+	else {
 		printf ("usage: %s\n", argv[0]);
 		exit (1);
 	}
-	host = "localhost";
+
 	nfs4_program_4 (host);
 #if 0
 	nfs4_callback_1 (host);

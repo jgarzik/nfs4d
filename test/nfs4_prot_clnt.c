@@ -29,12 +29,15 @@ COMPOUND4res *
 nfsproc4_compound_4(COMPOUND4args *argp, CLIENT *clnt)
 {
 	static COMPOUND4res clnt_res;
+	enum clnt_stat stat;
 
 	memset((char *)&clnt_res, 0, sizeof(clnt_res));
-	if (clnt_call (clnt, NFSPROC4_COMPOUND,
+	stat = clnt_call (clnt, NFSPROC4_COMPOUND,
 		(xdrproc_t) xdr_COMPOUND4args, (caddr_t) argp,
 		(xdrproc_t) xdr_COMPOUND4res, (caddr_t) &clnt_res,
-		TIMEOUT) != RPC_SUCCESS) {
+		TIMEOUT);
+	if (stat != RPC_SUCCESS) {
+		fprintf(stderr, "%s\n", clnt_sperrno(stat));
 		return (NULL);
 	}
 	return (&clnt_res);
