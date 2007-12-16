@@ -244,6 +244,9 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	attr->bitmap = bitmap = CURMAP();
 	attr_len = CR32();	/* attribute buffer length */
 
+	if (bitmap && (attr_len < 4))
+		return NFS4ERR_BADXDR;
+
 	if (bitmap & ~fattr_supported_mask)
 		return NFS4ERR_ATTRNOTSUPP;
 
@@ -365,8 +368,6 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	}
 	if (bitmap & (1ULL << FATTR4_MODE)) {
 		attr->mode = CR32();
-		if (!attr->mode)
-			status = NFS4ERR_BADXDR;
 	}
 	if (bitmap & (1ULL << FATTR4_NO_TRUNC)) {
 		attr->no_trunc = CR32();
@@ -420,6 +421,15 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 		attr->time_access.seconds = CR64();
 		attr->time_access.nseconds = CR32();
 	}
+	if (bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
+		if (CR32() == SET_TO_CLIENT_TIME4) {
+			attr->time_access_set.seconds = CR64();
+			attr->time_access_set.nseconds = CR32();
+		} else {
+			attr->time_access_set.seconds = current_time.tv_sec;
+			attr->time_access_set.nseconds = 0;
+		}
+	}
 	if (bitmap & (1ULL << FATTR4_TIME_BACKUP)) {
 		attr->time_backup.seconds = CR64();
 		attr->time_backup.nseconds = CR32();
@@ -440,13 +450,22 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 		attr->time_modify.seconds = CR64();
 		attr->time_modify.nseconds = CR32();
 	}
+	if (bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
+		if (CR32() == SET_TO_CLIENT_TIME4) {
+			attr->time_modify_set.seconds = CR64();
+			attr->time_modify_set.nseconds = CR32();
+		} else {
+			attr->time_modify_set.seconds = current_time.tv_sec;
+			attr->time_modify_set.nseconds = 0;
+		}
+	}
 	if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID)) {
 		attr->mounted_on_fileid = CR64();
 	}
 
 	end_len = cur->len;
 
-	if ((start_len - end_len) > attr_len)
+	if (attr_len != (start_len - end_len))
 		status = NFS4ERR_BADXDR;
 
 out:

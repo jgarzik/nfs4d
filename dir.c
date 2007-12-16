@@ -104,6 +104,15 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	CURBUF(&objname);
 
+	if (!objname.len) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+	if (!objname.val) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
 	if (objname.len > SRV_MAX_NAME) {
 		status = NFS4ERR_NAMETOOLONG;
 		goto out;

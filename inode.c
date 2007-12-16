@@ -303,30 +303,22 @@ size_done:
 	}
 
 	if (attr->bitmap & (1ULL << FATTR4_TIME_ACCESS_SET)) {
-		if (attr->time_access_set.settime4_u.time.nseconds > 999999999){
+		if (attr->time_access_set.nseconds > 999999999){
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
 
-		if (attr->time_access_set.set_it == SET_TO_CLIENT_TIME4)
-			ino->atime =
-			      attr->time_access_set.settime4_u.time.seconds;
-		else
-			ino->atime = current_time.tv_sec;
+		ino->atime = attr->time_access_set.seconds;
 
 		bitmap_set |= (1ULL << FATTR4_TIME_ACCESS_SET);
 	}
 	if (attr->bitmap & (1ULL << FATTR4_TIME_MODIFY_SET)) {
-		if (attr->time_modify_set.settime4_u.time.nseconds > 999999999){
+		if (attr->time_modify_set.nseconds > 999999999){
 			status = NFS4ERR_INVAL;
 			goto out;
 		}
 
-		if (attr->time_modify_set.set_it == SET_TO_CLIENT_TIME4)
-			ino->mtime =
-			      attr->time_modify_set.settime4_u.time.seconds;
-		else
-			ino->mtime = current_time.tv_sec;
+		ino->mtime = attr->time_modify_set.seconds;
 
 		bitmap_set |= (1ULL << FATTR4_TIME_MODIFY_SET);
 	}

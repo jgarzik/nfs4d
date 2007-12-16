@@ -49,7 +49,7 @@ enum server_limits {
 	SRV_UID_NOBODY		= 65537,	/* arbitrary >64K number */
 	SRV_GID_NOBODY		= 65537,	/* arbitrary >64K number */
 
-	SRV_MAX_COMPOUND	= 30000,	/* arbitrary */
+	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
 	SRV_STATE_HIGH_WAT	= 100000,	/* start gc at this size */
 	SRV_STATE_LOW_WAT	= 33000,	/* stop gc at this limit */
@@ -337,13 +337,17 @@ struct nfs_fattr_set {
 	fattr4_space_used		space_used;
 	fattr4_system			system;
 	fattr4_time_access		time_access;
-	fattr4_time_access_set		time_access_set;
+
+	nfstime4			time_access_set;
+
 	fattr4_time_backup		time_backup;
 	fattr4_time_create		time_create;
 	fattr4_time_delta		time_delta;
 	fattr4_time_metadata		time_metadata;
 	fattr4_time_modify		time_modify;
-	fattr4_time_modify_set		time_modify_set;
+
+	nfstime4			time_modify_set;
+
 	fattr4_mounted_on_fileid	mounted_on_fileid;
 };
 

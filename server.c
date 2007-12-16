@@ -333,7 +333,52 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return NFS4ERR_BADXDR;
 
 	op = CR32();			/* read argop */
-	WR32(op);			/* write resop */
+
+	switch (op) {
+	case OP_ACCESS:
+	case OP_CLOSE:
+	case OP_COMMIT:
+	case OP_CREATE:
+	case OP_GETATTR:
+	case OP_GETFH:
+	case OP_LINK:
+	case OP_LOCK:
+	case OP_LOCKT:
+	case OP_LOCKU:
+	case OP_LOOKUP:
+	case OP_LOOKUPP:
+	case OP_NVERIFY:
+	case OP_OPEN:
+	case OP_OPEN_CONFIRM:
+	case OP_OPEN_DOWNGRADE:
+	case OP_PUTFH:
+	case OP_PUTPUBFH:
+	case OP_PUTROOTFH:
+	case OP_READ:
+	case OP_READDIR:
+	case OP_READLINK:
+	case OP_REMOVE:
+	case OP_RENAME:
+	case OP_RESTOREFH:
+	case OP_SAVEFH:
+	case OP_SECINFO:
+	case OP_SETATTR:
+	case OP_SETCLIENTID:
+	case OP_SETCLIENTID_CONFIRM:
+	case OP_VERIFY:
+	case OP_WRITE:
+	case OP_DELEGPURGE:
+	case OP_DELEGRETURN:
+	case OP_RENEW:
+	case OP_RELEASE_LOCKOWNER:
+	case OP_OPENATTR:
+		WR32(op);			/* write resop */
+		break;
+
+	default:
+		WR32(NFS4ERR_OP_ILLEGAL);	/* write resop */
+		break;
+	}
 
 	switch (op) {
 	case OP_ACCESS:
@@ -464,7 +509,7 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 	 * pathological case in pynfs.  we don't really have
 	 * any inherent limits here.
 	 */
-	if (n_args > SRV_MAX_COMPOUND) {
+	if (n_args > SRV_MAX_COMPOUND_OPS) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
