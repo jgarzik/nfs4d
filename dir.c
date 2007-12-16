@@ -110,8 +110,12 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	status = dir_curfh(cxn, &ino);
-	if (status != NFS4_OK)
+	if (status != NFS4_OK) {
+		if ((status == NFS4ERR_NOTDIR) &&
+		    (ino->type == NF4LNK))
+			status = NFS4ERR_SYMLINK;
 		goto out;
+	}
 
 	status = dir_lookup(ino, &objname, &dirent);
 	if (status != NFS4_OK)
@@ -522,10 +526,10 @@ struct readdir_info {
 	uint32_t maxcount;
 	uint64_t attr_request;
 
+	uint32_t dir_pos;
+
 	struct list_head *writes;
 	struct rpc_write **wr;
-
-	uint64_t last_cookie;
 
 	uint32_t *val_follows;
 
@@ -542,7 +546,6 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 {
 	char *name = key;
 	size_t name_len = strlen(name);
-	uint64_t cookie = blob_hash(BLOB_HASH_INIT, name, name_len);
 	uint64_t bitmap_out = 0;
 	struct nfs_dirent *de = value;
 	struct readdir_info *ri = user_data;
@@ -556,11 +559,11 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	if (ri->stop)
 		return TRUE;
 
-	ri->last_cookie = cookie;
-
 	if (!ri->cookie_found) {
-		if (ri->cookie && (ri->cookie != cookie))
+		if (ri->cookie && (ri->dir_pos <= ri->cookie)) {
+			ri->dir_pos++;
 			return FALSE;
+		}
 		ri->cookie_found = true;
 	}
 
@@ -598,7 +601,7 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	*ri->val_follows = htonl(1);
 	ri->val_follows = NULL;
 
-	WR64(cookie);			/* entry4.cookie */
+	WR64(ri->dir_pos);		/* entry4.cookie */
 
 	nb.len = name_len;		/* entry4.name */
 	nb.val = name;
@@ -607,10 +610,8 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	/* entry4.attrs */
 	attr.bitmap = ri->attr_request;
 	ri->status = wr_fattr(&attr, &bitmap_out, writes, wr);
-	if (ri->status != NFS4_OK) {
+	if (ri->status != NFS4_OK)
 		ri->stop = true;
-		goto out;
-	}
 
 	if (debugging)
 		syslog(LOG_DEBUG, "   READDIR ent: '%s' (MAP:%Lx WRLEN:%u)",
@@ -619,6 +620,7 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 	ri->val_follows = WRSKIP(4);	/* entry4.nextentry */
 
 	ri->n_results++;
+	ri->dir_pos++;
 
 out:
 	fattr_free(&attr);
@@ -664,6 +666,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* FIXME: very, very, very poor verifier */
 	if (cookie &&
 	    memcmp(cookie_verf, &srv.instance_verf, sizeof(verifier4))) {
 		status = NFS4ERR_NOT_SAME;
@@ -675,19 +678,13 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 
 	/* subtract READDIR4resok header and footer size */
-	if (maxcount >= (8 + 4 + 4))
-		maxcount -= (8 + 4 + 4);
-	else
-		maxcount = 0;
-
-	/* 12 is just a handy number I saw I in some source or slide.
-	 * the code has additional too-small checks, so its ok to pass
-	 * this test yet still be too small
-	 */
-	if (!dircount || !maxcount) {
+	if (maxcount < 16) {
 		status = NFS4ERR_TOOSMALL;
 		goto out;
 	}
+
+	maxcount -= (8 + 4 + 4);
+
 	if (dircount > SRV_MAX_READ || maxcount > SRV_MAX_READ) {
 		status = NFS4ERR_INVAL;
 		goto out;
@@ -705,6 +702,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	ri.writes = writes;
 	ri.wr = wr;
 	ri.val_follows = WRSKIP(4);
+	ri.dir_pos = 3;
 
 	g_tree_foreach(ino->u.dir, readdir_iter, &ri);
 
@@ -712,7 +710,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (ri.val_follows)
 		*ri.val_follows = htonl(0);
 
-	if (ri.cookie_found && !ri.n_results) {
+	if (ri.cookie_found && !ri.n_results && ri.hit_limit) {
 		status = NFS4ERR_TOOSMALL;
 		goto out;
 	}
