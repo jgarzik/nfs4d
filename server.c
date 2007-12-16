@@ -241,43 +241,30 @@ out:
 static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
-	nfsstat4 status = NFS4_OK;
-	bool printed = false;
+	nfsstat4 status;
 	struct nfs_buf name;
-	uint32_t flavor = 0;
+	struct nfs_inode *ino = NULL;
+
+	if (debugging)
+		syslog(LOG_INFO, "op SECINFO");
 
 	CURBUF(&name);				/* component name */
 
-	if (!cxn->current_fh) {
-		status = NFS4ERR_NOFILEHANDLE;
+	if (!name.len || !g_utf8_validate(name.val, name.len, NULL)) {
+		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
-	switch (cxn->auth.type) {
-	case auth_none:
-		flavor = AUTH_NONE;
-		break;
-	case auth_unix:
-		flavor = AUTH_SYS;
-		break;
-	}
-
-	if (debugging) {
-		syslog(LOG_INFO, "op SECINFO -> AUTH_%s",
-		       (flavor == AUTH_NONE) ? "NONE" : "SYS");
-		printed = true;
-	}
+	status = dir_curfh(cxn, &ino);
+	if (status != NFS4_OK)
+		goto out;
 
 out:
-	if (!printed) {
-		if (debugging)
-			syslog(LOG_INFO, "op SECINFO");
-	}
-
 	WR32(status);
 	if (status == NFS4_OK) {
-		WR32(1);		/* secinfo array size */
-		WR32(flavor);		/* secinfo flavor */
+		WR32(2);		/* secinfo array size */
+		WR32(AUTH_SYS);
+		WR32(AUTH_NONE);
 	}
 	return status;
 }
