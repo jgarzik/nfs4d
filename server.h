@@ -37,7 +37,7 @@ enum {
 
 	NFS_CLI_CONFIRMED	= (1 << 0),
 
-	RPC_WRITE_BUFSZ		= 8192 - 32,
+	RPC_WRITE_BUFSZ		= 8192,
 };
 
 enum server_limits {
@@ -183,8 +183,11 @@ struct curbuf {
 
 struct rpc_write {
 	unsigned int		len;		/* data buffer space used */
+	unsigned int		alloc_len;	/* data buffer allocated */
+
+	char			*buf;
+
 	struct list_head	node;
-	char			buf[RPC_WRITE_BUFSZ];
 };
 
 struct nfs_buf {

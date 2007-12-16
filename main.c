@@ -195,7 +195,31 @@ void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
 
 static unsigned int wr_free(struct rpc_write *wr)
 {
-	return RPC_WRITE_BUFSZ - wr->len;
+	return wr->alloc_len - wr->len;
+}
+
+static struct rpc_write *wr_alloc(unsigned int n)
+{
+	struct rpc_write *wr = calloc(1, sizeof(*wr));
+	if (!wr) {
+		syslog(LOG_ERR, "OOM in wr_skip()");
+		return NULL;
+	}
+
+	if (n < RPC_WRITE_BUFSZ)
+		n = RPC_WRITE_BUFSZ;
+
+	wr->buf = malloc(n);
+	if (!wr->buf) {
+		free(wr);
+		syslog(LOG_ERR, "OOM(2) in wr_skip()");
+		return NULL;
+	}
+
+	wr->alloc_len = n;
+	INIT_LIST_HEAD(&wr->node);
+
+	return wr;
 }
 
 void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
@@ -205,22 +229,12 @@ void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 	void *buf;
 
 	if (n > wr_free(wr)) {
-		wr = malloc(sizeof(*wr));
-		if (!wr) {
-			syslog(LOG_ERR, "OOM in wr_skip()");
+		wr = wr_alloc(n);
+		if (!wr)
 			return NULL;
-		}
 
-		wr->len = 0;
-		INIT_LIST_HEAD(&wr->node);
 		list_add_tail(&wr->node, writes);
 		*wr_io = wr;
-
-		/* should never happen */
-		if (n > wr_free(wr)) {
-			syslog(LOG_ERR, "BUG in wr_skip()");
-			return NULL;
-		}
 	}
 
 	buf = wr->buf + wr->len;
@@ -353,14 +367,11 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	/*
 	 * begin the RPC response message
 	 */
-	_wr = malloc(sizeof(*_wr));
+	_wr = wr_alloc(0);
 	if (!_wr) {
 		syslog(LOG_ERR, "RPC: out of memory");
 		goto err_out;
 	}
-
-	_wr->len = 0;
-	INIT_LIST_HEAD(&_wr->node);
 
 	list_add_tail(&_wr->node, writes);
 
@@ -414,6 +425,7 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 		}
 
 		list_del(&_wr->node);
+		free(_wr->buf);
 		free(_wr);
 	}
 
