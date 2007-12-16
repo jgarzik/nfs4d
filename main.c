@@ -620,6 +620,7 @@ static GMainLoop *init_server(void)
 
 	memset(&srv, 0, sizeof(srv));
 	INIT_LIST_HEAD(&srv.dead_state);
+	srv.space_used = 1024 * 1024;
 	srv.lease_time = 5 * 60;
 	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
 					       NULL, NULL);
@@ -649,8 +650,10 @@ static GMainLoop *init_server(void)
 	rand_verifier(&srv.instance_verf);
 
 	tcpsrv = gnet_server_new(NULL, opt_nfs_port, server_event, &srv);
-	if (!tcpsrv)
+	if (!tcpsrv) {
+		syslog(LOG_ERR, "GServer init failed");
 		return NULL;
+	}
 
 	return loop;
 }

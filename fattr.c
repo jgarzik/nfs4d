@@ -751,7 +751,6 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->cansettime = true;
 	attr->case_insensitive = false;
 	attr->case_preserving = true;
-	attr->files_total = g_hash_table_size(srv.inode_table);
 	attr->homogeneous = true;
 	attr->maxfilesize = SRV_MAX_FILESIZE;
 	attr->maxlink = SRV_MAX_LINK;
@@ -763,12 +762,13 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 	attr->time_delta.nseconds = 0;
 
 	attr->files_avail =
-	attr->files_free = 330000000ULL;
+	attr->files_free = 33000000ULL;
+	attr->files_total = g_hash_table_size(srv.inode_table) +
+			    attr->files_free;
 
 	attr->space_avail =
 	attr->space_free = 400000000ULL;
-	attr->space_used = srv.space_used;
-	attr->space_total = attr->space_used + attr->space_free;
+	attr->space_total = srv.space_used + attr->space_free;
 }
 
 static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *attr)
@@ -776,6 +776,7 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->type = ino->type;
 	attr->change = ino->version;
 	attr->size = ino->size;
+	attr->space_used = ino->size;
 	attr->named_attr = false;
 	attr->fsid.major = 1;
 	attr->fsid.minor = 0;
