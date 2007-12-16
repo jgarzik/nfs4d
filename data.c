@@ -525,6 +525,11 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 			length, reclaim, new_lock, lock_seqid,
 			open_seqid, id_short, &owner);
 
+	if (new_lock && (lock_seqid != 0)) {
+		status = NFS4ERR_BAD_SEQID;
+		goto out;
+	}
+
 	if (!length || ((length != ~0ULL) &&
 		     ((uint64_t)length > ~(uint64_t)offset))) {
 		status = NFS4ERR_INVAL;
