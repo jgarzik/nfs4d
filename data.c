@@ -724,6 +724,12 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		       sid.seqid,
 		       sid.id);
 
+	if (!length || ((length != ~0ULL) &&
+		     ((uint64_t)length > ~(uint64_t)offset))) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
