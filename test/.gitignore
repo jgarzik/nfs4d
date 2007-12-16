@@ -4,4 +4,5 @@ libnfstest.a
 null
 basic
 getattr
+getattr-statfs
 
