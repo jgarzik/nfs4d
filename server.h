@@ -116,6 +116,7 @@ enum {
 #if 0
 		1ULL << FATTR4_ACL |
 #endif
+		1ULL << FATTR4_MIMETYPE |
 		1ULL << FATTR4_MODE |
 		1ULL << FATTR4_OWNER |
 		1ULL << FATTR4_OWNER_GROUP |
@@ -159,6 +160,11 @@ enum {
 		fattr_read_only_mask |
 		fattr_read_write_mask |
 		fattr_write_only_mask,
+};
+
+enum id_type {
+	idt_user,
+	idt_group
 };
 
 struct blob {
@@ -258,8 +264,10 @@ struct nfs_inode {
 	uint64_t		atime;		/* last-accessed time */
 	uint64_t		mtime;		/* last-modified time */
 	uint32_t		mode;
-	uint32_t		uid;
-	uint32_t		gid;
+
+	char			*user;
+	char			*group;
+	char			*mimetype;
 
 	union {
 		GTree		*dir;		/* state for a directory */
@@ -306,12 +314,16 @@ struct nfs_fattr_set {
 	fattr4_maxname			maxname;
 	fattr4_maxread			maxread;
 	fattr4_maxwrite			maxwrite;
-	fattr4_mimetype			mimetype;
+
+	struct nfs_buf			mimetype;
+
 	fattr4_mode			mode;
 	fattr4_no_trunc			no_trunc;
 	fattr4_numlinks			numlinks;
-	fattr4_owner			owner;
-	fattr4_owner_group		owner_group;
+
+	struct nfs_buf			owner;
+	struct nfs_buf			owner_group;
+
 	fattr4_quota_avail_hard		quota_avail_hard;
 	fattr4_quota_avail_soft		quota_avail_soft;
 	fattr4_quota_used		quota_used;
@@ -421,6 +433,9 @@ extern nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 
+/* id.c */
+extern char *id_lookup(enum id_type type, unsigned int id);
+
 /* inode.c */
 extern nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 			      struct list_head *writes, struct rpc_write **wr);
@@ -449,6 +464,7 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			        bool in_setattr);
 
 /* main.c */
+extern void syslogerr(const char *prefix);
 extern void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
 extern uint64_t cur_read64(struct curbuf *cur);
@@ -483,8 +499,8 @@ extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 
 /* server.c */
 extern const char *name_nfs_ftype4[];
-extern int cxn_getuid(const struct nfs_cxn *cxn);
-extern int cxn_getgid(const struct nfs_cxn *cxn);
+extern char *cxn_getuser(const struct nfs_cxn *cxn);
+extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 
 extern bool valid_utf8string(const struct nfs_buf *str);
 extern char *copy_utf8string(const struct nfs_buf *str);

@@ -46,7 +46,6 @@ nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
 unsigned int fattr_size(const struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap = attr->bitmap;
-	struct nfs_buf nb;
 	unsigned int total = 0;
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
@@ -156,13 +155,9 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 	if (bitmap & (1ULL << FATTR4_MAXWRITE)) {
 		INC64(attr->maxwrite);
 	}
-
-#if 0
-	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
-		encode_utf8(&attr->mimetype, &buf, &p, &buflen, &alloc_len);
+	if ((bitmap & (1ULL << FATTR4_MIMETYPE)) && (attr->mimetype.len)) {
+		INCBUF(&attr->mimetype);
 	}
-#endif
-
 	if (bitmap & (1ULL << FATTR4_MODE)) {
 		INC32(attr->mode);
 	}
@@ -172,15 +167,11 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 	if (bitmap & (1ULL << FATTR4_NUMLINKS)) {
 		INC32(attr->numlinks);
 	}
-	if (bitmap & (1ULL << FATTR4_OWNER)) {
-		nb.len = attr->owner.utf8string_len;
-		nb.val = attr->owner.utf8string_val;
-		INCBUF(&nb);
+	if ((bitmap & (1ULL << FATTR4_OWNER)) && (attr->owner.len)) {
+		INCBUF(&attr->owner);
 	}
-	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		nb.len = attr->owner_group.utf8string_len;
-		nb.val = attr->owner_group.utf8string_val;
-		INCBUF(&nb);
+	if ((bitmap & (1ULL << FATTR4_OWNER_GROUP)) && (attr->owner_group.len)){
+		INCBUF(&attr->owner_group);
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
 		INC64(attr->quota_avail_hard);
@@ -247,7 +238,6 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 {
 	uint64_t bitmap;
-	struct nfs_buf *nb;
 	uint32_t attr_len;
 	nfsstat4 status = NFS4_OK;
 	unsigned int start_len, end_len;
@@ -369,13 +359,9 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	if (bitmap & (1ULL << FATTR4_MAXWRITE)) {
 		attr->maxwrite = CR64();
 	}
-
-#if 0
 	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
-		encode_utf8(&attr->mimetype, &buf, &p, &buflen, &alloc_len);
+		CURBUF(&attr->mimetype);
 	}
-#endif
-
 	if (bitmap & (1ULL << FATTR4_MODE)) {
 		attr->mode = CR32();
 	}
@@ -386,12 +372,10 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 		attr->numlinks = CR32();
 	}
 	if (bitmap & (1ULL << FATTR4_OWNER)) {
-		nb = (struct nfs_buf *) &attr->owner;
-		CURBUF(nb);
+		CURBUF(&attr->owner);
 	}
 	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		nb = (struct nfs_buf *) &attr->owner_group;
-		CURBUF(nb);
+		CURBUF(&attr->owner_group);
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
 		attr->quota_avail_hard = CR64();
@@ -464,7 +448,6 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 {
 	uint64_t bitmap = attr->bitmap;
 	uint64_t bitmap_out = 0;
-	struct nfs_buf nb;
 	uint32_t *bmap[2];
 
 	WR32(2);		/* bitmap array size */
@@ -611,14 +594,10 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		WR64(attr->maxwrite);
 		bitmap_out |= (1ULL << FATTR4_MAXWRITE);
 	}
-
-#if 0
-	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
-		encode_utf8(&attr->mimetype, &buf, &p, &buflen, &alloc_len);
+	if ((bitmap & (1ULL << FATTR4_MIMETYPE)) && (attr->mimetype.len)) {
+		WRBUF(&attr->mimetype);
 		bitmap_out |= (1ULL << FATTR4_MIMETYPE);
 	}
-#endif
-
 	if (bitmap & (1ULL << FATTR4_MODE)) {
 		WR32(attr->mode);
 		bitmap_out |= (1ULL << FATTR4_MODE);
@@ -631,16 +610,12 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		WR32(attr->numlinks);
 		bitmap_out |= (1ULL << FATTR4_NUMLINKS);
 	}
-	if (bitmap & (1ULL << FATTR4_OWNER)) {
-		nb.len = attr->owner.utf8string_len;
-		nb.val = attr->owner.utf8string_val;
-		WRBUF(&nb);
+	if ((bitmap & (1ULL << FATTR4_OWNER)) && (attr->owner.len)) {
+		WRBUF(&attr->owner);
 		bitmap_out |= (1ULL << FATTR4_OWNER);
 	}
-	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		nb.len = attr->owner_group.utf8string_len;
-		nb.val = attr->owner_group.utf8string_val;
-		WRBUF(&nb);
+	if ((bitmap & (1ULL << FATTR4_OWNER_GROUP)) && (attr->owner_group.len)){
+		WRBUF(&attr->owner_group);
 		bitmap_out |= (1ULL << FATTR4_OWNER_GROUP);
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
@@ -731,10 +706,7 @@ void fattr_free(struct nfs_fattr_set *attr)
 
 static void fattr_fill_server(struct nfs_fattr_set *attr)
 {
-	uint64_t bitmap = attr->bitmap;
-
-	if (bitmap & (1ULL << FATTR4_LEASE_TIME))
-		attr->lease_time = srv.lease_time;
+	attr->lease_time = srv.lease_time;
 }
 
 static void fattr_fill_fs(struct nfs_fattr_set *attr)
@@ -760,7 +732,6 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 
 	attr->files_avail =
 	attr->files_free = 330000000ULL;
-	attr->files_total = attr->files_free + next_ino;
 
 	attr->space_avail =
 	attr->space_free = 400000000ULL;
@@ -796,6 +767,11 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->time_create.nseconds = 0;
 	attr->time_modify.seconds = ino->mtime;
 	attr->time_modify.nseconds = 0;
+
+	attr->owner.val = ino->user;
+	attr->owner.len = strlen(ino->user);
+	attr->owner_group.val = ino->group;
+	attr->owner_group.len = strlen(ino->group);
 
 	attr->mounted_on_fileid = ino->ino;
 }

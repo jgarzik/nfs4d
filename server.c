@@ -109,30 +109,42 @@ char *copy_utf8string(const struct nfs_buf *str)
 	return strndup(str->val, str->len);
 }
 
-int cxn_getuid(const struct nfs_cxn *cxn)
+char *cxn_getuser(const struct nfs_cxn *cxn)
 {
+	char *s;
+
 	switch (cxn->auth.type) {
 	case auth_none:
-		return SRV_UID_NOBODY;
+		/* do nothing */
+		break;
 	case auth_unix:
-		return cxn->auth.u.up.uid;
+		s = id_lookup(idt_user, cxn->auth.u.up.uid);
 		break;
 	}
 
-	return -EINVAL;
+	if (!s)
+		s = "nobody";
+
+	return s;
 }
 
-int cxn_getgid(const struct nfs_cxn *cxn)
+char *cxn_getgroup(const struct nfs_cxn *cxn)
 {
+	char *s;
+
 	switch (cxn->auth.type) {
 	case auth_none:
-		return SRV_GID_NOBODY;
+		/* do nothing */
+		break;
 	case auth_unix:
-		return cxn->auth.u.up.gid;
+		s = id_lookup(idt_group, cxn->auth.u.up.gid);
 		break;
 	}
 
-	return -EINVAL;
+	if (!s)
+		s = "nobody";
+
+	return s;
 }
 
 static nfsstat4 cli_init(struct opaque_auth *cred, struct opaque_auth *verf,

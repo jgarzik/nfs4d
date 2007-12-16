@@ -556,7 +556,7 @@ static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
 	gnet_conn_timeout(conn, TMOUT_READ_HDR);
 }
 
-static void syslogerr(const char *prefix)
+void syslogerr(const char *prefix)
 {
 	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
 }
@@ -595,6 +595,8 @@ static void write_pid_file(void)
 	pid_opened = true;
 }
 
+extern int id_init(void);
+
 static GMainLoop *init_server(void)
 {
 	struct timezone tz = { 0, 0 };
@@ -621,6 +623,11 @@ static GMainLoop *init_server(void)
 
 	if (!srv.client_ids || !srv.clid_idx || !srv.state) {
 		syslog(LOG_ERR, "OOM in init_server()");
+		return NULL;
+	}
+
+	if (id_init()) {
+		syslog(LOG_ERR, "identity map initialization failed");
 		return NULL;
 	}
 

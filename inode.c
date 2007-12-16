@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -8,55 +9,6 @@
 #include "nfs4_prot.h"
 
 nfsino_t next_ino = INO_RESERVED_LAST + 1;
-
-static const struct idmap_ent {
-	const char		*name;
-	int			id;
-} idmap[] = {
-	{ "root@localdomain", 0 },
-	{ "jgarzik@localdomain", 500 },
-
-	{ }	/* terminate list */
-};
-
-static int srv_lookup_user(const utf8string *user)
-{
-	const struct idmap_ent *ent = &idmap[0];
-	size_t len;
-
-	while (ent->name) {
-		len = strlen(ent->name);
-
-		if ((user->utf8string_len == len) &&
-	    	    (!memcmp(user->utf8string_val, ent->name, len)))
-			return ent->id;
-
-		ent++;
-	}
-
-	return -ENOENT;
-}
-
-static int srv_lookup_group(const utf8string *user)
-{
-	return srv_lookup_user(user);
-}
-
-#if 0
-static const char *srv_lookup_id(int id)
-{
-	const struct idmap_ent *ent = &idmap[0];
-
-	while (ent->name) {
-		if (id == ent->id)
-			return ent->name;
-
-		ent++;
-	}
-
-	return NULL;
-}
-#endif
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
@@ -93,6 +45,9 @@ static void inode_free(struct nfs_inode *ino)
 		srv.space_used -= ino->size;
 	}
 
+	free(ino->mimetype);
+	free(ino->user);
+	free(ino->group);
 	free(ino);
 }
 
@@ -114,9 +69,11 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
 
+	/* connected users (cxn==NULL is internal allocation, e.g. root inode)*/
 	if (cxn) {
-		ino->uid = cxn_getuid(cxn);
-		ino->gid = cxn_getgid(cxn);
+		ino->user = strdup(cxn_getuser(cxn));
+		ino->group = strdup(cxn_getgroup(cxn));
+		/* FIXME: check for OOM */
 	}
 
 	goto out;
@@ -248,8 +205,8 @@ bool inode_table_init(void)
 		return false;
 	root->ino = INO_ROOT;
 	root->mode = 0755;
-	root->uid = 0;
-	root->gid = 0;
+	root->user = strdup("root");	/* FIXME: check for OOM */
+	root->group = strdup("root");
 	root->size = 2;
 
 	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(INO_ROOT), root);
@@ -385,32 +342,21 @@ size_done:
 		ino->mode = attr->mode;
 		bitmap_set |= (1ULL << FATTR4_MODE);
 	}
-	if (attr->bitmap & (1ULL << FATTR4_OWNER)) {
-		int x = srv_lookup_user(&attr->owner);
-		if (x < 0) {
-			if (debugging)
-				syslog(LOG_INFO, "invalid OWNER attr: '%.*s'",
-				       attr->owner.utf8string_len,
-				       attr->owner.utf8string_val);
-			status = NFS4ERR_INVAL;
-			goto out;
-		}
+	if ((attr->bitmap & (1ULL << FATTR4_OWNER)) &&
+	    (attr->owner.len)) {
+		/* FIXME: validate owner */
+		free(ino->user);
+		ino->user = strndup(attr->owner.val, attr->owner.len);
 
-		ino->uid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
-	if (attr->bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
-		int x = srv_lookup_group(&attr->owner_group);
-		if (x < 0) {
-			if (debugging)
-				syslog(LOG_INFO, "invalid OWNER GROUP attr: '%.*s'",
-				       attr->owner_group.utf8string_len,
-				       attr->owner_group.utf8string_val);
-			status = NFS4ERR_INVAL;
-			goto out;
-		}
+	if ((attr->bitmap & (1ULL << FATTR4_OWNER_GROUP)) &&
+	    (attr->owner_group.len)) {
+		/* FIXME: validate owner_group */
+		free(ino->group);
+		ino->group = strndup(attr->owner_group.val,
+				     attr->owner_group.len);
 
-		ino->gid = x;
 		bitmap_set |= (1ULL << FATTR4_OWNER_GROUP);
 	}
 
@@ -655,21 +601,29 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 			  const struct nfs_inode *ino, unsigned int req_access)
 {
 	unsigned int mode, rc;
-	int uid, gid;
+	char *user, *group;
+	bool user_mat, group_mat;
+	bool root_user, root_group;
 
-	uid = cxn_getuid(cxn);
-	gid = cxn_getgid(cxn);
-	if ((uid < 0) || (gid < 0)) {
+	user = cxn_getuser(cxn);
+	group = cxn_getgroup(cxn);
+	if (!user || !group) {
 		if (debugging)
-			syslog(LOG_INFO, "invalid cxn uid/gid (%d/%d)",
-				uid, gid);
+			syslog(LOG_INFO, "invalid cxn%s%s",
+			       user ? "" : " user",
+			       group ? "" : " group");
 		return 0;
 	}
 
+	user_mat = (strcmp(user, ino->user) == 0);
+	group_mat = (strcmp(group, ino->group) == 0);
+	root_user = (strcmp(user, "root") == 0);
+	root_group = (strcmp(group, "root") == 0);
+
 	mode = ino->mode & 0x7;
-	if ((uid == ino->uid) || (uid == 0))
+	if (user_mat || root_user)
 		mode |= (ino->mode >> 6) & 0x7;
-	if ((gid == ino->gid) || (gid == 0))
+	if (group_mat || root_group)
 		mode |= (ino->mode >> 3) & 0x7;
 
 	rc = 0;
