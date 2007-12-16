@@ -536,6 +536,11 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	if (reclaim) {
+		status = NFS4ERR_NO_GRACE;
+		goto out;
+	}
+
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
