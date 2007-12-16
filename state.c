@@ -442,7 +442,7 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct blob clid_key;
 	struct nfs_buf client, tmpstr;
 	verifier4 *client_verf;
-	const char *msg;
+	const char *msg = "(err)";
 	uint32_t cb_ident;
 	cb_client4 callback;
 
@@ -501,6 +501,7 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 		msg = "PEND";
 	}
 
+out:
 	if (debugging)
 		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
 		       "PROG:%u NET:%s ADDR:%s CBID:%u ACT:%s)",
@@ -512,16 +513,20 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 		       cb_ident,
 		       msg);
 
-out:
 	WR32(status);
 	if (status == NFS4_OK) {
 		g_assert(clid != NULL);
 
 		WR64(clid->id_short);
 		WRMEM(&clid->confirm_verf, sizeof(verifier4));
+
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID -> CLID:%Lx",
+				(unsigned long long) clid->id_short);
 	}
 	else if (status == NFS4ERR_CLID_INUSE) {
 		/* FIXME return clientaddr4 client_using */
+		syslog(LOG_ERR, "SETCLIENTID FIXME: return clientaddr4 client_using");
 	}
 	return status;
 }
