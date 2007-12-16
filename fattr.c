@@ -37,11 +37,10 @@ nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
 	return NFS4ERR_NOTSUPP;
 }
 
-#define INC8(val)	total += (val)
 #define INC32(x)	total += 4
 #define INC64(x)	total += 8
 #define INCMAP(x)	total += (4 * 3)
-#define INCBUF(nb)	total += (XDR_QUADLEN((nb)->len) * 4)
+#define INCBUF(nb)	total += 4 + (XDR_QUADLEN((nb)->len) * 4)
 
 unsigned int fattr_size(const struct nfs_fattr_set *attr)
 {
@@ -229,8 +228,6 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 	if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID)) {
 		INC64(attr->mounted_on_fileid);
 	}
-
-	INC8(0);
 
 	return total;
 }
@@ -449,11 +446,14 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 	uint64_t bitmap = attr->bitmap;
 	uint64_t bitmap_out = 0;
 	uint32_t *bmap[2];
+	uint32_t attr_size;
 
 	WR32(2);		/* bitmap array size */
 	bmap[0] = WRSKIP(4);	/* bitmap array[0] */
 	bmap[1] = WRSKIP(4);	/* bitmap array[1] */
-	WR32(fattr_size(attr));
+
+	attr_size = fattr_size(attr);
+	WR32(attr_size);
 
 	if (bitmap & (1ULL << FATTR4_SUPPORTED_ATTRS)) {
 		WRMAP(fattr_supported_mask);

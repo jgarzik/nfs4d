@@ -40,10 +40,8 @@ static void inode_free(struct nfs_inode *ino)
 		break;
 	}
 
-	if (ino->data) {
+	if (ino->data)
 		free(ino->data);
-		srv.space_used -= ino->size;
-	}
 
 	free(ino->mimetype);
 	free(ino->user);
@@ -297,8 +295,6 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			uint64_t zero = new_size - ino->size;
 			memset(ino->data + ino->size, 0, zero);
 			srv.space_used += zero;
-		} else {
-			srv.space_used -= (ino->size - new_size);
 		}
 
 size_done:
@@ -531,6 +527,8 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
+
+	attrset.bitmap &= fattr_supported_mask;
 
 	fattr_fill(ino, &attrset);
 
