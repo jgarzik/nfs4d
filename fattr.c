@@ -358,9 +358,15 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	}
 	if (bitmap & (1ULL << FATTR4_MIMETYPE)) {
 		CURBUF(&attr->mimetype);
+		if (attr->mimetype.len &&
+		    !g_utf8_validate(attr->mimetype.val,
+		    		     attr->mimetype.len, NULL))
+			status = NFS4ERR_INVAL;
 	}
 	if (bitmap & (1ULL << FATTR4_MODE)) {
 		attr->mode = CR32();
+		if (!attr->mode)
+			status = NFS4ERR_BADXDR;
 	}
 	if (bitmap & (1ULL << FATTR4_NO_TRUNC)) {
 		attr->no_trunc = CR32();
@@ -370,9 +376,16 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	}
 	if (bitmap & (1ULL << FATTR4_OWNER)) {
 		CURBUF(&attr->owner);
+		if (attr->owner.len &&
+		    !g_utf8_validate(attr->owner.val, attr->owner.len, NULL))
+			status = NFS4ERR_INVAL;
 	}
 	if (bitmap & (1ULL << FATTR4_OWNER_GROUP)) {
 		CURBUF(&attr->owner_group);
+		if (attr->owner_group.len &&
+		    !g_utf8_validate(attr->owner_group.val,
+		    		     attr->owner_group.len, NULL))
+			status = NFS4ERR_INVAL;
 	}
 	if (bitmap & (1ULL << FATTR4_QUOTA_AVAIL_HARD)) {
 		attr->quota_avail_hard = CR64();

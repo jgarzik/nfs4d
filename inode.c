@@ -558,7 +558,7 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_stateid sid;
 	struct nfs_fattr_set attr;
 
-	if (cur->len < 16) {
+	if (cur->len < 20) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
@@ -566,12 +566,15 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURSID(&sid);
 
 	status = cur_readattr(cur, &attr);
-	if (status != NFS4_OK)
+	if (status != NFS4_OK) {
+		if (attr.bitmap & fattr_read_only_mask)
+			status = NFS4ERR_INVAL;
 		goto out;
+	}
 
 	if (debugging) {
 		syslog(LOG_INFO, "op SETATTR (ID:%x)", sid.id);
-		print_fattr_bitmap("   SETATTR", attr.supported_attrs);
+		print_fattr("   SETATTR", &attr);
 	}
 
 	ino = inode_get(cxn->current_fh);
