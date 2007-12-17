@@ -147,6 +147,15 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_SERVERFAULT;
 			goto out;
 		}
+		if (ino->type != NF4REG) {
+			if (ino->type == NF4DIR)
+				status = NFS4ERR_ISDIR;
+			else if (ino->type == NF4LNK)
+				status = NFS4ERR_SYMLINK;
+			else
+				status = NFS4ERR_INVAL;
+			goto out;
+		}
 		break;
 
 	default:
@@ -181,10 +190,16 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
+	if (((args->share_access & OPEN4_SHARE_ACCESS_WRITE) == 0) &&
+	    (args->share_deny & OPEN4_SHARE_DENY_WRITE)) {
+		status = NFS4ERR_ACCESS;
+		goto out;
+	}
 
 	if (ino) {
 		status = access_ok(NULL, ino->ino,
 			   args->share_access & OPEN4_SHARE_ACCESS_WRITE,
+			   args->share_deny & OPEN4_SHARE_DENY_WRITE,
 			   0, 0, NULL, NULL);
 		if (status != NFS4_OK)
 			goto out;
@@ -222,6 +237,11 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_SYMLINK;
 		else
 			status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	if (!ino->mode) {
+		status = NFS4ERR_ACCESS;
 		goto out;
 	}
 

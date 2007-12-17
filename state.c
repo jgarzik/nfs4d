@@ -130,6 +130,7 @@ nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 
 struct state_search_info {
 	bool			write;
+	bool			write_deny;
 	nfsino_t		ino;
 	uint64_t		ofs;
 	uint64_t		len;
@@ -150,16 +151,23 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 	switch (st->type) {
 
 	case nst_open: {
-		unsigned int bit;
+		unsigned int bit, dbit;
 
 		if (ssi->write)
 			bit = OPEN4_SHARE_ACCESS_WRITE;
 		else
 			bit = OPEN4_SHARE_ACCESS_READ;
+		if (ssi->write_deny)
+			dbit = OPEN4_SHARE_DENY_WRITE;
+		else
+			dbit = OPEN4_SHARE_DENY_READ;
 
-		if ((st->u.share.deny & bit) && (st != ssi->self)) {
+		if ((st->u.share.deny & bit) && ssi->self && (st != ssi->self)) {
 			ssi->match = st;
-			ssi->status = NFS4ERR_DENIED;
+			ssi->status = NFS4ERR_SHARE_DENIED;
+		} else if ((st->u.share.access & dbit) && ssi->self && (st != ssi->self)) {
+			ssi->match = st;
+			ssi->status = NFS4ERR_SHARE_DENIED;
 		} else if ((st == ssi->self) && (!(st->u.share.access & bit))) {
 			ssi->match = st;
 			ssi->status = NFS4ERR_OPENMODE;
@@ -205,11 +213,13 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 }
 
 nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
+		  bool write_deny,
 		  uint64_t ofs, uint64_t len, struct nfs_state **st_out,
 		  struct nfs_state **conflict_st_out)
 {
 	struct nfs_state *st = NULL;
-	struct state_search_info ssi = { write, ino, ofs, len, NFS4_OK, };
+	struct state_search_info ssi = { write, write_deny, ino, ofs, len,
+					 NFS4_OK, };
 
 	if (st_out)
 		*st_out = NULL;

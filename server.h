@@ -540,6 +540,7 @@ extern void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 /* state.c */
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
+			 bool write_deny,
 			 uint64_t ofs, uint64_t len, struct nfs_state **st_out,
 			 struct nfs_state **conflict_st_out);
 extern nfsstat4 clientid_test(clientid4 id);

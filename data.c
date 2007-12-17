@@ -106,7 +106,8 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = access_ok(&sid, ino->ino, true, offset, data.len, &st, NULL);
+	status = access_ok(&sid, ino->ino, true, false, offset, data.len,
+			   &st, NULL);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -201,7 +202,8 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_mem;
 	}
 
-	status = access_ok(&sid, ino->ino, false, offset, count, &st, NULL);
+	status = access_ok(&sid, ino->ino, false, false, offset, count,
+			   &st, NULL);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -290,7 +292,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = access_ok(NULL, ino->ino, 
 			   (locktype == READ_LT || locktype == READW_LT) ?
 			   	false : true,
-			   offset, length, NULL, &match);
+			   false, offset, length, NULL, &match);
 
 out:
 	if (match) {
@@ -454,7 +456,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	status = access_ok(prev_sid, ino->ino,
 		(locktype == READ_LT || locktype == READW_LT) ? false : true,
-		offset, length, NULL, &conflict);
+		false, offset, length, NULL, &conflict);
 	if (conflict)
 		goto out;
 

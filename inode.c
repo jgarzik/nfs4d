@@ -276,7 +276,8 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			len = new_size - ino->size;
 		}
 
-		status = access_ok(sid, ino->ino, true, ofs, len, NULL, NULL);
+		status = access_ok(sid, ino->ino, true, false, ofs, len,
+				   NULL, NULL);
 		if (status != NFS4_OK)
 			goto out;
 
