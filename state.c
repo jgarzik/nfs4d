@@ -121,7 +121,7 @@ nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 		return NFS4ERR_STALE_STATEID;
 
 	if ((st->type == nst_dead) && (type != nst_dead))
-		return NFS4ERR_OLD_STATEID;
+		return NFS4ERR_EXPIRED;
 
 	if ((type != nst_any) && (st->type != type))
 		return NFS4ERR_BAD_STATEID;
@@ -264,6 +264,9 @@ static void state_trash_locks(struct nfs_state *st)
 void state_trash(struct nfs_state *st)
 {
 	bool rc;
+
+	if (st->type == nst_dead)
+		return;
 
 	if (st->type == nst_lock)
 		state_trash_locks(st);
@@ -613,6 +616,7 @@ static void client_cancel(clientid4 cli)
 		tmp = tmp->next;
 
 		state_trash(st);
+		trashed++;
 	}
 
 	g_list_free(cs.list);
@@ -663,6 +667,8 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 	const char *msg = "(err)";
 	uint32_t cb_ident;
 	cb_client4 callback;
+
+	cxn->drc_mask |= drc_setcid;
 
 	client_verf = CURMEM(sizeof(verifier4));
 	CURBUF(&client);
@@ -768,6 +774,8 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_clientid *clid, *new_clid, *tmp_clid, clid_key;
 	verifier4 *confirm_verf;
 	clientid4 id_short;
+
+	cxn->drc_mask |= drc_setcidconf;
 
 	id_short = CR64();
 	confirm_verf = CURMEM(sizeof(verifier4));

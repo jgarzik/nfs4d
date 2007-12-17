@@ -114,6 +114,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint64_t bitmap_set = 0;
 	change_info4 cinfo = { true, 0, 0 };
 
+	cxn->drc_mask |= drc_open;
+
 	memset(&attr, 0, sizeof(attr));
 
 	status = cur_open(cur, args, &attr);
@@ -307,6 +309,8 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *ino;
 	uint32_t seqid;
 
+	cxn->drc_mask |= drc_open;
+
 	if (cur->len < 20) {
 		status = NFS4ERR_BADXDR;
 		goto out;
@@ -361,6 +365,8 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
 	uint32_t seqid, share_access, share_deny;
+
+	cxn->drc_mask |= drc_open;
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -449,6 +455,8 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t seqid;
 	GList *tmp;
 	struct close_lock_info cl;
+
+	cxn->drc_mask |= drc_close;
 
 	if (cur->len < 20) {
 		status = NFS4ERR_BADXDR;

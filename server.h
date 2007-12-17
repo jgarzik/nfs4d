@@ -49,7 +49,8 @@ enum server_limits {
 	SRV_MAX_READ		= 1024 * 128,	/* max contig. read */
 	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
 
-	SRV_LEASE_TIME		= 5 * 60,
+	SRV_LEASE_TIME		= 3 * 60,
+	SRV_DRC_TIME		= 4 * 60,
 
 	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
@@ -169,6 +170,15 @@ enum id_type {
 	idt_group
 };
 
+enum drc_bits {
+	drc_lock		= (1 << 0),
+	drc_unlock		= (1 << 1),
+	drc_open		= (1 << 2),
+	drc_close		= (1 << 3),
+	drc_setcid		= (1 << 4),
+	drc_setcidconf		= (1 << 5),
+};
+
 struct blob {
 	unsigned int		magic;
 	unsigned int		len;
@@ -231,6 +241,8 @@ struct nfs_cxn {
 	nfsino_t		save_fh;
 
 	struct cxn_auth		auth;		/* RPC creds */
+
+	int			drc_mask;
 };
 
 struct nfs_lock {
@@ -545,10 +557,10 @@ extern char *copy_utf8string(const struct nfs_buf *str);
 extern int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out);
 extern guint clientid_hash(gconstpointer data);
 extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
-extern void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
+extern int nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
 			 struct curbuf *cur, struct list_head *writes,
 			 struct rpc_write **wr);
-extern void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
+extern int nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 			     struct curbuf *cur, struct list_head *writes,
 			     struct rpc_write **wr);
 

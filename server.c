@@ -467,15 +467,17 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	return NFS4ERR_INVAL;	/* never reached */
 }
 
-void nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
+int nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
 		  struct curbuf *cur, struct list_head *writes,
 		  struct rpc_write **wr)
 {
 	if (debugging)
 		syslog(LOG_ERR, "NULL proc invoked");
+
+	return 0;
 }
 
-void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
+int nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 		      struct curbuf *cur, struct list_head *writes,
 		      struct rpc_write **wr)
 {
@@ -484,6 +486,7 @@ void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 	nfsstat4 status = NFS4_OK;
 	unsigned int i = 0, results = 0;
 	struct nfs_cxn *cxn = NULL;
+	int drc_mask = 0;
 
 	CURBUF(&tag);			/* COMPOUND tag */
 	minor = CR32();			/* minor version */
@@ -529,8 +532,14 @@ out:
 		       n_args, results,
 		       name_nfs4status[status]);
 
-	free(cxn);
+	if (cxn) {
+		drc_mask = cxn->drc_mask;
+		free(cxn);
+	}
+
 	*stat_p = htonl(status);
 	*result_p = htonl(results);
+
+	return drc_mask;
 }
 

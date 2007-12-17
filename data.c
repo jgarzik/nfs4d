@@ -355,6 +355,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_state *open_st = NULL, *conflict = NULL;
 	struct nfs_state *lock_st = NULL;
 
+	cxn->drc_mask |= drc_lock;
+
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
 		goto out;
@@ -545,6 +547,8 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t locktype, seqid;
 	uint64_t offset, length;
 	struct nfs_lock *lock_ent, *iter;
+
+	cxn->drc_mask |= drc_unlock;
 
 	if (cur->len < 40) {
 		status = NFS4ERR_BADXDR;

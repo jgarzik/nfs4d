@@ -9,6 +9,7 @@
 #include <locale.h>
 #include <syslog.h>
 #include <gnet.h>
+#include <openssl/sha.h>
 #include <rpc/auth.h>
 #include <rpc/rpc_msg.h>
 #include "server.h"
@@ -34,6 +35,7 @@ static char *pid_fn = "nfs4_ramd.pid";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
+static GHashTable *request_cache;
 
 static LIST_HEAD(timer_list);
 static unsigned int timer_source;
@@ -51,6 +53,7 @@ struct rpc_cxn {
 	struct nfs_server	*server;
 
 	GConn			*conn;
+	char			*host;
 
 	enum rpc_cxn_state	state;
 
@@ -58,6 +61,15 @@ struct rpc_cxn {
 	unsigned int		msg_len;
 	unsigned int		next_frag;
 	bool			last_frag;
+};
+
+struct drc_ent {
+	unsigned char		md[SHA_DIGEST_LENGTH];
+
+	struct nfs_timer	timer;
+
+	void			*val;
+	unsigned int		len;
 };
 
 static struct argp_option options[] = {
@@ -323,6 +335,60 @@ void *wr_map(struct list_head *writes, struct rpc_write **wr,
 	return p;
 }
 
+static guint sha_hash_hash(gconstpointer key)
+{
+	const unsigned char *md = key;
+	guint res;
+
+	memcpy(&res, md, sizeof(res));
+	return res;
+}
+
+static gboolean sha_hash_equal(gconstpointer a, gconstpointer b)
+{
+	return memcmp(a, b, SHA_DIGEST_LENGTH) == 0 ? TRUE : FALSE;
+}
+
+static void drc_timer(struct nfs_timer *timer, void *priv)
+{
+	struct drc_ent *drc = priv;
+
+	g_hash_table_remove(request_cache, drc->md);
+
+	memset(drc, 0, sizeof(*drc));
+	free(drc);
+
+	if (debugging > 1)
+		syslog(LOG_DEBUG, "DRC cache expire");
+}
+
+static struct drc_ent *drc_lookup(const unsigned char *md)
+{
+	return g_hash_table_lookup(request_cache, md);
+}
+
+static void drc_store(const unsigned char *md, void *cache,
+		      unsigned int cache_len)
+{
+	struct drc_ent *drc;
+
+	if (!cache || !cache_len)
+		return;
+
+	drc = malloc(sizeof(*drc));
+	if (!drc)
+		return;		/* ok to ignore OOM here */
+
+	memcpy(drc->md, md, SHA_DIGEST_LENGTH);
+	timer_init(&drc->timer, drc_timer, drc);
+	drc->val = cache;
+	drc->len = cache_len;
+
+	g_hash_table_insert(request_cache, drc->md, drc);
+
+	timer_renew(&drc->timer, SRV_DRC_TIME);
+}
+
 static gboolean timer_cb(gpointer dummy)
 {
 	struct timezone tz = { 0, 0 };
@@ -355,7 +421,7 @@ static gboolean timer_cb(gpointer dummy)
 		timer_source = g_timeout_add(interval, timer_cb, NULL);
 	}
 
-	return TRUE;
+	return FALSE;
 }
 
 void timer_renew(struct nfs_timer *timer, unsigned int seconds)
@@ -401,6 +467,12 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	struct list_head _writes, *writes;
 	uint32_t n_writes = 0, n_wbytes = 0;
 	uint32_t *record_size, tmp_tot = 0;
+	SHA_CTX ctx;
+	unsigned int cache_len = 0, cache_used = 0;
+	unsigned char md[SHA_DIGEST_LENGTH];
+	struct drc_ent *drc;
+	char *cache = NULL;
+	int drc_mask = 0;
 
 	_wr = NULL;
 	wr = &_wr;
@@ -408,6 +480,21 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	INIT_LIST_HEAD(writes);
 
 	gettimeofday(&current_time, &tz);
+
+	SHA1_Init(&ctx);
+	SHA1_Update(&ctx, rc->host, strlen(rc->host));
+	SHA1_Update(&ctx, msg, msg_len > 256 ? 256 : msg_len);
+	SHA1_Final(md, &ctx);
+
+	drc = drc_lookup(md);
+	if (drc) {
+		timer_renew(&drc->timer, SRV_DRC_TIME);
+		gnet_conn_write(rc->conn, drc->val, drc->len);
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",
+			       drc->len);
+		return;
+	}
 
 	/*
 	 * decode RPC header
@@ -466,10 +553,12 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	switch (proc) {
 	case NFSPROC4_NULL:
-		nfsproc_null(&auth_cred, &auth_verf, cur, writes, wr);
+		drc_mask = nfsproc_null(&auth_cred, &auth_verf, cur,
+					 writes, wr);
 		break;
 	case NFSPROC4_COMPOUND:
-		nfsproc_compound(&auth_cred, &auth_verf, cur, writes, wr);
+		drc_mask = nfsproc_compound(&auth_cred, &auth_verf, cur,
+					     writes, wr);
 		break;
 	default:
 		goto err_out;
@@ -487,9 +576,20 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	*record_size = htonl((tmp_tot - 4) | HDR_FRAG_END);
 
+	if (drc_mask) {
+		cache_len = tmp_tot;
+		cache = malloc(cache_len);
+	}
+
 	list_for_each_entry_safe(_wr, iter, writes, node) {
 		if (_wr->len) {
 			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
+
+			if (cache) {
+				memcpy(cache + cache_used, _wr->buf,
+				       _wr->len);
+				cache_used += _wr->len;
+			}
 
 			n_wbytes += _wr->len;
 			n_writes++;
@@ -499,6 +599,8 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 		free(_wr->buf);
 		free(_wr);
 	}
+
+	drc_store(md, cache, cache_len);
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "RPC reply: %u bytes, %u writes",
@@ -518,6 +620,7 @@ static void rpc_cxn_free(struct rpc_cxn *cxn)
 {
 	gnet_conn_unref(cxn->conn);
 	free(cxn->msg);
+	g_free(cxn->host);
 
 	memset(cxn, 0, sizeof(*cxn));
 	free(cxn);
@@ -623,7 +726,6 @@ static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
 	host = gnet_inetaddr_get_canonical_name(conn->inetaddr);
 	syslog(LOG_INFO, "TCP connection from %s",
 	       host ? host : "<oom?>");
-	free(host);
 
 	rc = calloc(1, sizeof(*rc));
 	if (!rc) {
@@ -635,6 +737,7 @@ static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
 	rc->server = server;
 	rc->conn = conn;
 	rc->state = get_hdr;
+	rc->host = host;
 
 	gnet_conn_set_callback(conn, rpc_cxn_event, rc);
 
@@ -702,13 +805,15 @@ static GMainLoop *init_server(void)
 					     NULL, NULL);
 	srv.state = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					  NULL, state_free);
+	request_cache = g_hash_table_new(sha_hash_hash, sha_hash_equal);
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
 		return NULL;
 	}
 
-	if (!srv.client_ids || !srv.clid_idx || !srv.state) {
+	if (!srv.client_ids || !srv.clid_idx || !srv.state ||
+	    !request_cache) {
 		syslog(LOG_ERR, "OOM in init_server()");
 		return NULL;
 	}
