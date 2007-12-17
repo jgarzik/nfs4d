@@ -128,19 +128,140 @@ nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 	return NFS4_OK;
 }
 
+struct state_search_info {
+	bool			write;
+	nfsino_t		ino;
+	uint64_t		ofs;
+	uint64_t		len;
+
+	nfsstat4		status;
+	struct nfs_state	*match;
+	struct nfs_state	*self;
+};
+
+static void access_search(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct state_search_info *ssi = user_data;
+
+	if (ssi->ino != st->ino)
+		return;
+
+	switch (st->type) {
+
+	case nst_open: {
+		unsigned int bit;
+
+		if (ssi->write)
+			bit = OPEN4_SHARE_ACCESS_WRITE;
+		else
+			bit = OPEN4_SHARE_ACCESS_READ;
+
+		if ((st->u.share.deny & bit) && (st != ssi->self)) {
+			ssi->match = st;
+			ssi->status = NFS4ERR_DENIED;
+		} else if ((st == ssi->self) && (!(st->u.share.access & bit))) {
+			ssi->match = st;
+			ssi->status = NFS4ERR_OPENMODE;
+		}
+		break;
+	}
+
+	case nst_lock: {
+		struct nfs_lock *lock;
+		uint64_t ssi_end_ofs, end_ofs;
+
+		if (ssi->len == 0xffffffffffffffffULL)
+			ssi_end_ofs = 0xffffffffffffffffULL;
+		else
+			ssi_end_ofs = ssi->ofs + ssi->len;
+
+		list_for_each_entry(lock, &st->u.lock.list, node) {
+			if (lock->len == 0xffffffffffffffffULL)
+				end_ofs = 0xffffffffffffffffULL;
+			else
+				end_ofs = lock->ofs + lock->len;
+
+			if (ssi_end_ofs <= lock->ofs)
+				continue;
+			if (end_ofs <= ssi->ofs)
+				continue;
+			if (!ssi->write &&
+			    ((lock->type == READ_LT) ||
+			     (lock->type == READW_LT)))
+				continue;
+
+			ssi->match = st;
+			ssi->status = NFS4ERR_DENIED;
+		}
+		break;
+	}
+
+	case nst_any:
+	case nst_dead:
+		/* do nothing */
+		return;
+	}
+}
+
+nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
+		  uint64_t ofs, uint64_t len, struct nfs_state **st_out,
+		  struct nfs_state **conflict_st_out)
+{
+	struct nfs_state *st = NULL;
+	struct state_search_info ssi = { write, ino, ofs, len, NFS4_OK, };
+
+	if (st_out)
+		*st_out = NULL;
+
+	if (sid && (sid->seqid != 0) && (sid->seqid != 0xffffffffU)) {
+		nfsstat4 status = stateid_lookup(sid->id, ino, nst_any, &st);
+		if (status != NFS4_OK)
+			return status;
+	}
+
+	ssi.self = st;
+	g_hash_table_foreach(srv.state, access_search, &ssi);
+
+	if (st_out)
+		*st_out = st;
+	if (conflict_st_out)
+		*conflict_st_out = ssi.match;
+
+	return ssi.status;
+}
+
+static void state_trash_locks(struct nfs_state *st)
+{
+	struct nfs_lock *tmp, *iter;
+
+	list_for_each_entry_safe(tmp, iter, &st->u.lock.list, node) {
+		list_del(&tmp->node);
+
+		memset(tmp, 0, sizeof(*tmp));
+		free(tmp);
+	}
+
+	st->u.lock.open = NULL;
+}
+
 void state_trash(struct nfs_state *st)
 {
 	bool rc;
 
+	if (st->type == nst_lock)
+		state_trash_locks(st);
+
 	st->type = nst_dead;
-	list_add_tail(&st->dead_node, &srv.dead_state);
+	INIT_LIST_HEAD(&st->u.dead_node);
+	list_add_tail(&st->u.dead_node, &srv.dead_state);
 	srv.n_dead++;
 
 	if (srv.n_dead < SRV_STATE_HIGH_WAT)
 		return;
 
 	while (srv.n_dead > SRV_STATE_LOW_WAT) {
-		st = list_entry(srv.dead_state.next, struct nfs_state, dead_node);
+		st = list_entry(srv.dead_state.next, struct nfs_state, u.dead_node);
 
 		/* removing from hash table frees struct */
 		rc = g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id));
@@ -154,6 +275,45 @@ void state_trash(struct nfs_state *st)
 
 	if (debugging)
 		syslog(LOG_INFO, "state garbage collected");
+}
+
+struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
+{
+	struct nfs_state *st;
+
+	st = calloc(1, sizeof(struct nfs_state));
+	if (!st)
+		return NULL;
+
+	st->type = type;
+	st->id = gen_stateid();
+	if (!st->id) {
+		free(st);
+		return NULL;
+	}
+
+	st->owner = strndup(owner->val, owner->len);
+	if (!st->owner) {
+		free(st);
+		return NULL;
+	}
+
+	switch (type) {
+	case nst_any:
+	case nst_open:
+		/* do nothing */
+		break;
+	
+	case nst_dead:
+		INIT_LIST_HEAD(&st->u.dead_node);
+		break;
+	
+	case nst_lock:
+		INIT_LIST_HEAD(&st->u.lock.list);
+		break;
+	}
+
+	return st;
 }
 
 static void gen_clientid4(clientid4 *id)
@@ -239,11 +399,23 @@ void state_free(gpointer data)
 	if (!st)
 		return;
 
-	if (st->owner)
-		free(st->owner);
+	free(st->owner);
 
-	if (st->type == nst_dead)
-		list_del(&st->dead_node);
+	switch (st->type) {
+	case nst_any:
+		/* invalid type, should never happen */
+		/* fall through */
+	
+	case nst_open:
+		/* do nothing */
+		break;
+	case nst_dead:
+		list_del(&st->u.dead_node);
+		break;
+	case nst_lock:
+		state_trash_locks(st);
+		break;
+	}
 
 	memset(st, 0, sizeof(*st));
 	free(st);

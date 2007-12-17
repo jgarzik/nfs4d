@@ -25,6 +25,9 @@ void inode_touch(struct nfs_inode *ino)
 
 static void inode_free(struct nfs_inode *ino)
 {
+	if (!ino)
+		return;
+
 	g_array_free(ino->parents, true);
 
 	switch (ino->type) {
@@ -46,6 +49,8 @@ static void inode_free(struct nfs_inode *ino)
 	free(ino->mimetype);
 	free(ino->user);
 	free(ino->group);
+
+	memset(ino, 0, sizeof(*ino));
 	free(ino);
 }
 
@@ -252,7 +257,7 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 	if (attr->bitmap & (1ULL << FATTR4_SIZE)) {
 		uint64_t new_size = attr->size;
 		void *mem;
-		struct nfs_state *st = NULL;
+		uint64_t ofs, len;
 
 		/* only permit size attribute manip on files */
 		if (ino->type != NF4REG) {
@@ -263,18 +268,17 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			goto out;
 		}
 
-		if (sid && sid->seqid && (sid->seqid != 0xffffffffU)) {
-			uint32_t id = sid->id;
-
-			status = stateid_lookup(id, ino->ino, nst_open, &st);
-			if (status != NFS4_OK)
-				goto out;
-
-			if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
-				status = NFS4ERR_OPENMODE;
-				goto out;
-			}
+		if (new_size < ino->size) {
+			ofs = new_size;
+			len = ino->size - new_size;
+		} else {
+			ofs = ino->size;
+			len = new_size - ino->size;
 		}
+
+		status = access_ok(sid, ino->ino, true, ofs, len, NULL, NULL);
+		if (status != NFS4_OK)
+			goto out;
 
 		if (new_size == ino->size)
 			goto size_done;

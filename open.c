@@ -99,29 +99,6 @@ static void print_open_args(OPEN4args *args)
 	       args->owner.owner.owner_val);
 }
 
-struct conflict_fe_state {
-	OPEN4args *args;
-	nfsino_t ino;
-	bool match;
-};
-
-static void state_sh_conflict(gpointer key, gpointer val, gpointer user_data)
-{
-	struct nfs_state *st = val;
-	struct conflict_fe_state *cfs = user_data;
-
-	if (st->ino != cfs->ino)
-		return;
-	if (st->type != nst_open)
-		return;
-
-	if (cfs->args->share_access & st->share_dn)
-		cfs->match = true;
-
-	if (cfs->args->share_deny & st->share_ac)
-		cfs->match = true;
-}
-
 nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		     struct list_head *writes, struct rpc_write **wr)
 {
@@ -206,14 +183,11 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (ino) {
-		struct conflict_fe_state cfs = { args, ino->ino, false };
-
-		g_hash_table_foreach(srv.state, state_sh_conflict, &cfs);
-
-		if (cfs.match) {
-			status = NFS4ERR_SHARE_DENIED;
+		status = access_ok(NULL, ino->ino,
+			   args->share_access & OPEN4_SHARE_ACCESS_WRITE,
+			   0, 0, NULL, NULL);
+		if (status != NFS4_OK)
 			goto out;
-		}
 	}
 
 	/*
@@ -262,35 +236,17 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 	}
 
-	st = calloc(1, sizeof(struct nfs_state));
+	st = state_new(nst_open, (struct nfs_buf *) &args->owner.owner);
 	if (!st) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
 	st->cli = args->owner.clientid;
-	st->type = nst_open;
-	st->id = gen_stateid();
-	if (!st->id) {
-		free(st);
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	st->owner = strndup(args->owner.owner.owner_val,
-			    args->owner.owner.owner_len);
-	if (!st->owner) {
-		free(st);
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
 	st->ino = ino->ino;
 	st->seq = args->seqid + 1;
-	st->share_ac = args->share_access;
-	st->share_dn = args->share_deny;
-
-	INIT_LIST_HEAD(&st->dead_node);
+	st->u.share.access = args->share_access;
+	st->u.share.deny = args->share_deny;
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 
@@ -422,14 +378,14 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	if ((!(share_access & st->share_ac)) ||
-	    (!(share_deny & st->share_dn))) {
+	if ((!(share_access & st->u.share.access)) ||
+	    (!(share_deny & st->u.share.deny))) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
-	st->share_ac = share_access;
-	st->share_dn = share_deny;
+	st->u.share.access = share_access;
+	st->u.share.deny = share_deny;
 
 	st->seq++;
 
@@ -448,6 +404,21 @@ out:
 	return status;
 }
 
+struct close_lock_info {
+	struct nfs_state	*open_st;
+	GList			*list;
+};
+
+static void close_lock_iter(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct close_lock_info *cl = user_data;
+
+	if (st->type == nst_lock &&
+	    st->u.lock.open == cl->open_st)
+		cl->list = g_list_prepend(cl->list, st);
+}
+
 nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		      struct list_head *writes, struct rpc_write **wr)
 {
@@ -456,6 +427,8 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_state *st;
 	struct nfs_inode *ino;
 	uint32_t seqid;
+	GList *tmp;
+	struct close_lock_info cl;
 
 	if (cur->len < 20) {
 		status = NFS4ERR_BADXDR;
@@ -488,6 +461,18 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
+
+	cl.open_st = st;
+	cl.list = NULL;
+
+	g_hash_table_foreach(srv.state, close_lock_iter, &cl);
+
+	tmp = cl.list;
+	while (tmp) {
+		state_trash(tmp->data);
+		tmp = tmp->next;
+	}
+	g_list_free(cl.list);
 
 	state_trash(st);
 

@@ -9,6 +9,8 @@
 #include "nfs4_prot.h"
 #include "elist.h"
 
+struct nfs_state;
+
 typedef uint32_t nfsino_t;
 
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
@@ -218,34 +220,48 @@ struct nfs_cxn {
 	struct cxn_auth		auth;		/* RPC creds */
 };
 
+struct nfs_lock {
+	uint64_t		ofs;
+	uint64_t		len;
+
+	struct list_head	node;
+
+	nfs_lock_type4		type;
+};
+
 enum nfs_state_type {
-	nst_any,
+	nst_any,				/* an invalid type */
 	nst_dead,
 	nst_open,
 	nst_lock
 };
 
 struct nfs_state {
-	clientid4		cli;
+	clientid4		cli;		/* short clientid */
 
-	enum nfs_state_type	type;
+	char			*owner;		/* lock/open owner */
+
+	nfsino_t		ino;		/* associated inode */
+
+	enum nfs_state_type	type;		/* nst_xxx */
 
 	uint32_t		id;
 
-	char			*owner;
-
-	nfsino_t		ino;
-
 	uint32_t		seq;
 
-	uint32_t		share_ac;
-	uint32_t		share_dn;
+	union {
+		struct {
+			uint32_t	access;
+			uint32_t	deny;
+		} share;
 
-	nfs_lock_type4		locktype;
-	uint64_t		lock_ofs;
-	uint64_t		lock_len;
+		struct {
+			struct list_head list;
+			struct nfs_state *open;
+		} lock;
 
-	struct list_head	dead_node;
+		struct list_head	dead_node;
+	} u;
 };
 
 struct nfs_stateid {
@@ -522,6 +538,10 @@ extern void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 			     struct rpc_write **wr);
 
 /* state.c */
+extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
+extern nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
+			 uint64_t ofs, uint64_t len, struct nfs_state **st_out,
+			 struct nfs_state **conflict_st_out);
 extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);

@@ -17,25 +17,6 @@ static const char *name_lock_type4[] = {
 	[WRITEW_LT]		= "WRITEW_LT",
 };
 
-struct state_search {
-	bool			match;
-	nfsino_t		ino;
-	uint32_t		share_dn;
-	struct nfs_state	*st;
-};
-
-static void state_search_iter(gpointer key, gpointer val, gpointer user_data)
-{
-	struct nfs_state *st = val;
-	struct state_search *ss = user_data;
-
-	if ((st->ino == ss->ino) && (st->type == nst_open) &&
-	    (st->share_dn & ss->share_dn)) {
-		ss->match = true;
-		ss->st = st;
-	}
-}
-
 nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
@@ -86,7 +67,6 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t stable;
 	void *mem;
 	struct nfs_buf data;
-	struct state_search ss;
 
 	if (cur->len < 32) {
 		status = NFS4ERR_BADXDR;
@@ -126,28 +106,9 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	if (sid.id && (sid.id != 0xffffffffU)) {
-		status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
-		if (status != NFS4_OK)
-			goto out;
-
-		if (!(st->share_ac & OPEN4_SHARE_ACCESS_WRITE)) {
-			status = NFS4ERR_OPENMODE;
-			goto out;
-		}
-	}
-
-	/* search for conflicting share reservation (deny write) */
-	ss.match = false;
-	ss.ino = ino->ino;
-	ss.share_dn = OPEN4_SHARE_DENY_WRITE;
-
-	g_hash_table_foreach(srv.state, state_search_iter, &ss);
-
-	if ((ss.match) && (st != ss.st)) {
-		status = NFS4ERR_LOCKED;
+	status = access_ok(&sid, ino->ino, true, offset, data.len, &st, NULL);
+	if (status != NFS4_OK)
 		goto out;
-	}
 
 	if (data.len == 0)
 		goto out;
@@ -155,9 +116,8 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	new_size = offset + data.len;
 
 	/* write fits entirely within existing data buffer */
-	if (new_size <= ino->size) {
+	if (new_size <= ino->size)
 		memcpy(ino->data + offset, data.val, data.len);
-	}
 
 	/* new size is larger than old size, enlarge buffer */
 	else {
@@ -197,7 +157,6 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint64_t read_size = 0, offset;
 	uint32_t count;
 	void *mem;
-	struct state_search ss;
 	bool eof = false;
 
 	if (cur->len < 28) {
@@ -242,28 +201,9 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_mem;
 	}
 
-	if (sid.id && (sid.id != 0xffffffffU)) {
-		status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
-		if (status != NFS4_OK)
-			goto out;
-
-		if (!(st->share_ac & OPEN4_SHARE_ACCESS_READ)) {
-			status = NFS4ERR_OPENMODE;
-			goto out;
-		}
-	}
-
-	/* search for conflicting share reservation (deny read) */
-	ss.match = false;
-	ss.ino = ino->ino;
-	ss.share_dn = OPEN4_SHARE_DENY_READ;
-
-	g_hash_table_foreach(srv.state, state_search_iter, &ss);
-
-	if ((ss.match) && (st != ss.st)) {
-		status = NFS4ERR_LOCKED;
+	status = access_ok(&sid, ino->ino, false, offset, count, &st, NULL);
+	if (status != NFS4_OK)
 		goto out;
-	}
 
 	if (offset >= ino->size) {
 		eof = true;
@@ -295,86 +235,16 @@ out_mem:
 	goto out;
 }
 
-static bool ranges_intersect(uint64_t a_ofs, uint64_t a_len,
-			     uint64_t b_ofs, uint64_t b_len)
-{
-	if (a_ofs < b_ofs) {
-		if ((a_ofs + a_len) < b_ofs)
-			return false;
-	} else {
-		if ((b_ofs + b_len) < a_ofs)
-			return false;
-	}
-
-	return true;
-}
-
-struct state_search_lock {
-	nfsino_t ino;
-	nfs_lock_type4 type;
-	offset4 ofs;
-	length4 len;
-
-	GList *list;
-};
-
-static void state_search_lock(gpointer key, gpointer val, gpointer user_data)
-{
-	struct nfs_state *st = val;
-	struct state_search_lock *ss = user_data;
-
-	if (st->ino != ss->ino)
-		return;
-	if (st->type != nst_lock)
-		return;
-
-	if (!ranges_intersect(st->lock_ofs, st->lock_len, ss->ofs, ss->len))
-		return;
-
-	if (st->locktype != ss->type)
-		return;
-
-	ss->list = g_list_append(ss->list, st);
-}
-
-static void find_locks(nfsino_t ino, nfs_lock_type4 type, offset4 ofs,
-		       length4 len, GList **list_out)
-{
-	struct state_search_lock ss = { ino, type, ofs, len };
-
-	g_hash_table_foreach(srv.state, state_search_lock, &ss);
-
-	*list_out = ss.list;
-}
-
-static void fill_lock_denied(LOCK4denied *denied, GList *locks)
-{
-	GList *tmp = locks;
-	struct nfs_state *st;
-
-	while (tmp) {
-		st = tmp->data;
-
-		denied->offset = st->lock_ofs;
-		denied->length = st->lock_len;
-		denied->locktype = st->locktype;
-
-		/* FIXME: fill in lock_owner */
-
-		tmp = tmp->next;
-	}
-}
-
 nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		         struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	GList *locks = NULL;
 	struct nfs_inode *ino;
 	uint32_t locktype;
 	uint64_t offset, length;
 	clientid4 owner_id;
 	struct nfs_buf owner;
+	struct nfs_state *match = NULL;
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -417,28 +287,21 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	find_locks(ino->ino, locktype, offset, length, &locks);
-
-	if (locks)
-		status = NFS4ERR_DENIED;
+	status = access_ok(NULL, ino->ino, 
+			   (locktype == READ_LT || locktype == READW_LT) ?
+			   	false : true,
+			   offset, length, NULL, &match);
 
 out:
-	WR32(status);
-	if (status == NFS4ERR_DENIED) {
-		LOCK4denied denied;
-
-		/* FIXME!!! */
-
-		fill_lock_denied(&denied, locks);
-
-		WR64(0);		/* offset */
-		WR64(0);		/* length */
-		WR32(0);		/* lock type */
-		WR64(0);		/* owner id */
-		WRSTR("invalid");	/* owner name */
-
-		g_list_free(locks);
-	}
+	if (match) {
+		WR32(NFS4ERR_DENIED);
+		WR64(offset);		/* offset */
+		WR64(length);		/* length */
+		WR32(locktype);		/* lock type */
+		WR64(match->cli);	/* owner id */
+		WRSTR(match->owner);	/* owner name */
+	} else
+		WR32(status);
 	return status;
 }
 
@@ -482,11 +345,12 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_stateid *prev_sid;
 	uint32_t prev_id;
 	struct nfs_stateid *sid, lock_sid, open_sid, tmp_sid;
-	GList *locks = NULL;
 	bool reclaim, new_lock;
 	uint32_t locktype, lock_seqid, open_seqid = 0;
 	uint64_t offset, length, id_short = 0;
 	struct nfs_buf owner;
+	struct nfs_lock *lock_ent;
+	struct nfs_state *open_st = NULL, *conflict = NULL;
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -561,8 +425,6 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 
 	if (new_lock) {
-		struct nfs_state *open_st = NULL;
-
 		status = stateid_lookup(prev_id, ino->ino, nst_open, &open_st);
 		if (status != NFS4_OK)
 			goto out;
@@ -573,7 +435,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		if ((locktype == WRITE_LT || locktype == WRITEW_LT) &&
-		    (open_st->share_ac == OPEN4_SHARE_ACCESS_READ)) {
+		    (open_st->u.share.access == OPEN4_SHARE_ACCESS_READ)) {
 			status = NFS4ERR_OPENMODE;
 			goto out;
 		}
@@ -590,82 +452,58 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 	}
 
-	find_locks(ino->ino, locktype, offset, length, &locks);
+	status = access_ok(prev_sid, ino->ino,
+		(locktype == READ_LT || locktype == READW_LT) ? false : true,
+		offset, length, NULL, &conflict);
+	if (conflict)
+		goto out;
+
+	lock_ent = calloc(1, sizeof(struct nfs_lock));
+	if (!lock_ent) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	lock_ent->ofs = offset;
+	lock_ent->len = length;
+	INIT_LIST_HEAD(&lock_ent->node);
+	lock_ent->type = locktype;
 
 	/*
-	 * lock update code path...
+	 * update lock state
 	 */
 
 	if (!new_lock) {
-		/* no locks found? bad user input */
-		if (!locks) {
-			status = NFS4ERR_INVAL;
-			goto out;
-		}
-
-		/* more than one lock found? ditto */
-		if (locks->next) {
-			status = NFS4ERR_INVAL;
-			goto out;
-		}
-
-		/* FIXME convert the lock... */
-
-		st = locks->data;
-		g_list_free(locks);
-
-		goto have_st;
+		/* FIXME? */
 	}
 
 	/*
-	 * new-lock code path
+	 * otherwise, create new lock state
 	 */
+	else {
 
-	if (locks) {
-		status = NFS4ERR_DENIED;
-		goto out;
+		/*
+	 	* look up shorthand client id (clientid4) for new lock owner
+	 	*/
+		status = clientid_test(id_short);
+		if (status != NFS4_OK)
+			goto out;
+
+		st = state_new(nst_lock, &owner);
+		if (!st) {
+			status = NFS4ERR_RESOURCE;
+			goto out;
+		}
+
+		st->cli = id_short;
+		st->ino = ino->ino;
+		st->u.lock.open = open_st;
+
+		g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 	}
 
-	/*
-	 * look up shorthand client id (clientid4) for new lock owner
-	 */
-	status = clientid_test(id_short);
-	if (status != NFS4_OK)
-		goto out;
+	list_add_tail(&lock_ent->node, &st->u.lock.list);
 
-	st = calloc(1, sizeof(struct nfs_state));
-	if (!st) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	st->cli = id_short;
-	st->type = nst_lock;
-	st->id = gen_stateid();
-	if (!st->id) {
-		free(st);
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	st->owner = strndup(owner.val, owner.len);
-	if (!st->owner) {
-		free(st);
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-
-	st->ino = ino->ino;
-
-	st->locktype = locktype;
-	st->lock_ofs = offset;
-	st->lock_len = length;
-
-	INIT_LIST_HEAD(&st->dead_node);
-
-	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
-
-have_st:
 	st->seq = lock_seqid + 1;
 
 	sid = &tmp_sid;
@@ -681,24 +519,17 @@ have_st:
 		       sid->seqid, st->id);
 
 out:
-	WR32(status);
-	if (status == NFS4_OK)
-		WRSID(sid);
-
-	else if (status == NFS4ERR_DENIED) {
-		LOCK4denied denied;
-
-		/* FIXME!!! */
-
-		fill_lock_denied(&denied, locks);
-
-		WR64(0);		/* offset */
-		WR64(0);		/* length */
-		WR32(0);		/* lock type */
-		WR64(0);		/* owner id */
-		WRSTR("invalid");	/* owner name */
-
-		g_list_free(locks);
+	if (conflict) {
+		WR32(NFS4ERR_DENIED);
+		WR64(offset);		/* offset */
+		WR64(length);		/* length */
+		WR32(locktype);		/* lock type */
+		WR64(conflict->cli);	/* owner id */
+		WRSTR(conflict->owner);	/* owner name */
+	} else {
+		WR32(status);
+		if (status == NFS4_OK)
+			WRSID(sid);
 	}
 	return status;
 }
@@ -712,6 +543,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *ino;
 	uint32_t locktype, seqid;
 	uint64_t offset, length;
+	struct nfs_lock *lock_ent, *iter;
 
 	if (cur->len < 40) {
 		status = NFS4ERR_BADXDR;
@@ -767,14 +599,21 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	/* FIXME SECURITY: make sure we are the lock owner!!!!! */
+	/* FIXME SECURITY: make sure we are the lock owner????? */
 
-	if ((offset != st->lock_ofs) || (length != st->lock_len)) {
-		status = NFS4ERR_LOCK_RANGE;
-		goto out;
+	status = NFS4ERR_LOCK_RANGE;
+	list_for_each_entry_safe(lock_ent, iter, &st->u.lock.list, node) {
+		if (offset != lock_ent->ofs || length != lock_ent->len)
+			continue;
+
+		list_del(&lock_ent->node);
+		free(lock_ent);
+		status = NFS4_OK;
+		break;
 	}
 
-	state_trash(st);
+	if (list_empty(&st->u.lock.list))
+		state_trash(st);
 
 out:
 	WR32(status);
