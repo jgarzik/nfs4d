@@ -35,6 +35,10 @@ static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
 
+static LIST_HEAD(timer_list);
+static unsigned int timer_source;
+static uint64_t timer_expire;
+
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
 
@@ -317,6 +321,73 @@ void *wr_map(struct list_head *writes, struct rpc_write **wr,
 		return NULL;
 
 	return p;
+}
+
+static gboolean timer_cb(gpointer dummy)
+{
+	struct timezone tz = { 0, 0 };
+	struct nfs_timer *timer, *iter;
+	uint64_t next_expire = 0xffffffffffffffffULL;
+
+	if (debugging > 1)
+		syslog(LOG_INFO, "TIMER callback");
+
+	gettimeofday(&current_time, &tz);
+
+	list_for_each_entry_safe(timer, iter, &timer_list, node) {
+		if (current_time.tv_sec < timer->expire) {
+			if (timer->expire < next_expire)
+				next_expire = timer->expire;
+			continue;
+		}
+
+		list_del_init(&timer->node);
+		timer->queued = false;
+
+		timer->cb(timer, timer->private);
+	}
+
+	if (list_empty(&timer_list)) {
+		timer_source = 0;
+		timer_expire = 0;
+	} else {
+		uint64_t interval = (next_expire - current_time.tv_sec) * 1000;
+		timer_source = g_timeout_add(interval, timer_cb, NULL);
+	}
+
+	return TRUE;
+}
+
+void timer_renew(struct nfs_timer *timer, unsigned int seconds)
+{
+	uint64_t interval = 0;
+
+	if (debugging > 1)
+		syslog(LOG_INFO, "TIMER renew (%u secs)", seconds);
+
+	timer->expire = current_time.tv_sec + seconds;
+	if (!timer_expire || (timer->expire < timer_expire))
+		timer_expire = timer->expire;
+
+	if (!timer->queued) {
+		timer->queued = true;
+		list_add(&timer->node, &timer_list);
+	}
+
+	if (timer_expire > current_time.tv_sec)
+		interval = timer_expire - current_time.tv_sec;
+
+	if (!timer_source)
+		timer_source = g_timeout_add(interval * 1000, timer_cb, NULL);
+}
+
+void timer_init(struct nfs_timer *timer, nfs_timer_cb_t cb, void *priv)
+{
+	memset(timer, 0, sizeof(*timer));
+
+	timer->cb = cb;
+	timer->private = priv;
+	INIT_LIST_HEAD(&timer->node);
 }
 
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
@@ -624,7 +695,7 @@ static GMainLoop *init_server(void)
 	memset(&srv, 0, sizeof(srv));
 	INIT_LIST_HEAD(&srv.dead_state);
 	srv.space_used = 1024 * 1024;
-	srv.lease_time = 5 * 60;
+	srv.lease_time = SRV_LEASE_TIME;
 	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
 					       NULL, NULL);
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,

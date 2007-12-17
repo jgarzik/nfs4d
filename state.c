@@ -24,8 +24,12 @@ struct nfs_clientid {
 struct nfs_client {
 	struct nfs_clientid	*id;
 
+	struct nfs_timer	timer;
+
 	struct list_head	pending;	/* unconfirmed requests */
 };
+
+static void client_cancel(clientid4 cli);
 
 /* "djb2"-derived hash function */
 unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen)
@@ -123,6 +127,8 @@ nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 		return NFS4ERR_BAD_STATEID;
 	if (ino && (ino != st->ino))
 		return NFS4ERR_BAD_STATEID;
+
+	clientid_touch(st->cli);
 
 	*st_out = st;
 	return NFS4_OK;
@@ -344,6 +350,20 @@ static void gen_clientid4(clientid4 *id)
 				(void *)((unsigned long) *id)) != NULL);
 }
 
+bool clientid_touch(clientid4 id_in)
+{
+	struct nfs_client *cli;
+	unsigned long id = (unsigned long) id_in;
+
+	cli = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	if (!cli)
+		return false;
+	
+	timer_renew(&cli->timer, SRV_LEASE_TIME);
+
+	return true;
+}
+
 nfsstat4 clientid_test(clientid4 id_in)
 {
 	struct nfs_client *cli;
@@ -513,6 +533,20 @@ err_out:
 	return -ENOMEM;
 }
 
+static void client_timer(struct nfs_timer *timer, void *priv)
+{
+	struct nfs_client *cli = priv;
+
+	if (!cli->id) {
+		syslog(LOG_ERR, "BUG: null cli->id in client_timer()");
+		return;
+	}
+
+	syslog(LOG_INFO, "timeout, cancelling state for CID:%Lx",
+		(unsigned long long) cli->id->id_short);
+	client_cancel(cli->id->id_short);
+}
+
 static int client_new(struct nfs_cxn *cxn,
 			struct nfs_buf *id_long, verifier4 *client_verf,
 			uint32_t cb_ident, cb_client4 *callback,
@@ -527,6 +561,8 @@ static int client_new(struct nfs_cxn *cxn,
 		goto err_out;
 
 	INIT_LIST_HEAD(&cli->pending);
+
+	timer_init(&cli->timer, client_timer, cli);
 
 	rc = clientid_new(cli, cxn, id_long, client_verf, cb_ident,
 			  callback, &clid);
@@ -560,7 +596,7 @@ static void cli_cancel_search(gpointer key, gpointer val, gpointer user_data)
 		cs->list = g_list_append(cs->list, st);
 }
 
-static void client_cancel(struct nfs_cxn *cxn, clientid4 cli)
+static void client_cancel(clientid4 cli)
 {
 	struct cancel_search cs = { cli };
 	struct nfs_state *st;
@@ -810,7 +846,7 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	 */
 
 	/* FIXME: probably need to do more than just forget state */
-	client_cancel(cxn, clid->id_short);
+	client_cancel(clid->id_short);
 
 out2:
 	if (clid) {
@@ -820,6 +856,31 @@ out2:
 	}
 	cli->id = new_clid;
 	g_hash_table_insert(srv.client_ids, &new_clid->id, cli);
+
+out:
+	WR32(status);
+	return status;
+}
+
+nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
+			    struct list_head *writes, struct rpc_write **wr)
+{
+	nfsstat4 status = NFS4_OK;
+	clientid4 id;
+
+	if (cur->len < 8) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	id = CR64();
+
+	if (debugging)
+		syslog(LOG_INFO, "op RENEW (CID:%Lx)",
+			(unsigned long long) id);
+
+	if (!clientid_touch(id))
+		status = NFS4ERR_STALE_CLIENTID;
 
 out:
 	WR32(status);

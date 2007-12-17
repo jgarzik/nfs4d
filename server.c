@@ -429,6 +429,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_remove(cxn, cur, writes, wr);
 	case OP_RENAME:
 		return nfs_op_rename(cxn, cur, writes, wr);
+	case OP_RENEW:
+		return nfs_op_renew(cxn, cur, writes, wr);
 	case OP_RESTOREFH:
 		return nfs_op_restorefh(cxn, cur, writes, wr);
 	case OP_SAVEFH:
@@ -448,7 +450,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
-	case OP_RENEW:
 	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
 		if (debugging)

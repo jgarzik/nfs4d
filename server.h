@@ -10,6 +10,7 @@
 #include "elist.h"
 
 struct nfs_state;
+struct nfs_timer;
 
 typedef uint32_t nfsino_t;
 
@@ -48,8 +49,7 @@ enum server_limits {
 	SRV_MAX_READ		= 1024 * 128,	/* max contig. read */
 	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
 
-	SRV_UID_NOBODY		= 65537,	/* arbitrary >64K number */
-	SRV_GID_NOBODY		= 65537,	/* arbitrary >64K number */
+	SRV_LEASE_TIME		= 5 * 60,
 
 	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
@@ -190,6 +190,19 @@ struct rpc_write {
 	char			*buf;
 
 	struct list_head	node;
+};
+
+typedef void (*nfs_timer_cb_t)(struct nfs_timer *timer, void *private);
+
+struct nfs_timer {
+	nfs_timer_cb_t		cb;
+	void			*private;
+
+	uint64_t		expire;		/* in seconds */
+
+	struct list_head	node;
+
+	bool			queued;
 };
 
 struct nfs_buf {
@@ -487,6 +500,8 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			        bool in_setattr);
 
 /* main.c */
+extern void timer_renew(struct nfs_timer *, unsigned int);
+extern void timer_init(struct nfs_timer *, nfs_timer_cb_t, void *);
 extern void syslogerr(const char *prefix);
 extern void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
@@ -538,6 +553,7 @@ extern void nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 			     struct rpc_write **wr);
 
 /* state.c */
+extern bool clientid_touch(clientid4 id_short);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
 			 bool write_deny,
@@ -547,6 +563,8 @@ extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);
 extern uint32_t gen_stateid(void);
+extern nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
+			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
