@@ -289,7 +289,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = access_ok(NULL, ino->ino, 
+	status = access_ok(NULL, ino->ino,
 			   (locktype == READ_LT || locktype == READW_LT) ?
 			   	false : true,
 			   false, offset, length, NULL, &match);

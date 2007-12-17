@@ -319,11 +319,11 @@ struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 	case nst_open:
 		/* do nothing */
 		break;
-	
+
 	case nst_dead:
 		INIT_LIST_HEAD(&st->u.dead_node);
 		break;
-	
+
 	case nst_lock:
 		INIT_LIST_HEAD(&st->u.lock.list);
 		break;
@@ -358,7 +358,7 @@ bool clientid_touch(clientid4 id_in)
 	cli = g_hash_table_lookup(srv.clid_idx, (void *) id);
 	if (!cli)
 		return false;
-	
+
 	timer_renew(&cli->timer, SRV_LEASE_TIME);
 
 	return true;
@@ -435,7 +435,7 @@ void state_free(gpointer data)
 	case nst_any:
 		/* invalid type, should never happen */
 		/* fall through */
-	
+
 	case nst_open:
 		/* do nothing */
 		break;

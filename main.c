@@ -292,7 +292,7 @@ void *wr_str(struct list_head *writes, struct rpc_write **wr_io, const char *s)
 
 	if (!s)
 		return NULL;
-	
+
 	nb.len = strlen(s);
 	nb.val = (void *) s;
 
@@ -597,7 +597,7 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 			break;
 		}
 		break;
-	
+
 	default:
 		syslog(LOG_ERR, "unhandled GConnEvent %d", evt->type);
 		break;

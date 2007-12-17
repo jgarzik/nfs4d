@@ -103,7 +103,7 @@ int id_init(void)
 	rc = read_users();
 	if (rc)
 		return rc;
-	
+
 	rc = read_groups();
 	if (rc)
 		return rc;
