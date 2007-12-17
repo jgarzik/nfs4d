@@ -434,6 +434,8 @@ extern nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr);
 
 /* dir.c */
 extern nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,

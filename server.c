@@ -425,6 +425,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		return nfs_op_readdir(cxn, cur, writes, wr);
 	case OP_READLINK:
 		return nfs_op_readlink(cxn, cur, writes, wr);
+	case OP_RELEASE_LOCKOWNER:
+		return nfs_op_release_lockowner(cxn, cur, writes, wr);
 	case OP_REMOVE:
 		return nfs_op_remove(cxn, cur, writes, wr);
 	case OP_RENAME:
@@ -450,7 +452,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
-	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
 		if (debugging)
 			syslog(LOG_INFO, "compound op %s",

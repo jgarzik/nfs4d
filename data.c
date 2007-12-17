@@ -627,3 +627,62 @@ out:
 	return status;
 }
 
+struct lockowner_search_info {
+	clientid4		id;
+	struct nfs_buf		*owner;
+
+	bool			match;
+};
+
+static void lockowner_iter(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_state *st = val;
+	struct lockowner_search_info *lsi = user_data;
+
+	if (st->type != nst_lock)
+		return;
+	if (lsi->id != st->cli)
+		return;
+	if (strlen(st->owner) != lsi->owner->len)
+		return;
+	if (memcmp(st->owner, lsi->owner->val, lsi->owner->len))
+		return;
+	
+	lsi->match = true;
+}
+
+nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
+		       struct list_head *writes, struct rpc_write **wr)
+{
+	nfsstat4 status = NFS4_OK;
+	clientid4 id;
+	struct nfs_buf owner;
+	struct lockowner_search_info lsi;
+
+	if (cur->len < 12) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	id = CR64();
+	CURBUF(&owner);
+
+	if (!owner.len || !owner.val) {
+		status = NFS4ERR_BADXDR;
+		goto out;
+	}
+
+	lsi.id = id;
+	lsi.owner = &owner;
+	lsi.match = false;
+
+	g_hash_table_foreach(srv.state, lockowner_iter, &lsi);
+
+	if (lsi.match)
+		status = NFS4ERR_LOCKS_HELD;
+
+out:
+	WR32(status);
+	return status;
+}
+
