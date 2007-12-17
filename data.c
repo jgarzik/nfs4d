@@ -353,6 +353,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_buf owner;
 	struct nfs_lock *lock_ent;
 	struct nfs_state *open_st = NULL, *conflict = NULL;
+	struct nfs_state *lock_st = NULL;
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -442,8 +443,6 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 	} else {
-		struct nfs_state *lock_st = NULL;
-
 		status = stateid_lookup(prev_id, ino->ino, nst_lock, &lock_st);
 		if (status != NFS4_OK)
 			goto out;
@@ -476,7 +475,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	 */
 
 	if (!new_lock) {
-		/* FIXME? */
+		st = lock_st;
 	}
 
 	/*
