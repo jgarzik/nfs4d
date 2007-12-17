@@ -447,6 +447,9 @@ static void rpc_cxn_free(struct rpc_cxn *cxn)
 {
 	gnet_conn_unref(cxn->conn);
 	free(cxn->msg);
+
+	memset(cxn, 0, sizeof(*cxn));
+	free(cxn);
 }
 
 static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)

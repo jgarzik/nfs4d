@@ -733,7 +733,9 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 
 void fattr_free(struct nfs_fattr_set *attr)
 {
-	/* FIXME */
+	/* FIXME - actually free stuff? */
+
+	memset(attr, 0, sizeof(*attr));
 }
 
 static void fattr_fill_server(struct nfs_fattr_set *attr)

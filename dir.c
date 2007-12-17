@@ -181,6 +181,11 @@ void dirent_free(gpointer p)
 {
 	struct nfs_dirent *dirent = p;
 
+	if (!dirent)
+		return;
+
+	memset(dirent, 0, sizeof(*dirent));
+
 	free(dirent);
 }
 
