@@ -358,8 +358,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	cxn->drc_mask |= drc_lock;
 
 	if (cur->len < 28) {
-		status = NFS4ERR_BADXDR;
-		goto out;
+		WR32(NFS4ERR_BADXDR);
+		return NFS4ERR_BADXDR;
 	}
 
 	memset(&lock_sid, 0, sizeof(lock_sid));

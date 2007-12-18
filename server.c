@@ -111,7 +111,7 @@ char *copy_utf8string(const struct nfs_buf *str)
 
 char *cxn_getuser(const struct nfs_cxn *cxn)
 {
-	char *s;
+	char *s = NULL;
 
 	switch (cxn->auth.type) {
 	case auth_none:
@@ -130,7 +130,7 @@ char *cxn_getuser(const struct nfs_cxn *cxn)
 
 char *cxn_getgroup(const struct nfs_cxn *cxn)
 {
-	char *s;
+	char *s = NULL;
 
 	switch (cxn->auth.type) {
 	case auth_none:
