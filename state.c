@@ -698,15 +698,22 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 	list_add(&clid->node, &cli_unconfirmed);
 
 out:
-	if (debugging)
+	if (debugging) {
+		uint64_t u;
+
+		memcpy(&u, client_verf, 8);
 		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
-		       "PROG:%u NET:%s ADDR:%s CBID:%u)",
+		       "VERF:%Lx)",
 		       client.len,
 		       client.val,
+		       (unsigned long long) u);
+		syslog(LOG_INFO, "   SETCLIENTID ("
+		       "PROG:%u NET:%s ADDR:%s CBID:%u)",
 		       callback.cb_program,
 		       callback.cb_location.r_netid,
 		       callback.cb_location.r_addr,
 		       cb_ident);
+	}
 
 	WR32(status);
 	if (status == NFS4_OK) {
@@ -715,9 +722,15 @@ out:
 		WR64(clid->id_short);
 		WRMEM(&clid->confirm_verf, sizeof(verifier4));
 
-		if (debugging)
-			syslog(LOG_INFO, "   SETCLIENTID -> CLID:%Lx",
-				(unsigned long long) clid->id_short);
+		if (debugging) {
+			uint64_t u;
+
+			memcpy(&u, &clid->confirm_verf, 8);
+			syslog(LOG_INFO, "   SETCLIENTID -> (CLID:%Lx "
+				"VERF:%Lx)",
+				(unsigned long long) clid->id_short,
+				(unsigned long long) u);
+		}
 	}
 	else if (status == NFS4ERR_CLID_INUSE) {
 		WRSTR(confirmed->callback.cb_location.r_netid);
@@ -739,9 +752,14 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	id_short = CR64();
 	confirm_verf = CURMEM(sizeof(verifier4));
 
-	if (debugging)
-		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lx)",
-		       (unsigned long long) id_short);
+	if (debugging) {
+		uint64_t u;
+
+		memcpy(&u, confirm_verf, 8);
+		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lx VERF:%Lx)",
+		       (unsigned long long) id_short,
+		       (unsigned long long) u);
+	}
 
 	/* find the matching confirmed record (if any) */
 	confirmed = g_hash_table_lookup(srv.clid_idx,
@@ -774,17 +792,24 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* check for callback update */
 	if (confirmed && new_clid &&
+	    !memcmp(&confirmed->cli_verf, &new_clid->cli_verf,
+		    sizeof(verifier4)) &&
 	    memcmp(&confirmed->confirm_verf, confirm_verf, sizeof(verifier4))) {
 		/*
 		 * FIXME: signal <not-yet-written code> to tear down
 		 * the existing connection to the client
 		 */
 		clientid_promote(confirmed, new_clid);
+
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM -> cb update");
 		goto out;
 	}
 
 	/* check for replay that DRC missed */
 	else if (confirmed && !new_clid) {
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM -> replay");
 		goto out;
 	}
 
@@ -792,6 +817,8 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	else if (!confirmed && new_clid) {
 		client_cancel(&new_clid->id);		/* remove state */
 		clientid_promote(NULL, new_clid);
+		if (debugging)
+			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM -> confirm");
 	}
 
 	else {
