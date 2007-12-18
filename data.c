@@ -618,7 +618,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (list_empty(&st->u.lock.list))
-		state_trash(st);
+		state_trash(st, false);
 
 out:
 	WR32(status);

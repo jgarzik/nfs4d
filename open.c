@@ -124,6 +124,13 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	print_open_args(args);
 
+	/*
+	 * look up shorthand client id (clientid4)
+	 */
+	status = clientid_test(args->owner.clientid);
+	if (status != NFS4_OK)
+		goto out;
+
 	/* for the moment, we only support CLAIM_NULL */
 	if (args->claim.claim != CLAIM_NULL) {
 		status = NFS4ERR_NOTSUPP;
@@ -206,13 +213,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		if (status != NFS4_OK)
 			goto out;
 	}
-
-	/*
-	 * look up shorthand client id (clientid4)
-	 */
-	status = clientid_test(args->owner.clientid);
-	if (status != NFS4_OK)
-		goto out;
 
 	/*
 	 * create file, if necessary
@@ -497,12 +497,12 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	tmp = cl.list;
 	while (tmp) {
-		state_trash(tmp->data);
+		state_trash(tmp->data, false);
 		tmp = tmp->next;
 	}
 	g_list_free(cl.list);
 
-	state_trash(st);
+	state_trash(st, false);
 
 out:
 	WR32(status);

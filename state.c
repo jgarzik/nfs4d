@@ -28,7 +28,7 @@ struct nfs_clientid {
 
 static LIST_HEAD(cli_unconfirmed);
 
-static void client_cancel_id(clientid4 cli);
+static void client_cancel_id(clientid4 cli, bool expired);
 static bool clientid_touch(clientid4 id_in);
 
 static bool blob_equal(const struct blob *a, const struct blob *b)
@@ -111,8 +111,11 @@ nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 	if (!st)
 		return NFS4ERR_STALE_STATEID;
 
-	if ((st->type == nst_dead) && (type != nst_dead))
-		return NFS4ERR_EXPIRED;
+	if ((st->type == nst_dead) && (type != nst_dead)) {
+		if (st->expired)
+			return NFS4ERR_EXPIRED;
+		return NFS4ERR_OLD_STATEID;
+	}
 
 	if ((type != nst_any) && (st->type != type))
 		return NFS4ERR_BAD_STATEID;
@@ -281,7 +284,7 @@ void state_free(gpointer data)
 	free(st);
 }
 
-void state_trash(struct nfs_state *st)
+void state_trash(struct nfs_state *st, bool expired)
 {
 	bool rc;
 
@@ -292,6 +295,7 @@ void state_trash(struct nfs_state *st)
 		state_trash_locks(st);
 
 	st->type = nst_dead;
+	st->expired = expired;
 	INIT_LIST_HEAD(&st->u.dead_node);
 	list_add_tail(&st->u.dead_node, &srv.dead_state);
 	srv.n_dead++;
@@ -453,7 +457,7 @@ static void clientid_timer(struct nfs_timer *timer, void *priv)
 	if (clid->pending)
 		clientid_free(clid);
 	else
-		client_cancel_id(clid->id_short);
+		client_cancel_id(clid->id_short, true);
 }
 
 static int clientid_new(struct nfs_cxn *cxn,
@@ -523,7 +527,7 @@ static void cli_cancel_search(gpointer key, gpointer val, gpointer user_data)
 		cs->list = g_list_append(cs->list, st);
 }
 
-static void client_cancel_id(clientid4 cli)
+static void client_cancel_id(clientid4 cli, bool expired)
 {
 	struct cancel_search cs = { cli };
 	struct nfs_state *st;
@@ -539,7 +543,7 @@ static void client_cancel_id(clientid4 cli)
 		st = tmp->data;
 		tmp = tmp->next;
 
-		state_trash(st);
+		state_trash(st, expired);
 		trashed++;
 	}
 
@@ -547,7 +551,8 @@ static void client_cancel_id(clientid4 cli)
 
 	if (debugging)
 		syslog(LOG_INFO,
-		       "binned %u state recs associated with CID:%Lx",
+		       "%s %u state recs associated with CID:%Lx",
+		       expired ? "expired" : "cancelled",
 		       trashed, (unsigned long long) cli);
 }
 
@@ -577,7 +582,7 @@ static void client_cancel(const struct blob *key)
 		struct nfs_clientid *clid;
 
 		clid = tmp->data;
-		client_cancel_id(clid->id_short);
+		client_cancel_id(clid->id_short, false);
 
 		tmp = tmp->next;
 	}

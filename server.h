@@ -266,6 +266,7 @@ struct nfs_state {
 	nfsino_t		ino;		/* associated inode */
 
 	enum nfs_state_type	type;		/* nst_xxx */
+	bool			expired;
 
 	uint32_t		id;
 
@@ -579,7 +580,7 @@ extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *c
 extern void rand_verifier(verifier4 *verf);
 extern nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 			struct nfs_state **st_out);
-extern void state_trash(struct nfs_state *st);
+extern void state_trash(struct nfs_state *st, bool expired);
 
 static inline void free_bitmap(bitmap4 *map)
 {
