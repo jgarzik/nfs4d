@@ -100,6 +100,15 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
+bool stateid_valid(const struct nfs_stateid *sid)
+{
+	if (!sid)
+		return false;
+	if (memcmp(&sid->server_verf, &srv.instance_verf, 8))
+		return false;
+	return true;
+}
+
 nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 			struct nfs_state **st_out)
 {

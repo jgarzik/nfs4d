@@ -588,6 +588,7 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 			     struct rpc_write **wr);
 
 /* state.c */
+extern bool stateid_valid(const struct nfs_stateid *sid);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
 			 bool write_deny,
