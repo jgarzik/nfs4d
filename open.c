@@ -11,7 +11,7 @@ static const char *name_open_claim_type4[] = {
 	[CLAIM_DELEGATE_PREV] = "DELEGATE_PREV",
 };
 
-static nfsstat4 cur_open(struct curbuf *cur, OPEN4args *args,
+static nfsstat4 cur_open(struct curbuf *cur, struct nfs_open_args *args,
 			 struct nfs_fattr_set *attr)
 {
 	if (cur->len < (6 * 4))
@@ -20,12 +20,12 @@ static nfsstat4 cur_open(struct curbuf *cur, OPEN4args *args,
 	args->seqid = CR32();
 	args->share_access = CR32();
 	args->share_deny = CR32();
-	args->owner.clientid = CR64();
-	CURBUF((struct nfs_buf *) &args->owner.owner);
+	args->clientid = CR64();
+	CURBUF(&args->owner);
 
-	args->openhow.opentype = CR32();
-	if (args->openhow.opentype == OPEN4_CREATE) {
-		createhow4 *how = &args->openhow.openflag4_u.how;
+	args->opentype = CR32();
+	if (args->opentype == OPEN4_CREATE) {
+		createhow4 *how = &args->how;
 		how->mode = CR32();
 		if (how->mode == EXCLUSIVE4) {
 			if (cur->len < 8)
@@ -43,32 +43,28 @@ static nfsstat4 cur_open(struct curbuf *cur, OPEN4args *args,
 				return status;
 		} else
 			return NFS4ERR_BADXDR;
-	} else if (args->openhow.opentype != OPEN4_NOCREATE)
+	} else if (args->opentype != OPEN4_NOCREATE)
 		return NFS4ERR_BADXDR;
 
-	args->claim.claim = CR32();
-	switch (args->claim.claim) {
+	args->claim = CR32();
+	switch (args->claim) {
 	case CLAIM_NULL:
-		CURBUF((struct nfs_buf *)
-			&args->claim.open_claim4_u.file);
+		CURBUF(&args->u.file);
 		break;
 
 	case CLAIM_PREVIOUS:
-		args->claim.open_claim4_u.delegate_type = CR32();
+		args->u.delegate_type = CR32();
 		break;
 
 	case CLAIM_DELEGATE_CUR:
 		if (cur->len < 20)
 			return NFS4ERR_BADXDR;
-		CURSID((struct nfs_stateid *)
-			&args->claim.open_claim4_u.delegate_cur_info.delegate_stateid);
-		CURBUF((struct nfs_buf *)
-			&args->claim.open_claim4_u.delegate_cur_info.file);
+		CURSID(&args->u.delegate_cur_info.delegate_stateid);
+		CURBUF(&args->u.delegate_cur_info.file);
 		break;
 
 	case CLAIM_DELEGATE_PREV:
-		CURBUF((struct nfs_buf *)
-			&args->claim.open_claim4_u.file_delegate_prev);
+		CURBUF(&args->u.file_delegate_prev);
 		break;
 	default:
 		return NFS4ERR_BADXDR;
@@ -77,26 +73,26 @@ static nfsstat4 cur_open(struct curbuf *cur, OPEN4args *args,
 	return NFS4_OK;
 }
 
-static void print_open_args(OPEN4args *args)
+static void print_open_args(struct nfs_open_args *args)
 {
 	if (!debugging)
 		return;
 
 	syslog(LOG_INFO, "op OPEN ('%.*s')",
-	       args->claim.open_claim4_u.file.utf8string_len,
-	       args->claim.open_claim4_u.file.utf8string_val);
+	       args->u.file.len,
+	       args->u.file.val);
 
 	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x HOW:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
 	       args->share_deny,
-	       args->openhow.opentype == OPEN4_CREATE ? "CR" : "NOC",
-	       name_open_claim_type4[args->claim.claim]);
+	       args->opentype == OPEN4_CREATE ? "CR" : "NOC",
+	       name_open_claim_type4[args->claim]);
 
 	syslog(LOG_INFO, "   OPEN (CID:%Lx OWNER:%.*s)",
-	       (unsigned long long) args->owner.clientid,
-	       args->owner.owner.owner_len,
-	       args->owner.owner.owner_val);
+	       (unsigned long long) args->clientid,
+	       args->owner.len,
+	       args->owner.val);
 }
 
 nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -108,8 +104,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_state *st;
 	struct nfs_stateid sid;
 	bool creating, recreating = false;
-	OPEN4args _args;
-	OPEN4args *args = &_args;
+	struct nfs_open_args _args;
+	struct nfs_open_args *args = &_args;
 	struct nfs_fattr_set attr;
 	uint64_t bitmap_set = 0;
 	change_info4 cinfo = { true, 0, 0 };
@@ -127,12 +123,12 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	/*
 	 * look up shorthand client id (clientid4)
 	 */
-	status = clientid_test(args->owner.clientid);
+	status = clientid_test(args->clientid);
 	if (status != NFS4_OK)
 		goto out;
 
 	/* for the moment, we only support CLAIM_NULL */
-	if (args->claim.claim != CLAIM_NULL) {
+	if (args->claim != CLAIM_NULL) {
 		status = NFS4ERR_NOTSUPP;
 		goto out;
 	}
@@ -143,9 +139,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 
 	/* lookup component name; get inode if exists */
-	lu_stat = dir_lookup(dir_ino,
-			     (struct nfs_buf *) &args->claim.open_claim4_u.file,
-			     &de);
+	lu_stat = dir_lookup(dir_ino, &args->u.file, &de);
 	switch (lu_stat) {
 	case NFS4ERR_NOENT:
 		break;
@@ -172,10 +166,10 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	creating = (args->openhow.opentype == OPEN4_CREATE);
+	creating = (args->opentype == OPEN4_CREATE);
 
 	if (creating && ino &&
-	    (args->openhow.openflag4_u.how.mode == UNCHECKED4)) {
+	    (args->how.mode == UNCHECKED4)) {
 		creating = false;
 		recreating = true;
 	}
@@ -224,9 +218,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 
-		status = inode_add(dir_ino, ino, &attr,
-			   (struct nfs_buf *) &args->claim.open_claim4_u.file,
-			   &bitmap_set, &cinfo);
+		status = inode_add(dir_ino, ino, &attr, &args->u.file,
+				   &bitmap_set, &cinfo);
 		if (status != NFS4_OK)
 			goto out;
 	}
@@ -258,13 +251,13 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 	}
 
-	st = state_new(nst_open, (struct nfs_buf *) &args->owner.owner);
+	st = state_new(nst_open, &args->owner);
 	if (!st) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
-	st->cli = args->owner.clientid;
+	st->cli = args->clientid;
 	st->ino = ino->ino;
 	st->seq = args->seqid + 1;
 	st->u.share.access = args->share_access;

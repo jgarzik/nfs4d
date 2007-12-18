@@ -216,6 +216,38 @@ struct nfs_buf {
 	char			*val;
 };
 
+struct nfs_stateid {
+	uint32_t		seqid;
+	uint32_t		id;
+	verifier4		server_verf;
+};
+
+struct nfs_open_args {
+	seqid4			seqid;
+
+	uint32_t		share_access;
+	uint32_t		share_deny;
+
+	clientid4		clientid;
+	struct nfs_buf		owner;
+
+	opentype4		opentype;
+	createhow4		how;
+
+	open_claim_type4	claim;
+	union {
+		struct nfs_buf		file;
+		open_delegation_type4	delegate_type;
+
+		struct {
+			struct nfs_stateid delegate_stateid;
+			struct nfs_buf	file;
+		} delegate_cur_info;
+
+		struct nfs_buf		file_delegate_prev;
+	} u;
+};
+
 enum cxn_auth_type {
 	auth_none,
 	auth_unix
@@ -285,12 +317,6 @@ struct nfs_state {
 
 		struct list_head	dead_node;
 	} u;
-};
-
-struct nfs_stateid {
-	uint32_t		seqid;
-	uint32_t		id;
-	verifier4		server_verf;
 };
 
 struct nfs_inode {
