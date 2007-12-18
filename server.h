@@ -79,10 +79,6 @@ enum big_server_fs_settings {
 	SRV_MAX_FILESIZE	= 0xffffffffULL,
 };
 
-enum blob_hash_init_info {
-	BLOB_HASH_INIT		= 5381UL
-};
-
 enum other_blob_info {
 	BLOB_MAGIC		= 0xdeadbeef
 };
@@ -226,6 +222,7 @@ enum cxn_auth_type {
 };
 
 struct cxn_auth {
+	char				host[64];
 	enum cxn_auth_type		type;
 
 	union {
@@ -399,8 +396,6 @@ struct nfs_dirent {
 struct nfs_server {
 	GHashTable		*inode_table;
 
-	GHashTable		*client_ids;
-
 	GHashTable		*clid_idx;
 
 	GHashTable		*state;
@@ -516,6 +511,7 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 /* main.c */
 extern void timer_renew(struct nfs_timer *, unsigned int);
 extern void timer_init(struct nfs_timer *, nfs_timer_cb_t, void *);
+extern void timer_del(struct nfs_timer *);
 extern void syslogerr(const char *prefix);
 extern void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
@@ -557,17 +553,14 @@ extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 extern bool valid_utf8string(const struct nfs_buf *str);
 extern char *copy_utf8string(const struct nfs_buf *str);
 extern int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out);
-extern guint clientid_hash(gconstpointer data);
-extern gboolean clientid_equal(gconstpointer _a, gconstpointer _b);
-extern int nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
+extern int nfsproc_null(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 			 struct curbuf *cur, struct list_head *writes,
 			 struct rpc_write **wr);
-extern int nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
+extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 			     struct curbuf *cur, struct list_head *writes,
 			     struct rpc_write **wr);
 
 /* state.c */
-extern bool clientid_touch(clientid4 id_short);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
 			 bool write_deny,
@@ -584,7 +577,6 @@ extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
-extern unsigned long blob_hash(unsigned long hash, const void *_buf, size_t buflen);
 extern nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 			struct nfs_state **st_out);
 extern void state_trash(struct nfs_state *st);

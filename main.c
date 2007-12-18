@@ -424,6 +424,11 @@ static gboolean timer_cb(gpointer dummy)
 	return FALSE;
 }
 
+void timer_del(struct nfs_timer *timer)
+{
+	list_del_init(&timer->node);
+}
+
 void timer_renew(struct nfs_timer *timer, unsigned int seconds)
 {
 	uint64_t interval = 0;
@@ -553,12 +558,12 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	switch (proc) {
 	case NFSPROC4_NULL:
-		drc_mask = nfsproc_null(&auth_cred, &auth_verf, cur,
-					 writes, wr);
+		drc_mask = nfsproc_null(rc->host, &auth_cred, &auth_verf, cur,
+					writes, wr);
 		break;
 	case NFSPROC4_COMPOUND:
-		drc_mask = nfsproc_compound(&auth_cred, &auth_verf, cur,
-					     writes, wr);
+		drc_mask = nfsproc_compound(rc->host, &auth_cred, &auth_verf,
+					    cur, writes, wr);
 		break;
 	default:
 		goto err_out;
@@ -799,8 +804,6 @@ static GMainLoop *init_server(void)
 	INIT_LIST_HEAD(&srv.dead_state);
 	srv.space_used = 1024 * 1024;
 	srv.lease_time = SRV_LEASE_TIME;
-	srv.client_ids = g_hash_table_new_full(clientid_hash, clientid_equal,
-					       NULL, NULL);
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					     NULL, NULL);
 	srv.state = g_hash_table_new_full(g_direct_hash, g_direct_equal,
@@ -812,8 +815,7 @@ static GMainLoop *init_server(void)
 		return NULL;
 	}
 
-	if (!srv.client_ids || !srv.clid_idx || !srv.state ||
-	    !request_cache) {
+	if (!srv.clid_idx || !srv.state || !request_cache) {
 		syslog(LOG_ERR, "OOM in init_server()");
 		return NULL;
 	}

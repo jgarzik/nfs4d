@@ -147,7 +147,7 @@ char *cxn_getgroup(const struct nfs_cxn *cxn)
 	return s;
 }
 
-static nfsstat4 cli_init(struct opaque_auth *cred, struct opaque_auth *verf,
+static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 			 struct nfs_cxn **cxn_out)
 {
 	struct nfs_cxn *cxn = calloc(1, sizeof(struct nfs_cxn));
@@ -158,6 +158,8 @@ static nfsstat4 cli_init(struct opaque_auth *cred, struct opaque_auth *verf,
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
+
+	strncpy(cxn->auth.host, host, sizeof(cxn->auth.host) - 1);
 
 	switch (cred->oa_flavor) {
 	case AUTH_NONE:
@@ -468,7 +470,7 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	return NFS4ERR_INVAL;	/* never reached */
 }
 
-int nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
+int nfsproc_null(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 		  struct curbuf *cur, struct list_head *writes,
 		  struct rpc_write **wr)
 {
@@ -478,7 +480,7 @@ int nfsproc_null(struct opaque_auth *cred, struct opaque_auth *verf,
 	return 0;
 }
 
-int nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
+int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 		      struct curbuf *cur, struct list_head *writes,
 		      struct rpc_write **wr)
 {
@@ -506,7 +508,7 @@ int nfsproc_compound(struct opaque_auth *cred, struct opaque_auth *verf,
 		goto out;
 	}
 
-	status = cli_init(cred, verf, &cxn);
+	status = cli_init(host, cred, verf, &cxn);
 	if (status != NFS4_OK)
 		goto out;
 
