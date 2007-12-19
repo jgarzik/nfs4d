@@ -193,11 +193,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
-	if (((args->share_access & OPEN4_SHARE_ACCESS_WRITE) == 0) &&
-	    (args->share_deny & OPEN4_SHARE_DENY_WRITE)) {
-		status = NFS4ERR_ACCESS;
-		goto out;
-	}
 
 	if (ino) {
 		status = access_ok(NULL, ino->ino,
