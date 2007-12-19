@@ -618,11 +618,17 @@ static void client_cancel(const struct blob *key)
 static void cli_clear_pending(const struct blob *key)
 {
 	struct nfs_clientid *clid, *iter;
+	unsigned int cleared = 0;
 
 	list_for_each_entry_safe(clid, iter, &cli_unconfirmed, node) {
-		if (blob_equal(key, &clid->id))
+		if (blob_equal(key, &clid->id)) {
 			clientid_free(clid);
+			cleared++;
+		}
 	}
+
+	if (debugging && cleared)
+		syslog(LOG_DEBUG, "cleared %u unconfirmed entries", cleared);
 }
 
 static void clientid_promote(struct nfs_clientid *old_clid,
