@@ -647,7 +647,7 @@ static void lockowner_iter(gpointer key, gpointer val, gpointer user_data)
 		return;
 	if (memcmp(st->owner, lsi->owner->val, lsi->owner->len))
 		return;
-	
+
 	lsi->match = true;
 }
 

@@ -20,6 +20,8 @@ struct nfs_clientid {
 
 	struct cxn_auth		auth;
 
+	bool			timed_out;
+
 	bool			pending;
 	struct list_head	node;
 
@@ -65,7 +67,7 @@ static bool auth_equal(const struct cxn_auth *a, const struct cxn_auth *b)
 		return false;
 	if (strcmp(a->host, b->host))
 		return false;
-	
+
 	switch (a->type) {
 	case auth_none:
 		/* do nothing */
@@ -282,7 +284,7 @@ void state_free(gpointer data)
 		/* do nothing */
 		break;
 	case nst_dead:
-		list_del(&st->u.dead_node);
+		timer_del(&st->u.death_timer);
 		break;
 	case nst_lock:
 		state_trash_locks(st);
@@ -293,10 +295,24 @@ void state_free(gpointer data)
 	free(st);
 }
 
-void state_trash(struct nfs_state *st, bool expired)
+static void state_trash_timer(struct nfs_timer *timer, void *priv)
 {
+	struct nfs_state *st = priv;
 	bool rc;
 
+	if (debugging)
+		syslog(LOG_DEBUG, "GC'd state (ID:%x)", st->id);
+
+	/* removing from hash table frees struct */
+	rc = g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id));
+	if (!rc) {
+		syslog(LOG_ERR, "BUG: failed to GC state");
+		state_free(st);
+	}
+}
+
+void state_trash(struct nfs_state *st, bool expired)
+{
 	if (st->type == nst_dead)
 		return;
 
@@ -305,28 +321,8 @@ void state_trash(struct nfs_state *st, bool expired)
 
 	st->type = nst_dead;
 	st->expired = expired;
-	INIT_LIST_HEAD(&st->u.dead_node);
-	list_add_tail(&st->u.dead_node, &srv.dead_state);
-	srv.n_dead++;
-
-	if (srv.n_dead < SRV_STATE_HIGH_WAT)
-		return;
-
-	while (srv.n_dead > SRV_STATE_LOW_WAT) {
-		st = list_entry(srv.dead_state.next, struct nfs_state, u.dead_node);
-
-		/* removing from hash table frees struct */
-		rc = g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id));
-		if (!rc) {
-			syslog(LOG_ERR, "failed to GC state(ID:%u)", st->id);
-			state_free(st);
-		}
-
-		srv.n_dead--;
-	}
-
-	if (debugging)
-		syslog(LOG_INFO, "state garbage collected");
+	timer_init(&st->u.death_timer, state_trash_timer, st);
+	timer_renew(&st->u.death_timer, SRV_STATE_DEATH);
 }
 
 struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
@@ -357,7 +353,7 @@ struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 		break;
 
 	case nst_dead:
-		INIT_LIST_HEAD(&st->u.dead_node);
+		timer_init(&st->u.death_timer, state_trash_timer, st);
 		break;
 
 	case nst_lock:
@@ -459,14 +455,34 @@ static void clientid_free(struct nfs_clientid *clid)
 static void clientid_timer(struct nfs_timer *timer, void *priv)
 {
 	struct nfs_clientid *clid = priv;
+	const char *msg;
+	unsigned long long id_short;
 
-	syslog(LOG_INFO, "timeout, cancelling state for CID:%Lx",
-		(unsigned long long) clid->id_short);
+	id_short = clid->id_short;
 
-	if (clid->pending)
+	/* if pending, or already cancelled this client's state
+	 * via lease expiration, then just free the record
+	 */
+	if (clid->pending) {
 		clientid_free(clid);
-	else
+		msg = "released unconfirmed";
+	} else if (clid->timed_out) {
+		clientid_free(clid);
+		msg = "released";
+	} else {
 		client_cancel_id(clid->id_short, true);
+
+		/* after cancelling state via lease expiration,
+		 * keep the client id around for a while longer
+		 */
+		clid->timed_out = true;
+		timer_renew(&clid->timer, SRV_CLID_DEATH);
+
+		msg = "expired state for";
+	}
+
+	if (debugging)
+		syslog(LOG_INFO, "timeout, %s CID:%Lx", msg, id_short);
 }
 
 static int clientid_new(struct nfs_cxn *cxn,

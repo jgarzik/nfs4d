@@ -51,6 +51,8 @@ enum server_limits {
 
 	SRV_LEASE_TIME		= 3 * 60,
 	SRV_DRC_TIME		= 4 * 60,
+	SRV_STATE_DEATH		= 5 * 60,
+	SRV_CLID_DEATH		= SRV_LEASE_TIME * 2,
 
 	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
@@ -204,7 +206,7 @@ struct nfs_timer {
 	nfs_timer_cb_t		cb;
 	void			*private;
 
-	uint64_t		expire;		/* in seconds */
+	uint64_t		expire;		/* in seconds, absolute time */
 
 	struct list_head	node;
 
@@ -315,7 +317,7 @@ struct nfs_state {
 			struct nfs_state *open;
 		} lock;
 
-		struct list_head	dead_node;
+		struct nfs_timer	death_timer;
 	} u;
 };
 
@@ -426,8 +428,6 @@ struct nfs_server {
 	GHashTable		*clid_idx;
 
 	GHashTable		*state;
-	struct list_head	dead_state;
-	unsigned int		n_dead;
 
 	unsigned int		lease_time;
 

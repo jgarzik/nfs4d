@@ -389,10 +389,71 @@ static void drc_store(const unsigned char *md, void *cache,
 	timer_renew(&drc->timer, SRV_DRC_TIME);
 }
 
+void timer_del(struct nfs_timer *timer)
+{
+	if (timer->queued) {
+		list_del_init(&timer->node);
+		timer->queued = false;
+	}
+}
+
+static void timer_requeue(struct nfs_timer *timer)
+{
+	struct list_head *tmp;
+	struct nfs_timer *tmp_timer;
+
+	/* if this is merely an expiration time change, the
+	 * timer may already be on timer_list.  if so, remove it
+	 */
+	timer_del(timer);
+
+	timer->queued = true;
+
+	/* if list empty, addition is easy */
+	if (list_empty(&timer_list)) {
+		list_add(&timer->node, &timer_list);
+		return;
+	}
+
+	/* insert into timer_list in order, iterating from tail to head,
+	 * sorted by expire time
+	 */
+	tmp = timer_list.prev;		/* grab list tail */
+	while (tmp != &timer_list) {
+		tmp_timer = list_entry(tmp, struct nfs_timer, node);
+
+		if (timer->expire >= tmp_timer->expire)
+			break;
+
+		tmp = tmp->prev;
+	}
+
+	/* if search failed, we have the lowest expire time, and
+	 * belong at the head of the list
+	 */
+	if (tmp == &timer_list)
+		list_add(&timer->node, &timer_list);
+
+	/* otherwise, insert in the middle of the list */
+	else {
+		struct list_head *before, *me, *after;
+
+		before	= &tmp_timer->node;
+		me	= &timer->node;
+		after	= before->next;
+
+		me->prev = before;
+		me->next = after;
+
+		before->next = me;
+		after->prev = me;
+	}
+}
+
 static gboolean timer_cb(gpointer dummy)
 {
 	struct timezone tz = { 0, 0 };
-	struct nfs_timer *timer, *iter;
+	struct nfs_timer *timer;
 	uint64_t next_expire = 0xffffffffffffffffULL;
 
 	if (debugging > 1)
@@ -400,15 +461,23 @@ static gboolean timer_cb(gpointer dummy)
 
 	gettimeofday(&current_time, &tz);
 
-	list_for_each_entry_safe(timer, iter, &timer_list, node) {
+	/*
+	 * iterate through timer_list, which is sorted by absolute
+	 * expire time.  when we reach an expire time in the future,
+	 * cease iteration.  we must delete the timer before calling
+	 * the callback, in case the callback decides to requeue the
+	 * timer.
+	 */
+	while (!list_empty(&timer_list)) {
+		timer = list_entry(timer_list.next, struct nfs_timer, node);
+
 		if (current_time.tv_sec < timer->expire) {
 			if (timer->expire < next_expire)
 				next_expire = timer->expire;
-			continue;
+			break;
 		}
 
-		list_del_init(&timer->node);
-		timer->queued = false;
+		timer_del(timer);
 
 		timer->cb(timer, timer->private);
 	}
@@ -424,11 +493,6 @@ static gboolean timer_cb(gpointer dummy)
 	return FALSE;
 }
 
-void timer_del(struct nfs_timer *timer)
-{
-	list_del_init(&timer->node);
-}
-
 void timer_renew(struct nfs_timer *timer, unsigned int seconds)
 {
 	uint64_t interval = 0;
@@ -440,13 +504,14 @@ void timer_renew(struct nfs_timer *timer, unsigned int seconds)
 	if (!timer_expire || (timer->expire < timer_expire))
 		timer_expire = timer->expire;
 
-	if (!timer->queued) {
-		timer->queued = true;
-		list_add(&timer->node, &timer_list);
-	}
+	timer_requeue(timer);
 
 	if (timer_expire > current_time.tv_sec)
 		interval = timer_expire - current_time.tv_sec;
+
+	/* FIXME: if we reduce timer_expire, we should update
+	 * the existing timer
+	 */
 
 	if (!timer_source)
 		timer_source = g_timeout_add(interval * 1000, timer_cb, NULL);
@@ -454,11 +519,11 @@ void timer_renew(struct nfs_timer *timer, unsigned int seconds)
 
 void timer_init(struct nfs_timer *timer, nfs_timer_cb_t cb, void *priv)
 {
-	memset(timer, 0, sizeof(*timer));
-
 	timer->cb = cb;
 	timer->private = priv;
+	timer->expire = 0;
 	INIT_LIST_HEAD(&timer->node);
+	timer->queued = false;
 }
 
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
@@ -801,7 +866,6 @@ static GMainLoop *init_server(void)
 	loop = g_main_loop_new(NULL, FALSE);
 
 	memset(&srv, 0, sizeof(srv));
-	INIT_LIST_HEAD(&srv.dead_state);
 	srv.space_used = 1024 * 1024;
 	srv.lease_time = SRV_LEASE_TIME;
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
