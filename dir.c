@@ -552,6 +552,7 @@ struct readdir_info {
 	bool cookie_found;
 	bool stop;
 	bool hit_limit;
+	bool first_time;
 
 	unsigned int n_results;
 };
@@ -606,6 +607,15 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->hit_limit = true;
 		ri->stop = true;
 		goto out;
+	}
+
+	if (ri->first_time) {
+		ri->first_time = false;
+
+		/* FIXME: server verifier isn't the best for dir verf */
+		WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
+
+		ri->val_follows = WRSKIP(4);
 	}
 
 	ri->dircount -= dirlen;
@@ -690,6 +700,10 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = dir_curfh(cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
+	if (ino->mode == 0) {
+		status = NFS4ERR_ACCESS;
+		goto out;
+	}
 
 	/* subtract READDIR4resok header and footer size */
 	if (maxcount < 16) {
@@ -704,9 +718,6 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	/* FIXME: server verifier isn't the best for dir verf */
-	WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
-
 	memset(&ri, 0, sizeof(ri));
 	ri.cookie = cookie;
 	ri.dircount = dircount;
@@ -715,10 +726,16 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	ri.status = NFS4_OK;
 	ri.writes = writes;
 	ri.wr = wr;
-	ri.val_follows = WRSKIP(4);
 	ri.dir_pos = 3;
+	ri.first_time = true;
 
-	g_tree_foreach(ino->u.dir, readdir_iter, &ri);
+	if (g_tree_nnodes(ino->u.dir) == 0) {
+		WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
+
+		ri.val_follows = WRSKIP(4);
+	} else {
+		g_tree_foreach(ino->u.dir, readdir_iter, &ri);
+	}
 
 	/* terminate final entry4.nextentry and dirlist4.entries */
 	if (ri.val_follows)
