@@ -23,3 +23,6 @@ stamp-h1
 nfs4_ramd
 nfs4-ram*.tar.gz
 nfs4-ram-config.h*
+
+nfs4_ramd.pid
+nfs4_ramd.stats

@@ -58,7 +58,7 @@ static void nrand32(void *mem, unsigned int dwords)
 
 void rand_verifier(verifier4 *verf)
 {
-	nrand32(verf, 5);
+	nrand32(verf, 2);
 }
 
 static bool auth_equal(const struct cxn_auth *a, const struct cxn_auth *b)
@@ -306,6 +306,8 @@ void state_free(gpointer data)
 	if (!st)
 		return;
 
+	srv.stats.state_free++;
+
 	free(st->owner);
 
 	switch (st->type) {
@@ -361,6 +363,8 @@ void state_trash(struct nfs_state *st, bool expired)
 struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 {
 	struct nfs_state *st;
+
+	srv.stats.state_alloc++;
 
 	st = calloc(1, sizeof(struct nfs_state));
 	if (!st)
@@ -472,6 +476,8 @@ static void free_cb_client4(cb_client4 *cbc)
 
 static void clientid_free(struct nfs_clientid *clid)
 {
+	srv.stats.clid_free++;
+
 	if (!clid)
 		return;
 
@@ -527,6 +533,8 @@ static int clientid_new(struct nfs_cxn *cxn,
 {
 	struct nfs_clientid *clid;
 	unsigned long short_clid;
+
+	srv.stats.clid_alloc++;
 
 	clid = calloc(1, sizeof(struct nfs_clientid));
 	if (!clid)

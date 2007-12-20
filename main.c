@@ -1,9 +1,11 @@
 
+#define _GNU_SOURCE
 #include "nfs4-ram-config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <signal.h>
 #include <argp.h>
 #include <locale.h>
@@ -27,11 +29,13 @@ enum {
 	HDR_FRAG_END		= (1U << 31),
 };
 
+static char startup_cwd[PATH_MAX];
 struct timeval current_time;
 int debugging = 0;
 struct nfs_server srv;
 static bool opt_foreground;
 static char *pid_fn = "nfs4_ramd.pid";
+static char *stats_fn = "nfs4_ramd.stats";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
@@ -81,6 +85,8 @@ static struct argp_option options[] = {
 	  "Bind to TCP port PORT (def. 2049)" },
 	{ "pid", 'P', "FILE", 0,
 	  "Write daemon process id to FILE" },
+	{ "stats", 'S', "FILE", 0,
+	  "Statistics dumped to FILE, for each SIGUSR1" },
 
 	{ }
 };
@@ -544,6 +550,8 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	char *cache = NULL;
 	int drc_mask = 0;
 
+	srv.stats.rpc_msgs++;
+
 	_wr = NULL;
 	wr = &_wr;
 	writes = &_writes;
@@ -623,10 +631,12 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	switch (proc) {
 	case NFSPROC4_NULL:
+		srv.stats.proc_null++;
 		drc_mask = nfsproc_null(rc->host, &auth_cred, &auth_verf, cur,
 					writes, wr);
 		break;
 	case NFSPROC4_COMPOUND:
+		srv.stats.proc_compound++;
 		drc_mask = nfsproc_compound(rc->host, &auth_cred, &auth_verf,
 					    cur, writes, wr);
 		break;
@@ -669,6 +679,8 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 		free(_wr->buf);
 		free(_wr);
 	}
+
+	srv.stats.sock_tx_bytes += n_wbytes;
 
 	drc_store(md, cache, cache_len);
 
@@ -717,6 +729,8 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 	case GNET_CONN_READ:
 		switch (rc->state) {
 		case get_hdr:
+			srv.stats.sock_rx_bytes += 4;
+
 			tmp = ntohl(*(uint32_t *)evt->buffer);
 			if (tmp & HDR_FRAG_END) {
 				rc->last_frag = true;
@@ -736,6 +750,8 @@ static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
 			break;
 
 		case get_data:
+			srv.stats.sock_rx_bytes += evt->length;
+
 			/* avoiding alloc+copy, in a common case */
 			if (rc->last_frag && !rc->msg) {
 				rpc_msg(rc, evt->buffer, evt->length);
@@ -825,6 +841,15 @@ static void write_pid_file(void)
 	char str[32], *s;
 	size_t bytes;
 
+	if (pid_fn[0] != '/') {
+		char *fn;
+
+		if (asprintf(&fn, "%s%s", startup_cwd, pid_fn) < 0)
+			exit(1);
+
+		pid_fn = fn;		/* NOTE: never freed */
+	}
+
 	sprintf(str, "%u\n", getpid());
 	s = str;
 	bytes = strlen(s);
@@ -866,7 +891,7 @@ static GMainLoop *init_server(void)
 	loop = g_main_loop_new(NULL, FALSE);
 
 	memset(&srv, 0, sizeof(srv));
-	srv.space_used = 1024 * 1024;
+	srv.space_used = 1000000;
 	srv.lease_time = SRV_LEASE_TIME;
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					     NULL, NULL);
@@ -931,6 +956,10 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		pid_fn = arg;
 		break;
 
+	case 'S':
+		stats_fn = arg;
+		break;
+
 	case ARGP_KEY_ARG:
 		argp_usage(state);	/* too many args */
 		break;
@@ -949,6 +978,161 @@ static void term_signal(int signal)
 {
 	syslog(LOG_INFO, "got termination signal");
 	exit(1);
+}
+
+static char stats_buf[4096 * 2];
+
+static gboolean stats_dump(gpointer dummy)
+{
+	struct timezone tz = { 0, 0 };
+	int fd;
+
+	gettimeofday(&current_time, &tz);
+
+	snprintf(stats_buf, sizeof(stats_buf),
+		"========== %Lu.%Lu\n"
+		"sock_rx_bytes: %Lu\n"
+		"sock_tx_bytes: %Lu\n"
+		"read_bytes: %Lu\n"
+		"write_bytes: %Lu\n"
+		"rpc_msgs: %lu\n"
+		"op_access: %lu\n"
+		"op_close: %lu\n"
+		"op_commit: %lu\n"
+		"op_create: %lu\n"
+		"op_getattr: %lu\n"
+		"op_getfh: %lu\n"
+		"op_link: %lu\n"
+		"op_lock: %lu\n"
+		"op_testlock: %lu\n"
+		"op_unlock: %lu\n"
+		"op_lookup: %lu\n"
+		"op_lookupp: %lu\n"
+		"op_nverify: %lu\n"
+		"op_open: %lu\n"
+		"op_open_confirm: %lu\n"
+		"op_open_downgrade: %lu\n"
+		"op_putfh: %lu\n"
+		"op_putpubfh: %lu\n"
+		"op_putrootfh: %lu\n"
+		"op_read: %lu\n"
+		"op_readdir: %lu\n"
+		"op_readlink: %lu\n"
+		"op_release_lockowner: %lu\n"
+		"op_remove: %lu\n"
+		"op_rename: %lu\n"
+		"op_renew: %lu\n"
+		"op_restorefh: %lu\n"
+		"op_savefh: %lu\n"
+		"op_secinfo: %lu\n"
+		"op_setattr: %lu\n"
+		"op_setclientid: %lu\n"
+		"op_setclientid_confirm: %lu\n"
+		"op_verify: %lu\n"
+		"op_write: %lu\n"
+		"op_notsupp: %lu\n"
+		"op_illegal: %lu\n"
+		"proc_null: %lu\n"
+		"proc_compound: %lu\n"
+		"state_objs: %u\n"
+		"state_alloc: %lu\n"
+		"state_free: %lu\n"
+		"clid_objs: %u\n"
+		"clid_alloc: %lu\n"
+		"clid_free: %lu\n"
+		"inode_objs: %u\n"
+		"========== %Lu.%Lu\n",
+
+		(unsigned long long) current_time.tv_sec,
+		(unsigned long long) current_time.tv_usec,
+		srv.stats.sock_rx_bytes,
+		srv.stats.sock_tx_bytes,
+		srv.stats.read_bytes,
+		srv.stats.write_bytes,
+		srv.stats.rpc_msgs,
+		srv.stats.op_access,
+		srv.stats.op_close,
+		srv.stats.op_commit,
+		srv.stats.op_create,
+		srv.stats.op_getattr,
+		srv.stats.op_getfh,
+		srv.stats.op_link,
+		srv.stats.op_lock,
+		srv.stats.op_testlock,
+		srv.stats.op_unlock,
+		srv.stats.op_lookup,
+		srv.stats.op_lookupp,
+		srv.stats.op_nverify,
+		srv.stats.op_open,
+		srv.stats.op_open_confirm,
+		srv.stats.op_open_downgrade,
+		srv.stats.op_putfh,
+		srv.stats.op_putpubfh,
+		srv.stats.op_putrootfh,
+		srv.stats.op_read,
+		srv.stats.op_readdir,
+		srv.stats.op_readlink,
+		srv.stats.op_release_lockowner,
+		srv.stats.op_remove,
+		srv.stats.op_rename,
+		srv.stats.op_renew,
+		srv.stats.op_restorefh,
+		srv.stats.op_savefh,
+		srv.stats.op_secinfo,
+		srv.stats.op_setattr,
+		srv.stats.op_setclientid,
+		srv.stats.op_setclientid_confirm,
+		srv.stats.op_verify,
+		srv.stats.op_write,
+		srv.stats.op_notsupp,
+		srv.stats.op_illegal,
+		srv.stats.proc_null,
+		srv.stats.proc_compound,
+		g_hash_table_size(srv.state),
+		srv.stats.state_alloc,
+		srv.stats.state_free,
+		g_hash_table_size(srv.clid_idx),
+		srv.stats.clid_alloc,
+		srv.stats.clid_free,
+		g_hash_table_size(srv.inode_table),
+		(unsigned long long) current_time.tv_sec,
+		(unsigned long long) current_time.tv_usec);
+
+	if (stats_fn[0] != '/') {
+		char *fn;
+
+		if (asprintf(&fn, "%s%s", startup_cwd, stats_fn) < 0)
+			exit(1);
+
+		stats_fn = fn;		/* NOTE: never freed */
+	}
+
+	fd = open(stats_fn, O_WRONLY | O_APPEND | O_CREAT, 0644);
+	if (fd < 0) {
+		syslog(LOG_ERR, "open(%s): %s", stats_fn, strerror(errno));
+		return FALSE;
+	}
+
+	if (write(fd, stats_buf, strlen(stats_buf)) < 0) {
+		syslog(LOG_ERR, "write(%s, %lu): %s",
+		       stats_fn,
+		       (unsigned long) strlen(stats_buf),
+		       strerror(errno));
+		close(fd);
+		return FALSE;
+	}
+
+	if (close(fd) < 0)
+		syslog(LOG_ERR, "close(%s): %s", stats_fn, strerror(errno));
+
+	return FALSE;
+}
+
+static void stats_signal(int signal)
+{
+	syslog(LOG_INFO, "Got SIGUSR1, initiating bg stat dump");
+
+	g_idle_add(stats_dump, NULL);
 }
 
 static void srv_exit_cleanup(void)
@@ -976,8 +1160,16 @@ int main (int argc, char *argv[])
 	signal(SIGHUP, SIG_IGN);
 	signal(SIGINT, term_signal);
 	signal(SIGTERM, term_signal);
+	signal(SIGUSR1, stats_signal);
 
 	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
+
+	if (getcwd(startup_cwd, sizeof(startup_cwd) - 2) < 0) {
+		syslogerr("getcwd(2)");
+		return 1;
+	}
+	if (startup_cwd[strlen(startup_cwd) - 1] != '/')
+		strcat(startup_cwd, "/");
 
 	if ((!opt_foreground) && (daemon(0, 0) < 0)) {
 		slerror("daemon(2)");

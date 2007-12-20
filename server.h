@@ -422,6 +422,61 @@ struct nfs_dirent {
 	nfsino_t		ino;
 };
 
+struct nfs_server_stats {
+	unsigned long long	sock_rx_bytes;
+	unsigned long long	sock_tx_bytes;
+	unsigned long long	read_bytes;
+	unsigned long long	write_bytes;
+
+	unsigned long		rpc_msgs;
+
+	unsigned long		op_access;
+	unsigned long		op_close;
+	unsigned long		op_commit;
+	unsigned long		op_create;
+	unsigned long		op_getattr;
+	unsigned long		op_getfh;
+	unsigned long		op_link;
+	unsigned long		op_lock;
+	unsigned long		op_testlock;
+	unsigned long		op_unlock;
+	unsigned long		op_lookup;
+	unsigned long		op_lookupp;
+	unsigned long		op_nverify;
+	unsigned long		op_open;
+	unsigned long		op_open_confirm;
+	unsigned long		op_open_downgrade;
+	unsigned long		op_putfh;
+	unsigned long		op_putpubfh;
+	unsigned long		op_putrootfh;
+	unsigned long		op_read;
+	unsigned long		op_readdir;
+	unsigned long		op_readlink;
+	unsigned long		op_release_lockowner;
+	unsigned long		op_remove;
+	unsigned long		op_rename;
+	unsigned long		op_renew;
+	unsigned long		op_restorefh;
+	unsigned long		op_savefh;
+	unsigned long		op_secinfo;
+	unsigned long		op_setattr;
+	unsigned long		op_setclientid;
+	unsigned long		op_setclientid_confirm;
+	unsigned long		op_verify;
+	unsigned long		op_write;
+
+	unsigned long		op_notsupp;
+	unsigned long		op_illegal;
+
+	unsigned long		proc_null;
+	unsigned long		proc_compound;
+
+	unsigned long		state_alloc;
+	unsigned long		state_free;
+	unsigned long		clid_alloc;
+	unsigned long		clid_free;
+};
+
 struct nfs_server {
 	GHashTable		*inode_table;
 
@@ -436,6 +491,8 @@ struct nfs_server {
 	verifier4		instance_verf;
 
 	uint64_t		space_used;
+
+	struct nfs_server_stats	stats;
 };
 
 struct nfs_access {

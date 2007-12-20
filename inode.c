@@ -43,8 +43,10 @@ static void inode_free(struct nfs_inode *ino)
 		break;
 	}
 
-	if (ino->data)
+	if (ino->data) {
 		free(ino->data);
+		srv.space_used -= ino->size;
+	}
 
 	free(ino->mimetype);
 	free(ino->user);
@@ -272,9 +274,11 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 		if (new_size < ino->size) {
 			ofs = new_size;
 			len = ino->size - new_size;
+			srv.space_used -= len;
 		} else {
 			ofs = ino->size;
 			len = new_size - ino->size;
+			srv.space_used += len;
 		}
 
 		ac.sid = sid;
@@ -304,7 +308,6 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 		if (new_size > ino->size) {
 			uint64_t zero = new_size - ino->size;
 			memset(ino->data + ino->size, 0, zero);
-			srv.space_used += zero;
 		}
 
 size_done:

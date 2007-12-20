@@ -384,72 +384,106 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	switch (op) {
 	case OP_ACCESS:
+		srv.stats.op_access++;
 		return nfs_op_access(cxn, cur, writes, wr);
 	case OP_CLOSE:
+		srv.stats.op_close++;
 		return nfs_op_close(cxn, cur, writes, wr);
 	case OP_COMMIT:
+		srv.stats.op_commit++;
 		return nfs_op_commit(cxn, cur, writes, wr);
 	case OP_CREATE:
+		srv.stats.op_create++;
 		return nfs_op_create(cxn, cur, writes, wr);
 	case OP_GETATTR:
+		srv.stats.op_getattr++;
 		return nfs_op_getattr(cxn, cur, writes, wr);
 	case OP_GETFH:
+		srv.stats.op_getfh++;
 		return nfs_op_getfh(cxn, cur, writes, wr);
 	case OP_LINK:
+		srv.stats.op_link++;
 		return nfs_op_link(cxn, cur, writes, wr);
 	case OP_LOCK:
+		srv.stats.op_lock++;
 		return nfs_op_lock(cxn, cur, writes, wr);
 	case OP_LOCKT:
+		srv.stats.op_testlock++;
 		return nfs_op_testlock(cxn, cur, writes, wr);
 	case OP_LOCKU:
+		srv.stats.op_unlock++;
 		return nfs_op_unlock(cxn, cur, writes, wr);
 	case OP_LOOKUP:
+		srv.stats.op_lookup++;
 		return nfs_op_lookup(cxn, cur, writes, wr);
 	case OP_LOOKUPP:
+		srv.stats.op_lookupp++;
 		return nfs_op_lookupp(cxn, cur, writes, wr);
 	case OP_NVERIFY:
+		srv.stats.op_nverify++;
 		return nfs_op_verify(cxn, cur, writes, wr, true);
 	case OP_OPEN:
+		srv.stats.op_open++;
 		return nfs_op_open(cxn, cur, writes, wr);
 	case OP_OPEN_CONFIRM:
+		srv.stats.op_open_confirm++;
 		return nfs_op_open_confirm(cxn, cur, writes, wr);
 	case OP_OPEN_DOWNGRADE:
+		srv.stats.op_open_downgrade++;
 		return nfs_op_open_downgrade(cxn, cur, writes, wr);
 	case OP_PUTFH:
+		srv.stats.op_putfh++;
 		return nfs_op_putfh(cxn, cur, writes, wr);
 	case OP_PUTPUBFH:
+		srv.stats.op_putpubfh++;
 		return nfs_op_putpubfh(cxn, cur, writes, wr);
 	case OP_PUTROOTFH:
+		srv.stats.op_putrootfh++;
 		return nfs_op_putrootfh(cxn, cur, writes, wr);
 	case OP_READ:
+		srv.stats.op_read++;
 		return nfs_op_read(cxn, cur, writes, wr);
 	case OP_READDIR:
+		srv.stats.op_readdir++;
 		return nfs_op_readdir(cxn, cur, writes, wr);
 	case OP_READLINK:
+		srv.stats.op_readlink++;
 		return nfs_op_readlink(cxn, cur, writes, wr);
 	case OP_RELEASE_LOCKOWNER:
+		srv.stats.op_release_lockowner++;
 		return nfs_op_release_lockowner(cxn, cur, writes, wr);
 	case OP_REMOVE:
+		srv.stats.op_remove++;
 		return nfs_op_remove(cxn, cur, writes, wr);
 	case OP_RENAME:
+		srv.stats.op_rename++;
 		return nfs_op_rename(cxn, cur, writes, wr);
 	case OP_RENEW:
+		srv.stats.op_renew++;
 		return nfs_op_renew(cxn, cur, writes, wr);
 	case OP_RESTOREFH:
+		srv.stats.op_restorefh++;
 		return nfs_op_restorefh(cxn, cur, writes, wr);
 	case OP_SAVEFH:
+		srv.stats.op_savefh++;
 		return nfs_op_savefh(cxn, cur, writes, wr);
 	case OP_SECINFO:
+		srv.stats.op_secinfo++;
 		return nfs_op_secinfo(cxn, cur, writes, wr);
 	case OP_SETATTR:
+		srv.stats.op_setattr++;
 		return nfs_op_setattr(cxn, cur, writes, wr);
 	case OP_SETCLIENTID:
+		srv.stats.op_setclientid++;
 		return nfs_op_setclientid(cxn, cur, writes, wr);
 	case OP_SETCLIENTID_CONFIRM:
+		srv.stats.op_setclientid_confirm++;
 		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
 	case OP_VERIFY:
+		srv.stats.op_verify++;
 		return nfs_op_verify(cxn, cur, writes, wr, false);
 	case OP_WRITE:
+		srv.stats.op_write++;
 		return nfs_op_write(cxn, cur, writes, wr);
 
 	case OP_DELEGPURGE:
@@ -459,10 +493,12 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 			syslog(LOG_INFO, "compound op %s",
 			       (op > 39) ?  "<n/a>" : arg_str[op]);
 
+		srv.stats.op_notsupp++;
 		WR32(NFS4ERR_NOTSUPP);		/* op status */
 		return NFS4ERR_NOTSUPP;		/* compound status */
 
 	default:
+		srv.stats.op_illegal++;
 		WR32(NFS4ERR_OP_ILLEGAL);	/* op status */
 		return NFS4ERR_OP_ILLEGAL;	/* compound status */
 	}

@@ -79,6 +79,8 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	stable = CR32();
 	CURBUF(&data);
 
+	srv.stats.write_bytes += data.len;
+
 	if (debugging)
 		syslog(LOG_INFO, "op WRITE (IDSEQ:%u ID:%x OFS:%Lu ST:%s LEN:%x)",
 		       sid.seqid, sid.id,
@@ -180,6 +182,8 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURSID(&sid);
 	offset = CR64();
 	count = CR32();
+
+	srv.stats.read_bytes += count;
 
 	if (debugging)
 		syslog(LOG_INFO, "op READ (IDSEQ:%u ID:%x OFS:%Lu LEN:%x)",
