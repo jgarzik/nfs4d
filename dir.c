@@ -74,6 +74,8 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		return NFS4ERR_BADNAME;
 	if (has_slash(str))
 		return NFS4ERR_BADNAME;
+	if (str->len > SRV_MAX_NAME)
+		return NFS4ERR_NAMETOOLONG;
 
 	name = copy_utf8string(str);
 	if (!name)

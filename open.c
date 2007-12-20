@@ -199,6 +199,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		ac.ino = ino;
 		ac.op = OP_OPEN;
+		ac.clientid = args->clientid;
+		ac.owner = &args->owner;
 		ac.share_access = args->share_access;
 		ac.share_deny = args->share_deny;
 		status = access_ok(&ac);

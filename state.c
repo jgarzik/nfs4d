@@ -20,7 +20,7 @@ struct nfs_clientid {
 
 	struct cxn_auth		auth;
 
-	bool			timed_out;
+	bool			expired;
 
 	bool			pending;
 	struct list_head	node;
@@ -31,7 +31,7 @@ struct nfs_clientid {
 static LIST_HEAD(cli_unconfirmed);
 
 static void client_cancel_id(clientid4 cli, bool expired);
-static bool clientid_touch(clientid4 id_in);
+static nfsstat4 clientid_touch(clientid4 id_in);
 
 static bool blob_equal(const struct blob *a, const struct blob *b)
 {
@@ -133,54 +133,60 @@ nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
 	if (ino && (ino != st->ino))
 		return NFS4ERR_BAD_STATEID;
 
-	clientid_touch(st->cli);
-
 	*st_out = st;
-	return NFS4_OK;
+
+	return clientid_touch(st->cli);
+}
+
+static bool state_self(const struct nfs_access *ac, const struct nfs_state *st)
+{
+	if (st == ac->self)
+		return true;
+
+	if ((st->type == nst_open) && (ac->clientid == st->cli) &&
+	    ac->owner && ac->owner->len &&
+	    (strlen(st->owner) == ac->owner->len) &&
+	    (!memcmp(st->owner, ac->owner->val, ac->owner->len)))
+		return true;
+
+	return false;
 }
 
 struct state_search_info {
-	bool			write;
-	bool			write_deny;
-	nfsino_t		ino;
-	uint64_t		ofs;
-	uint64_t		len;
+	struct nfs_access	*ac;
+
+	bool			opens;
+	bool			locks;
 
 	nfsstat4		status;
-	struct nfs_state	*match;
-	struct nfs_state	*self;
 };
 
 static void access_search(gpointer key, gpointer val, gpointer user_data)
 {
 	struct nfs_state *st = val;
 	struct state_search_info *ssi = user_data;
+	struct nfs_access *ac = ssi->ac;
 
-	if (ssi->ino != st->ino)
+	if (ac->ino->ino != st->ino)
 		return;
 
 	switch (st->type) {
 
 	case nst_open: {
-		unsigned int bit, dbit;
+		if (!ssi->opens)
+			return;
 
-		if (ssi->write)
-			bit = OPEN4_SHARE_ACCESS_WRITE;
-		else
-			bit = OPEN4_SHARE_ACCESS_READ;
-		if (ssi->write_deny)
-			dbit = OPEN4_SHARE_DENY_WRITE;
-		else
-			dbit = OPEN4_SHARE_DENY_READ;
-
-		if ((st->u.share.deny & bit) && ssi->self && (st != ssi->self)) {
-			ssi->match = st;
+		if ((st->u.share.deny & ac->share_access) &&
+		    !state_self(ac, st)) {
+			ac->match = st;
 			ssi->status = NFS4ERR_SHARE_DENIED;
-		} else if ((st->u.share.access & dbit) && ssi->self && (st != ssi->self)) {
-			ssi->match = st;
+		} else if (st->u.share.access & ac->share_deny) {
+			ac->match = st;
 			ssi->status = NFS4ERR_SHARE_DENIED;
-		} else if ((st == ssi->self) && (!(st->u.share.access & bit))) {
-			ssi->match = st;
+		}
+		else if (state_self(ac, st) &&
+			 !(st->u.share.access & ac->share_access)) {
+			ac->match = st;
 			ssi->status = NFS4ERR_OPENMODE;
 		}
 		break;
@@ -190,10 +196,13 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 		struct nfs_lock *lock;
 		uint64_t ssi_end_ofs, end_ofs;
 
-		if (ssi->len == 0xffffffffffffffffULL)
+		if (!ssi->locks)
+			return;
+
+		if (ac->len == 0xffffffffffffffffULL)
 			ssi_end_ofs = 0xffffffffffffffffULL;
 		else
-			ssi_end_ofs = ssi->ofs + ssi->len;
+			ssi_end_ofs = ac->ofs + ac->len;
 
 		list_for_each_entry(lock, &st->u.lock.list, node) {
 			if (lock->len == 0xffffffffffffffffULL)
@@ -203,14 +212,15 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 
 			if (ssi_end_ofs <= lock->ofs)
 				continue;
-			if (end_ofs <= ssi->ofs)
+			if (end_ofs <= ac->ofs)
 				continue;
-			if (!ssi->write &&
-			    ((lock->type == READ_LT) ||
-			     (lock->type == READW_LT)))
+			if (((lock->type == READ_LT) ||
+			     (lock->type == READW_LT)) &&
+			    ((ac->locktype == READ_LT) ||
+			     (ac->locktype == READW_LT)))
 				continue;
 
-			ssi->match = st;
+			ac->match = st;
 			ssi->status = NFS4ERR_DENIED;
 		}
 		break;
@@ -238,17 +248,35 @@ nfsstat4 access_ok(struct nfs_access *ac)
 			return status;
 	}
 
-	ssi.write = (ac->op == OP_WRITE || ac->op == OP_SETATTR);
-	ssi.write_deny = false;		/* FIXME */
-	ssi.ino = ac->ino->ino;
-	ssi.ofs = ac->ofs;
-	ssi.len = ac->len;
-	ssi.status = NFS4_OK;
-	ssi.match = NULL;
-	ssi.self = ac->self;
-	g_hash_table_foreach(srv.state, access_search, &ssi);
+	ssi.opens = false;
+	ssi.locks = false;
 
-	ac->match = ssi.match;
+	switch (ac->op) {
+	case OP_OPEN:
+		ssi.opens = true;
+		break;
+	case OP_LOCK:
+	case OP_LOCKT:
+		ssi.locks = true;
+		break;
+	case OP_WRITE:
+	case OP_SETATTR:
+		ac->share_access = OPEN4_SHARE_ACCESS_WRITE;
+		ssi.opens = true;
+		break;
+	case OP_READ:
+		ac->share_access = OPEN4_SHARE_ACCESS_READ;
+		ssi.opens = true;
+		break;
+	default:
+		ssi.opens = true;
+		ssi.locks = true;
+		break;
+	}
+
+	ssi.ac = ac;
+	ssi.status = NFS4_OK;
+	g_hash_table_foreach(srv.state, access_search, &ssi);
 
 	return ssi.status;
 }
@@ -383,18 +411,20 @@ static void gen_clientid4(clientid4 *id)
 				(void *)((unsigned long) *id)) != NULL);
 }
 
-static bool clientid_touch(clientid4 id_in)
+static nfsstat4 clientid_touch(clientid4 id_in)
 {
 	struct nfs_clientid *clid;
 	unsigned long id = (unsigned long) id_in;
 
 	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
 	if (!clid)
-		return false;
+		return NFS4ERR_STALE_CLIENTID;
+	if (clid->expired)
+		return NFS4ERR_EXPIRED;
 
 	timer_renew(&clid->timer, SRV_LEASE_TIME);
 
-	return true;
+	return NFS4_OK;
 }
 
 nfsstat4 clientid_test(clientid4 id_in)
@@ -467,7 +497,7 @@ static void clientid_timer(struct nfs_timer *timer, void *priv)
 	if (clid->pending) {
 		clientid_free(clid);
 		msg = "released unconfirmed";
-	} else if (clid->timed_out) {
+	} else if (clid->expired) {
 		clientid_free(clid);
 		msg = "released";
 	} else {
@@ -476,7 +506,7 @@ static void clientid_timer(struct nfs_timer *timer, void *priv)
 		/* after cancelling state via lease expiration,
 		 * keep the client id around for a while longer
 		 */
-		clid->timed_out = true;
+		clid->expired = true;
 		timer_renew(&clid->timer, SRV_CLID_DEATH);
 
 		msg = "expired state for";
@@ -880,8 +910,7 @@ nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "op RENEW (CID:%Lx)",
 			(unsigned long long) id);
 
-	if (!clientid_touch(id))
-		status = NFS4ERR_STALE_CLIENTID;
+	status = clientid_touch(id);
 
 out:
 	WR32(status);

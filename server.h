@@ -45,7 +45,7 @@ enum {
 
 enum server_limits {
 	SRV_MAX_LINK		= 0xffffffff,	/* max hard links per inode*/
-	SRV_MAX_NAME		= 512,		/* max pathname length */
+	SRV_MAX_NAME		= 2048,		/* max pathname length */
 	SRV_MAX_READ		= 1024 * 128,	/* max contig. read */
 	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
 
@@ -445,6 +445,9 @@ struct nfs_access {
 	uint32_t		op;
 
 	uint32_t		locktype;
+
+	uint64_t		clientid;
+	struct nfs_buf		*owner;
 
 	uint32_t		share_access;
 	uint32_t		share_deny;
