@@ -177,14 +177,18 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 			return;
 
 		if ((st->u.share.deny & ac->share_access) &&
-		    !state_self(ac, st)) {
+		    ((ac->op == OP_OPEN) || !state_self(ac, st))) {
 			ac->match = st;
-			ssi->status = NFS4ERR_SHARE_DENIED;
+			if (ac->op == OP_WRITE)
+				ssi->status = NFS4ERR_LOCKED;
+			else
+				ssi->status = NFS4ERR_SHARE_DENIED;
+
 		} else if (st->u.share.access & ac->share_deny) {
 			ac->match = st;
 			ssi->status = NFS4ERR_SHARE_DENIED;
-		}
-		else if (state_self(ac, st) &&
+
+		} else if (state_self(ac, st) &&
 			 !(st->u.share.access & ac->share_access)) {
 			ac->match = st;
 			ssi->status = NFS4ERR_OPENMODE;
