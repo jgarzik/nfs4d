@@ -268,8 +268,8 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_access ac = { NULL, };
 
 	if (cur->len < 28) {
-		status = NFS4ERR_BADXDR;
-		goto out;
+		WR32(NFS4ERR_BADXDR);
+		return NFS4ERR_BADXDR;
 	}
 
 	locktype = CR32();
