@@ -438,6 +438,25 @@ struct nfs_server {
 	uint64_t		space_used;
 };
 
+struct nfs_access {
+	/* input */
+	struct nfs_stateid	*sid;
+	struct nfs_inode	*ino;
+	uint32_t		op;
+
+	uint32_t		locktype;
+
+	uint32_t		share_access;
+	uint32_t		share_deny;
+
+	uint64_t		ofs;
+	uint64_t		len;
+
+	/* output */
+	struct nfs_state	*self;
+	struct nfs_state	*match;
+};
+
 /* global variables */
 extern struct timeval current_time;
 extern struct nfs_server srv;
@@ -590,10 +609,7 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 /* state.c */
 extern bool stateid_valid(const struct nfs_stateid *sid);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
-extern nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
-			 bool write_deny,
-			 uint64_t ofs, uint64_t len, struct nfs_state **st_out,
-			 struct nfs_state **conflict_st_out);
+extern nfsstat4 access_ok(struct nfs_access *ac);
 extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void state_free(gpointer data);

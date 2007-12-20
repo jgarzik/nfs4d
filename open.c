@@ -195,10 +195,13 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (ino) {
-		status = access_ok(NULL, ino->ino,
-			   args->share_access & OPEN4_SHARE_ACCESS_WRITE,
-			   args->share_deny & OPEN4_SHARE_DENY_WRITE,
-			   0, 0, NULL, NULL);
+		struct nfs_access ac = { NULL, };
+
+		ac.ino = ino;
+		ac.op = OP_OPEN;
+		ac.share_access = args->share_access;
+		ac.share_deny = args->share_deny;
+		status = access_ok(&ac);
 		if (status != NFS4_OK)
 			goto out;
 	}

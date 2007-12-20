@@ -258,6 +258,7 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 		uint64_t new_size = attr->size;
 		void *mem;
 		uint64_t ofs, len;
+		struct nfs_access ac = { NULL, };
 
 		/* only permit size attribute manip on files */
 		if (ino->type != NF4REG) {
@@ -276,8 +277,12 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			len = new_size - ino->size;
 		}
 
-		status = access_ok(sid, ino->ino, true, false, ofs, len,
-				   NULL, NULL);
+		ac.sid = sid;
+		ac.ino = ino;
+		ac.op = OP_SETATTR;
+		ac.ofs = ofs;
+		ac.len = len;
+		status = access_ok(&ac);
 		if (status != NFS4_OK)
 			goto out;
 

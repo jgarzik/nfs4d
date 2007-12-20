@@ -61,12 +61,13 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_state *st = NULL;
+	struct nfs_state *st;
 	struct nfs_inode *ino;
 	uint64_t new_size, offset;
 	uint32_t stable;
 	void *mem;
 	struct nfs_buf data;
+	struct nfs_access ac = { NULL, };
 
 	if (cur->len < 32) {
 		status = NFS4ERR_BADXDR;
@@ -106,10 +107,16 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = access_ok(&sid, ino->ino, true, false, offset, data.len,
-			   &st, NULL);
+	ac.sid = &sid;
+	ac.ino = ino;
+	ac.op = OP_WRITE;
+	ac.ofs = offset;
+	ac.len = data.len;
+	status = access_ok(&ac);
 	if (status != NFS4_OK)
 		goto out;
+
+	st = ac.self;
 
 	if (data.len == 0)
 		goto out;
@@ -153,12 +160,13 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_state *st = NULL;
+	struct nfs_state *st;
 	struct nfs_inode *ino;
 	uint64_t read_size = 0, offset;
 	uint32_t count;
 	void *mem;
 	bool eof = false;
+	struct nfs_access ac = { NULL, };
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -202,10 +210,16 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_mem;
 	}
 
-	status = access_ok(&sid, ino->ino, false, false, offset, count,
-			   &st, NULL);
+	ac.sid = &sid;
+	ac.ino = ino;
+	ac.op = OP_READ;
+	ac.ofs = offset;
+	ac.len = count;
+	status = access_ok(&ac);
 	if (status != NFS4_OK)
 		goto out;
+
+	st = ac.self;
 
 	if (offset >= ino->size) {
 		eof = true;
@@ -246,7 +260,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint64_t offset, length;
 	clientid4 owner_id;
 	struct nfs_buf owner;
-	struct nfs_state *match = NULL;
+	struct nfs_access ac = { NULL, };
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -260,10 +274,13 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&owner);
 
 	if (debugging)
-		syslog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%Lx)",
+		syslog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%Lx OCID:%Lx OWNER:%.*s)",
 		       name_lock_type4[locktype],
 		       (unsigned long long) offset,
-		       (unsigned long long) length);
+		       (unsigned long long) length,
+		       (unsigned long long) owner_id,
+		       owner.len,
+		       owner.val);
 
 	if (!length || ((length != ~0ULL) &&
 		     ((uint64_t)length > ~(uint64_t)offset))) {
@@ -289,19 +306,21 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = access_ok(NULL, ino->ino,
-			   (locktype == READ_LT || locktype == READW_LT) ?
-			   	false : true,
-			   false, offset, length, NULL, &match);
+	ac.ino = ino;
+	ac.op = OP_LOCKT;
+	ac.locktype = locktype;
+	ac.ofs = offset;
+	ac.len = length;
+	status = access_ok(&ac);
 
 out:
-	if (match) {
+	if (ac.match) {
 		WR32(NFS4ERR_DENIED);
 		WR64(offset);		/* offset */
 		WR64(length);		/* length */
 		WR32(locktype);		/* lock type */
-		WR64(match->cli);	/* owner id */
-		WRSTR(match->owner);	/* owner name */
+		WR64(ac.match->cli);	/* owner id */
+		WRSTR(ac.match->owner);	/* owner name */
 	} else
 		WR32(status);
 	return status;
@@ -354,6 +373,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_lock *lock_ent;
 	struct nfs_state *open_st = NULL, *conflict = NULL;
 	struct nfs_state *lock_st = NULL;
+	struct nfs_access ac = { NULL, };
 
 	cxn->drc_mask |= drc_lock;
 
@@ -455,10 +475,15 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 	}
 
-	status = access_ok(prev_sid, ino->ino,
-		(locktype == READ_LT || locktype == READW_LT) ? false : true,
-		false, offset, length, NULL, &conflict);
-	if (conflict)
+	ac.sid = prev_sid;
+	ac.ino = ino;
+	ac.op = OP_LOCK;
+	ac.locktype = locktype;
+	ac.ofs = offset;
+	ac.len = length;
+	status = access_ok(&ac);
+	conflict = ac.match;
+	if (conflict || status != NFS4_OK)
 		goto out;
 
 	lock_ent = calloc(1, sizeof(struct nfs_lock));

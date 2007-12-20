@@ -223,31 +223,32 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 	}
 }
 
-nfsstat4 access_ok(struct nfs_stateid *sid, nfsino_t ino, bool write,
-		  bool write_deny,
-		  uint64_t ofs, uint64_t len, struct nfs_state **st_out,
-		  struct nfs_state **conflict_st_out)
+nfsstat4 access_ok(struct nfs_access *ac)
 {
-	struct nfs_state *st = NULL;
-	struct state_search_info ssi = { write, write_deny, ino, ofs, len,
-					 NFS4_OK, };
+	struct state_search_info ssi;
 
-	if (st_out)
-		*st_out = NULL;
+	ac->self = NULL;
+	ac->match = NULL;
 
-	if (sid && (sid->seqid != 0) && (sid->seqid != 0xffffffffU)) {
-		nfsstat4 status = stateid_lookup(sid->id, ino, nst_any, &st);
+	if (ac->sid && (ac->sid->seqid != 0) &&
+	    (ac->sid->seqid != 0xffffffffU)) {
+		nfsstat4 status = stateid_lookup(ac->sid->id, ac->ino->ino,
+						 nst_any, &ac->self);
 		if (status != NFS4_OK)
 			return status;
 	}
 
-	ssi.self = st;
+	ssi.write = (ac->op == OP_WRITE || ac->op == OP_SETATTR);
+	ssi.write_deny = false;		/* FIXME */
+	ssi.ino = ac->ino->ino;
+	ssi.ofs = ac->ofs;
+	ssi.len = ac->len;
+	ssi.status = NFS4_OK;
+	ssi.match = NULL;
+	ssi.self = ac->self;
 	g_hash_table_foreach(srv.state, access_search, &ssi);
 
-	if (st_out)
-		*st_out = st;
-	if (conflict_st_out)
-		*conflict_st_out = ssi.match;
+	ac->match = ssi.match;
 
 	return ssi.status;
 }
