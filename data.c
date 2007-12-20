@@ -170,7 +170,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *ino;
 	uint64_t read_size = 0, offset;
 	uint32_t count;
-	void *mem;
+	void *mem = NULL;
 	bool eof = false;
 	struct nfs_access ac = { NULL, };
 
@@ -203,7 +203,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
-		goto out_mem;
+		goto out;
 	}
 
 	/* we only support reading from regular files */
@@ -215,7 +215,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_ISDIR;
 		else
 			status = NFS4ERR_INVAL;
-		goto out_mem;
+		goto out;
 	}
 
 	ac.sid = &sid;
@@ -231,10 +231,10 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (offset >= ino->size) {
 		eof = true;
-		goto out_mem;
+		goto out;
 	}
 	if (count == 0)
-		goto out_mem;
+		goto out;
 
 	read_size = ino->size - offset;
 	if (read_size > count)
@@ -252,11 +252,8 @@ out:
 		WR32(eof);
 		WRBUF(&nb);
 	}
-	return status;
-
-out_mem:
 	free(mem);
-	goto out;
+	return status;
 }
 
 nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,

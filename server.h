@@ -427,6 +427,7 @@ struct nfs_server_stats {
 	unsigned long long	sock_tx_bytes;
 	unsigned long long	read_bytes;
 	unsigned long long	write_bytes;
+	unsigned long long	drc_store_bytes;
 
 	unsigned long		rpc_msgs;
 
@@ -475,6 +476,11 @@ struct nfs_server_stats {
 	unsigned long		state_free;
 	unsigned long		clid_alloc;
 	unsigned long		clid_free;
+
+	unsigned long		drc_free;
+	unsigned long		drc_store;
+	unsigned long		drc_hits;
+	unsigned long		drc_misses;
 };
 
 struct nfs_server {

@@ -364,6 +364,8 @@ static void drc_timer(struct nfs_timer *timer, void *priv)
 	memset(drc, 0, sizeof(*drc));
 	free(drc);
 
+	srv.stats.drc_free++;
+
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "DRC cache expire");
 }
@@ -380,6 +382,9 @@ static void drc_store(const unsigned char *md, void *cache,
 
 	if (!cache || !cache_len)
 		return;
+
+	srv.stats.drc_store++;
+	srv.stats.drc_store_bytes += cache_len;
 
 	drc = malloc(sizeof(*drc));
 	if (!drc)
@@ -566,13 +571,15 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	drc = drc_lookup(md);
 	if (drc) {
+		srv.stats.drc_hits++;
 		timer_renew(&drc->timer, SRV_DRC_TIME);
 		gnet_conn_write(rc->conn, drc->val, drc->len);
 		if (debugging > 1)
 			syslog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",
 			       drc->len);
 		return;
-	}
+	} else
+		srv.stats.drc_misses++;
 
 	/*
 	 * decode RPC header
@@ -1040,6 +1047,11 @@ static gboolean stats_dump(gpointer dummy)
 		"clid_objs: %u\n"
 		"clid_alloc: %lu\n"
 		"clid_free: %lu\n"
+		"drc_free: %lu\n"
+		"drc_store: %lu\n"
+		"drc_store_bytes: %Lu\n"
+		"drc_hits: %lu\n"
+		"drc_misses: %lu\n"
 		"inode_objs: %u\n"
 		"========== %Lu.%Lu\n",
 
@@ -1094,6 +1106,11 @@ static gboolean stats_dump(gpointer dummy)
 		g_hash_table_size(srv.clid_idx),
 		srv.stats.clid_alloc,
 		srv.stats.clid_free,
+		srv.stats.drc_free,
+		srv.stats.drc_store,
+		srv.stats.drc_store_bytes,
+		srv.stats.drc_hits,
+		srv.stats.drc_misses,
 		g_hash_table_size(srv.inode_table),
 		(unsigned long long) current_time.tv_sec,
 		(unsigned long long) current_time.tv_usec);
