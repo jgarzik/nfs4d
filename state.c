@@ -179,7 +179,7 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 		if ((st->u.share.deny & ac->share_access) &&
 		    ((ac->op == OP_OPEN) || !state_self(ac, st))) {
 			ac->match = st;
-			if (ac->op == OP_WRITE)
+			if ((ac->op == OP_WRITE) || (ac->op == OP_READ))
 				ssi->status = NFS4ERR_LOCKED;
 			else
 				ssi->status = NFS4ERR_SHARE_DENIED;

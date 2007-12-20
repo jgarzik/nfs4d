@@ -140,6 +140,10 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		ino->data = mem;
 		ino->size = new_size;
 
+		/* zero hole between existing data and new data */
+		if (offset >= old_size)
+			memset(ino->data + old_size, 0, offset - old_size);
+
 		memcpy(ino->data + offset, data.val, data.len);
 
 		srv.space_used += (new_size - old_size);
