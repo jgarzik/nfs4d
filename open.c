@@ -258,12 +258,13 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	st->cli = args->clientid;
-	st->ino = ino->ino;
+	st->ino = ino;
 	st->seq = args->seqid + 1;
 	st->u.share.access = args->share_access;
 	st->u.share.deny = args->share_deny;
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
+	list_add(&st->inode_node, &ino->state_list);
 
 	sid.seqid = args->seqid + 1;
 	sid.id = st->id;
@@ -330,7 +331,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
+	status = stateid_lookup(sid.id, ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -388,7 +389,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
+	status = stateid_lookup(sid.id, ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -423,31 +424,14 @@ out:
 	return status;
 }
 
-struct close_lock_info {
-	struct nfs_state	*open_st;
-	GList			*list;
-};
-
-static void close_lock_iter(gpointer key, gpointer val, gpointer user_data)
-{
-	struct nfs_state *st = val;
-	struct close_lock_info *cl = user_data;
-
-	if (st->type == nst_lock &&
-	    st->u.lock.open == cl->open_st)
-		cl->list = g_list_prepend(cl->list, st);
-}
-
 nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_state *st;
+	struct nfs_state *st, *tmp_st;
 	struct nfs_inode *ino;
 	uint32_t seqid;
-	GList *tmp;
-	struct close_lock_info cl;
 
 	cxn->drc_mask |= drc_close;
 
@@ -474,7 +458,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino->ino, nst_open, &st);
+	status = stateid_lookup(sid.id, ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -483,17 +467,10 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	cl.open_st = st;
-	cl.list = NULL;
-
-	g_hash_table_foreach(srv.state, close_lock_iter, &cl);
-
-	tmp = cl.list;
-	while (tmp) {
-		state_trash(tmp->data, false);
-		tmp = tmp->next;
+	list_for_each_entry(tmp_st, &ino->state_list, inode_node) {
+		if (tmp_st->type == nst_lock)
+			state_trash(tmp_st, false);
 	}
-	g_list_free(cl.list);
 
 	state_trash(st, false);
 

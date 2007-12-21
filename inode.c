@@ -26,6 +26,7 @@ void inode_touch(struct nfs_inode *ino)
 static void inode_free(struct nfs_inode *ino)
 {
 	GList *tmp;
+	struct nfs_state *st, *iter;
 
 	if (!ino)
 		return;
@@ -57,6 +58,10 @@ static void inode_free(struct nfs_inode *ino)
 	free(ino->user);
 	free(ino->group);
 
+	list_for_each_entry_safe(st, iter, &ino->state_list, inode_node) {
+		state_trash(st, false);
+	}
+
 	memset(ino, 0, sizeof(*ino));
 	free(ino);
 }
@@ -69,7 +74,7 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 
 	ino->parents = g_array_new(false, false, sizeof(nfsino_t));
 	if (!ino->parents)
-		goto out_ino;
+		goto err_out;
 
 	ino->ino = next_ino++;
 
@@ -79,19 +84,27 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
 
+	INIT_LIST_HEAD(&ino->state_list);
+
 	/* connected users (cxn==NULL is internal allocation, e.g. root inode)*/
 	if (cxn) {
 		ino->user = strdup(cxn_getuser(cxn));
 		ino->group = strdup(cxn_getgroup(cxn));
-		/* FIXME: check for OOM */
+		if (!ino->user || !ino->group) {
+			syslog(LOG_ERR, "OOM in inode_new()");
+			free(ino->user);
+			free(ino->group);
+			goto err_out;
+		}
 	}
 
-	goto out;
-
-out_ino:
-	free(ino);
 out:
 	return ino;
+
+err_out:
+	free(ino);
+	ino = NULL;
+	goto out;
 }
 
 struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)

@@ -304,7 +304,7 @@ struct nfs_state {
 
 	char			*owner;		/* lock/open owner */
 
-	nfsino_t		ino;		/* associated inode */
+	struct nfs_inode	*ino;
 
 	enum nfs_state_type	type;		/* nst_xxx */
 	bool			expired;
@@ -326,6 +326,8 @@ struct nfs_state {
 
 		struct nfs_timer	death_timer;
 	} u;
+
+	struct list_head	inode_node;
 };
 
 struct nfs_inode {
@@ -351,6 +353,8 @@ struct nfs_inode {
 		uint32_t	devdata[2];	/* "" blk/chrdev */
 		GList		*buf_list;	/* "" regular file */
 	} u;
+
+	struct list_head	state_list;
 };
 
 struct nfs_fattr_set {
@@ -701,7 +705,7 @@ extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
-extern nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
+extern nfsstat4 stateid_lookup(uint32_t id, struct nfs_inode *ino, enum nfs_state_type type,
 			struct nfs_state **st_out);
 extern void state_trash(struct nfs_state *st, bool expired);
 

@@ -111,7 +111,7 @@ bool stateid_valid(const struct nfs_stateid *sid)
 	return true;
 }
 
-nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type type,
+nfsstat4 stateid_lookup(uint32_t id, struct nfs_inode *ino, enum nfs_state_type type,
 			struct nfs_state **st_out)
 {
 	struct nfs_state *st;
@@ -153,23 +153,15 @@ static bool state_self(const struct nfs_access *ac, const struct nfs_state *st)
 }
 
 struct state_search_info {
-	struct nfs_access	*ac;
-
 	bool			opens;
 	bool			locks;
 
 	nfsstat4		status;
 };
 
-static void access_search(gpointer key, gpointer val, gpointer user_data)
+static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
+			  struct nfs_state *st)
 {
-	struct nfs_state *st = val;
-	struct state_search_info *ssi = user_data;
-	struct nfs_access *ac = ssi->ac;
-
-	if (ac->ino->ino != st->ino)
-		return;
-
 	switch (st->type) {
 
 	case nst_open: {
@@ -240,13 +232,14 @@ static void access_search(gpointer key, gpointer val, gpointer user_data)
 nfsstat4 access_ok(struct nfs_access *ac)
 {
 	struct state_search_info ssi;
+	struct nfs_state *tmp_st;
 
 	ac->self = NULL;
 	ac->match = NULL;
 
 	if (ac->sid && (ac->sid->seqid != 0) &&
 	    (ac->sid->seqid != 0xffffffffU)) {
-		nfsstat4 status = stateid_lookup(ac->sid->id, ac->ino->ino,
+		nfsstat4 status = stateid_lookup(ac->sid->id, ac->ino,
 						 nst_any, &ac->self);
 		if (status != NFS4_OK)
 			return status;
@@ -278,9 +271,11 @@ nfsstat4 access_ok(struct nfs_access *ac)
 		break;
 	}
 
-	ssi.ac = ac;
 	ssi.status = NFS4_OK;
-	g_hash_table_foreach(srv.state, access_search, &ssi);
+
+	list_for_each_entry(tmp_st, &ac->ino->state_list, inode_node) {
+		access_search(ac, &ssi, tmp_st);
+	}
 
 	return ssi.status;
 }
@@ -326,6 +321,11 @@ void state_free(gpointer data)
 		break;
 	}
 
+	if (st->ino) {
+		list_del_init(&st->inode_node);
+		st->ino = 0;
+	}
+
 	memset(st, 0, sizeof(*st));
 	free(st);
 }
@@ -353,6 +353,11 @@ void state_trash(struct nfs_state *st, bool expired)
 
 	if (st->type == nst_lock)
 		state_trash_locks(st);
+
+	if (st->ino) {
+		list_del_init(&st->inode_node);
+		st->ino = 0;
+	}
 
 	st->type = nst_dead;
 	st->expired = expired;
@@ -397,6 +402,8 @@ struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 		INIT_LIST_HEAD(&st->u.lock.list);
 		break;
 	}
+
+	INIT_LIST_HEAD(&st->inode_node);
 
 	return st;
 }

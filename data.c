@@ -589,7 +589,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 
 	if (new_lock) {
-		status = stateid_lookup(prev_id, ino->ino, nst_open, &open_st);
+		status = stateid_lookup(prev_id, ino, nst_open, &open_st);
 		if (status != NFS4_OK)
 			goto out;
 
@@ -604,7 +604,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 	} else {
-		status = stateid_lookup(prev_id, ino->ino, nst_lock, &lock_st);
+		status = stateid_lookup(prev_id, ino, nst_lock, &lock_st);
 		if (status != NFS4_OK)
 			goto out;
 
@@ -663,10 +663,11 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		st->cli = id_short;
-		st->ino = ino->ino;
+		st->ino = ino;
 		st->u.lock.open = open_st;
 
 		g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
+		list_add(&st->inode_node, &ino->state_list);
 	}
 
 	list_add_tail(&lock_ent->node, &st->u.lock.list);
@@ -759,7 +760,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino->ino, nst_lock, &st);
+	status = stateid_lookup(sid.id, ino, nst_lock, &st);
 	if (status != NFS4_OK)
 		goto out;
 
