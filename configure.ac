@@ -43,7 +43,6 @@ dnl -----------------------------
 dnl Checks for required libraries
 dnl -----------------------------
 dnl AC_CHECK_LIB(gssrpc, gssrpc_svc_register, GSSRPC_LIBS=-lgssrpc, exit 1)
-AC_CHECK_LIB(crypto, SHA1_Update, CRYPTO_LIBS=-lcrypto, exit 1)
 
 dnl -------------------------------------
 dnl Checks for optional library functions
@@ -61,7 +60,6 @@ AM_PATH_GLIB_2_0(2.0.0)
 AM_PATH_GNET_2_0(2.0.5)
 
 dnl AC_SUBST(GSSRPC_LIBS)
-AC_SUBST(CRYPTO_LIBS)
 
 AC_CONFIG_FILES([test/Makefile Makefile])
 AC_OUTPUT

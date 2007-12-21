@@ -43,6 +43,10 @@ enum {
 	RPC_WRITE_BUFSZ		= 8192,
 };
 
+enum blob_hash_init_info {
+	BLOB_HASH_INIT		= 5381UL
+};
+
 enum server_limits {
 	SRV_MAX_LINK		= 0xffffffff,	/* max hard links per inode*/
 	SRV_MAX_NAME		= 2048,		/* max pathname length */
