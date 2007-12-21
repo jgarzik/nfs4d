@@ -25,6 +25,8 @@ void inode_touch(struct nfs_inode *ino)
 
 static void inode_free(struct nfs_inode *ino)
 {
+	GList *tmp;
+
 	if (!ino)
 		return;
 
@@ -38,14 +40,19 @@ static void inode_free(struct nfs_inode *ino)
 	case NF4LNK:
 		free(ino->u.linktext);
 		break;
+	case NF4REG:
+		tmp = ino->u.buf_list;
+		while (tmp) {
+			refbuf_unref(tmp->data);
+			tmp = tmp->next;
+		}
+		g_list_free(ino->u.buf_list);
+
+		srv.space_used -= ino->size;
+		break;
 	default:
 		/* do nothing */
 		break;
-	}
-
-	if (ino->data) {
-		free(ino->data);
-		srv.space_used -= ino->size;
 	}
 
 	free(ino->mimetype);
@@ -96,6 +103,7 @@ struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)
 		return NULL;
 
 	ino->type = NF4REG;
+	ino->u.buf_list = NULL;
 
 	return ino;
 }
@@ -258,9 +266,9 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 
 	if (attr->bitmap & (1ULL << FATTR4_SIZE)) {
 		uint64_t new_size = attr->size;
-		void *mem;
 		uint64_t ofs, len;
 		struct nfs_access ac = { NULL, };
+		struct refbuf *rb;
 
 		/* only permit size attribute manip on files */
 		if (ino->type != NF4REG) {
@@ -293,25 +301,39 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 		if (new_size == ino->size)
 			goto size_done;
 
-		mem = realloc(ino->data, new_size);
-		if (!new_size) {
-			ino->data = NULL;
-			goto size_done;
-		}
-		if (!mem) {
-			status = NFS4ERR_NOSPC;
-			goto out;
-		}
-
-		ino->data = mem;
-
+		/* add zero-filled buffer */
 		if (new_size > ino->size) {
-			uint64_t zero = new_size - ino->size;
-			memset(ino->data + ino->size, 0, zero);
+			rb = refbuf_new(len, true);
+			if (!rb) {
+				status = NFS4ERR_NOSPC;
+				goto out;
+			}
+			ino->u.buf_list = g_list_append(ino->u.buf_list, rb);
 		}
+		
+		/* truncate buffers until we reach desired length */
+		else {
+			GList *ent, *tmp = g_list_last(ino->u.buf_list);
+			while (len > 0) {
+				ent = tmp;
+				tmp = tmp->prev;
+
+				rb = ent->data;
+				if (rb->len <= len) {
+					len -= rb->len;
+					refbuf_unref(rb);
+					ino->u.buf_list = g_list_delete_link(
+						ino->u.buf_list, ent);
+				} else {
+					rb->len -= len;
+					len = 0;
+				}
+			}
+		}
+
+		ino->size = new_size;
 
 size_done:
-		ino->size = new_size;
 		bitmap_set |= (1ULL << FATTR4_SIZE);
 	}
 

@@ -56,6 +56,31 @@ out:
 	return status;
 }
 
+static GList *inode_data_ofs(struct nfs_inode *ino, uint64_t ofs,
+			     unsigned int *ofs_in_buf)
+{
+	GList *tmp;
+	struct refbuf *rb;
+
+	if (G_UNLIKELY(!ino || ino->type != NF4REG))
+		return NULL;
+
+	tmp = ino->u.buf_list;
+	while (tmp) {
+		rb = tmp->data;
+
+		if (ofs < rb->len)
+			break;
+
+		ofs -= rb->len;
+
+		tmp = tmp->next;
+	}
+
+	*ofs_in_buf = ofs;
+	return tmp;
+}
+
 nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		      struct list_head *writes, struct rpc_write **wr)
 {
@@ -65,9 +90,10 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *ino;
 	uint64_t new_size, offset;
 	uint32_t stable;
-	void *mem;
 	struct nfs_buf data;
 	struct nfs_access ac = { NULL, };
+	uint64_t old_size, size_exist = 0, size_skip = 0, size_after = 0;
+	struct refbuf *zero_rb = NULL, *append_rb = NULL;
 
 	if (cur->len < 32) {
 		status = NFS4ERR_BADXDR;
@@ -109,6 +135,8 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	old_size = ino->size;
+
 	ac.sid = &sid;
 	ac.ino = ino;
 	ac.op = OP_WRITE;
@@ -123,33 +151,80 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (data.len == 0)
 		goto out;
 
+	/*
+	 * calculate the sizes of various regions we must deal
+	 * with: existing data region (may be overwritten),
+	 * zero-filled region that exists if offset is beyond EOF,
+	 * and the region that follows if data is being appended.
+	 *
+	 * Perform all allocations (and check for failure), before
+	 * overwriting any data.
+	 */
+
 	new_size = offset + data.len;
+	if (new_size < old_size)
+		new_size = old_size;
 
-	/* write fits entirely within existing data buffer */
-	if (new_size <= ino->size)
-		memcpy(ino->data + offset, data.val, data.len);
+	if (offset < old_size)
+		size_exist = MIN(data.len, old_size - offset);
 
-	/* new size is larger than old size, enlarge buffer */
-	else {
-		uint64_t old_size = ino->size;
-
-		mem = realloc(ino->data, new_size);
-		if (!mem) {
+	if (offset > old_size) {
+		size_skip = offset - old_size;
+		zero_rb = refbuf_new(size_skip, true);
+		if (!zero_rb) {
 			status = NFS4ERR_NOSPC;
 			goto out;
 		}
-
-		ino->data = mem;
-		ino->size = new_size;
-
-		/* zero hole between existing data and new data */
-		if (offset >= old_size)
-			memset(ino->data + old_size, 0, offset - old_size);
-
-		memcpy(ino->data + offset, data.val, data.len);
-
-		srv.space_used += (new_size - old_size);
 	}
+
+	if (new_size > old_size) {
+		size_after = new_size - old_size - size_skip;
+		append_rb = refbuf_new(size_after, false);
+		if (!append_rb) {
+			status = NFS4ERR_NOSPC;
+			goto out;
+		}
+		memcpy(append_rb->buf,
+		       data.val + (data.len - size_after), size_after);
+		srv.space_used += size_after;
+	}
+
+	/* overwrite portion of existing-data region */
+	if (size_exist) {
+		unsigned int i, buf_ofs = 0;
+		GList *tmp;
+		struct refbuf *rb;
+		void *buf = data.val;
+
+		tmp = inode_data_ofs(ino, offset, &buf_ofs);
+		rb = tmp->data;
+		i = MIN(size_exist, rb->len - buf_ofs);
+		memcpy(rb->buf + buf_ofs, buf, i);
+
+		buf += i;
+		size_exist -= i;
+		tmp = tmp->next;
+
+		while (size_exist) {
+			rb = tmp->data;
+			i = MIN(size_exist, rb->len);
+			memcpy(rb->buf, buf, i);
+
+			buf += i;
+			size_exist -= i;
+			tmp = tmp->next;
+		}
+	}
+
+	/* store zero-filled region */
+	if (zero_rb)
+		ino->u.buf_list = g_list_append(ino->u.buf_list, zero_rb);
+
+	/* store data in appended-data region */
+	if (append_rb)
+		ino->u.buf_list = g_list_append(ino->u.buf_list, append_rb);
+
+	ino->size = new_size;
 
 out:
 	WR32(status);
@@ -168,11 +243,14 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_stateid sid;
 	struct nfs_state *st;
 	struct nfs_inode *ino;
-	uint64_t read_size = 0, offset;
+	uint64_t read_size = 0, offset, tmp_read_size, pad_size;
 	uint32_t count;
-	void *mem = NULL;
 	bool eof = false;
 	struct nfs_access ac = { NULL, };
+	struct refbuf *rb;
+	GList *tmp, *buf_list = NULL;
+	unsigned int buf_ofs = 0;
+	struct rpc_write *tmp_wr, *final_wr = NULL, *pad_wr = NULL;
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -192,13 +270,6 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (count > SRV_MAX_READ)
 		count = SRV_MAX_READ;
-
-	mem = malloc(count);
-	if (!mem) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-	memset(mem, 0, count);
 
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
@@ -230,6 +301,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	st = ac.self;
 
 	if (offset >= ino->size) {
+		read_size = 0;
 		eof = true;
 		goto out;
 	}
@@ -240,7 +312,41 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (read_size > count)
 		read_size = count;
 
-	memcpy(mem, ino->data + offset, read_size);
+	tmp_read_size = read_size;
+	tmp = inode_data_ofs(ino, offset, &buf_ofs);
+	while (tmp_read_size) {
+		unsigned int i;
+
+		rb = tmp->data;
+		i = MIN(tmp_read_size, rb->len - buf_ofs);
+
+		tmp_wr = wr_ref(rb, buf_ofs, i);
+		if (!tmp_wr) {
+			status = NFS4ERR_RESOURCE;
+			goto err_out;
+		}
+
+		buf_list = g_list_append(buf_list, tmp_wr);
+
+		buf_ofs = 0;
+		tmp_read_size -= i;
+		tmp = tmp->next;
+	}
+
+	final_wr = wr_alloc(0);
+	if (!final_wr) {
+		status = NFS4ERR_RESOURCE;
+		goto err_out;
+	}
+
+	pad_size = (XDR_QUADLEN(read_size) * 4) - read_size;
+	if (pad_size) {
+		pad_wr = wr_ref(&pad_rb, 0, pad_size);
+		if (!pad_wr) {
+			status = NFS4ERR_RESOURCE;
+			goto err_out_final;
+		}
+	}
 
 	if ((offset + read_size) >= ino->size)
 		eof = true;
@@ -248,12 +354,41 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 out:
 	WR32(status);
 	if (status == NFS4_OK) {
-		struct nfs_buf nb = { read_size, mem };
 		WR32(eof);
-		WRBUF(&nb);
+		WR32(read_size);
+
+		if (read_size) {
+			tmp = buf_list;
+			while (tmp) {
+				tmp_wr = tmp->data;
+				list_add_tail(&tmp_wr->node, writes);
+				tmp = tmp->next;
+			}
+
+			g_list_free(buf_list);
+
+			list_add_tail(&final_wr->node, writes);
+
+			if (pad_wr) {
+				list_add_tail(&pad_wr->node, writes);
+				final_wr = pad_wr;
+			}
+
+			*wr = final_wr;
+		}
 	}
-	free(mem);
 	return status;
+
+err_out_final:
+	wr_unref(final_wr);
+err_out:
+	tmp = buf_list;
+	while (tmp) {
+		tmp_wr = tmp->data;
+		wr_unref(tmp_wr);
+		tmp = tmp->next;
+	}
+	goto out;
 }
 
 nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,

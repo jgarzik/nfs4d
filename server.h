@@ -198,6 +198,7 @@ struct refbuf {
 };
 
 struct rpc_write {
+	char			*buf;
 	unsigned int		len;		/* data buffer space used */
 
 	struct refbuf		*rbuf;
@@ -332,7 +333,6 @@ struct nfs_inode {
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
 
-	void			*data;
 	uint64_t		size;
 
 	uint64_t		ctime;		/* creation time */
@@ -347,7 +347,8 @@ struct nfs_inode {
 	union {
 		GTree		*dir;		/* state for a directory */
 		char		*linktext;	/* state for a symlink */
-		uint32_t	devdata[2];
+		uint32_t	devdata[2];	/* "" blk/chrdev */
+		GList		*buf_list;	/* "" regular file */
 	} u;
 };
 
@@ -626,6 +627,8 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			        bool in_setattr);
 
 /* main.c */
+extern struct refbuf pad_rb;
+
 extern struct refbuf *refbuf_new(unsigned int size, bool clear);
 extern void refbuf_unref(struct refbuf *rb);
 extern void timer_renew(struct nfs_timer *, unsigned int);
@@ -639,6 +642,10 @@ extern uint64_t cur_readmap(struct curbuf *cur);
 extern void *cur_readmem(struct curbuf *cur, unsigned int n);
 extern void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb);
 extern void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid);
+extern void wr_unref(struct rpc_write *wr);
+extern struct rpc_write *wr_alloc(unsigned int n);
+extern struct rpc_write *wr_ref(struct refbuf *rb, unsigned int ofs,
+			 unsigned int len);
 extern uint32_t *wr_write32(struct list_head *writes, struct rpc_write **wr_io,uint32_t val);
 extern uint64_t *wr_write64(struct list_head *writes, struct rpc_write **wr_io,uint64_t val);
 extern void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
@@ -698,11 +705,9 @@ extern nfsstat4 stateid_lookup(uint32_t id, nfsino_t ino, enum nfs_state_type ty
 			struct nfs_state **st_out);
 extern void state_trash(struct nfs_state *st, bool expired);
 
-static inline void free_bitmap(bitmap4 *map)
+static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 {
-	free(map->bitmap4_val);
-	map->bitmap4_len = 0;
-	map->bitmap4_val = NULL;
+	rb->refcnt++;
+	return rb;
 }
-
 #endif /* __SERVER_H__ */

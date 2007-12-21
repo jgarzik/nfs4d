@@ -29,10 +29,12 @@ enum {
 	HDR_FRAG_END		= (1U << 31),
 };
 
-static char startup_cwd[PATH_MAX];
 struct timeval current_time;
 int debugging = 0;
 struct nfs_server srv;
+struct refbuf pad_rb = { "\0\0\0\0", 4, 1 };
+
+static char startup_cwd[PATH_MAX];
 static bool opt_foreground;
 static char *pid_fn = "nfs4_ramd.pid";
 static char *stats_fn = "nfs4_ramd.stats";
@@ -159,7 +161,7 @@ void refbuf_unref(struct refbuf *rb)
 
 	rb->refcnt--;
 
-	if (!rb->refcnt) {
+	if (rb->refcnt == 0) {
 		free(rb->buf);
 		free(rb);
 	}
@@ -258,10 +260,43 @@ static unsigned int wr_free(struct rpc_write *wr)
 	return wr->rbuf->len - wr->len;
 }
 
-static struct rpc_write *wr_alloc(unsigned int n)
+void wr_unref(struct rpc_write *wr)
+{
+	if (!wr)
+		return;
+
+	refbuf_unref(wr->rbuf);
+
+	memset(wr, 0, sizeof(*wr));
+	free(wr);
+}
+
+struct rpc_write *wr_ref(struct refbuf *rb, unsigned int ofs,
+			 unsigned int len)
 {
 	struct rpc_write *wr = malloc(sizeof(*wr));
-	if (!wr) {
+	if (G_UNLIKELY(!wr)) {
+		syslog(LOG_ERR, "OOM in wr_ref()");
+		return NULL;
+	}
+
+	if (G_UNLIKELY(len > (rb->len - ofs))) {
+		syslog(LOG_ERR, "BUG in wr_ref()");
+		return NULL;
+	}
+
+	wr->rbuf = refbuf_ref(rb);
+	wr->buf = wr->rbuf->buf + ofs;
+	wr->len = len;
+	INIT_LIST_HEAD(&wr->node);
+
+	return wr;
+}
+
+struct rpc_write *wr_alloc(unsigned int n)
+{
+	struct rpc_write *wr = malloc(sizeof(*wr));
+	if (G_UNLIKELY(!wr)) {
 		syslog(LOG_ERR, "OOM in wr_skip()");
 		return NULL;
 	}
@@ -270,12 +305,13 @@ static struct rpc_write *wr_alloc(unsigned int n)
 		n = RPC_WRITE_BUFSZ;
 
 	wr->rbuf = refbuf_new(n, false);
-	if (!wr->rbuf) {
+	if (G_UNLIKELY(!wr->rbuf)) {
 		free(wr);
 		syslog(LOG_ERR, "OOM(2) in wr_skip()");
 		return NULL;
 	}
 
+	wr->buf = wr->rbuf->buf;
 	wr->len = 0;
 	INIT_LIST_HEAD(&wr->node);
 
@@ -297,7 +333,7 @@ void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 		*wr_io = wr;
 	}
 
-	buf = wr->rbuf->buf + wr->len;
+	buf = wr->buf + wr->len;
 	wr->len += n;
 
 	return buf;
@@ -708,10 +744,10 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
 		if (_wr->len) {
-			gnet_conn_write(rc->conn, _wr->rbuf->buf, _wr->len);
+			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
 
 			if (cache) {
-				memcpy(cache + cache_used, _wr->rbuf->buf,
+				memcpy(cache + cache_used, _wr->buf,
 				       _wr->len);
 				cache_used += _wr->len;
 			}
@@ -720,9 +756,8 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 			n_writes++;
 		}
 
-		refbuf_unref(_wr->rbuf);
 		list_del(&_wr->node);
-		free(_wr);
+		wr_unref(_wr);
 	}
 
 	srv.stats.sock_tx_bytes += n_wbytes;
