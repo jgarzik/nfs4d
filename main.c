@@ -75,7 +75,7 @@ struct drc_ent {
 	uint32_t		xid;
 	char			host_addr[GNET_INETADDR_MAX_LEN];
 
-	struct nfs_timer	timer;
+	uint64_t		expire;
 
 	void			*val;
 	unsigned int		len;
@@ -435,19 +435,39 @@ void *wr_map(struct list_head *writes, struct rpc_write **wr,
 	return p;
 }
 
-static void drc_timer(struct nfs_timer *timer, void *priv)
+static void drc_gc_iter(gpointer key, gpointer val, gpointer user_data)
 {
-	struct drc_ent *drc = priv;
+	struct drc_ent *ent = val;
+	GList **list = user_data;
 
-	g_hash_table_remove(request_cache, (void *) drc->hash);
+	if (current_time.tv_sec < ent->expire)
+		return;
 
-	memset(drc, 0, sizeof(*drc));
-	free(drc);
+	*list = g_list_prepend(*list, ent);
+}
 
-	srv.stats.drc_free++;
+static void drc_gc(void)
+{
+	GList *list = NULL, *tmp;
 
-	if (debugging > 1)
-		syslog(LOG_DEBUG, "DRC cache expire");
+	g_hash_table_foreach(request_cache, drc_gc_iter, &list);
+
+	tmp = list;
+	while (tmp) {
+		struct drc_ent *drc = tmp->data;
+
+		g_hash_table_remove(request_cache, (void *) drc->hash);
+
+		free(drc->val);
+
+		memset(drc, 0, sizeof(*drc));
+		free(drc);
+
+		srv.stats.drc_free++;
+		tmp = tmp->next;
+	}
+
+	g_list_free(list);
 }
 
 static struct drc_ent *drc_lookup(unsigned long hash, uint32_t xid,
@@ -477,15 +497,13 @@ static void drc_store(unsigned long hash, void *cache, unsigned int cache_len,
 		return;		/* ok to ignore OOM here */
 
 	drc->hash = hash;
-	timer_init(&drc->timer, drc_timer, drc);
+	drc->expire = current_time.tv_sec + SRV_DRC_TIME;
 	drc->val = cache;
 	drc->len = cache_len;
 	drc->xid = xid;
 	memcpy(drc->host_addr, host_addr, GNET_INETADDR_MAX_LEN);
 
 	g_hash_table_insert(request_cache, (void *) hash, drc);
-
-	timer_renew(&drc->timer, SRV_DRC_TIME);
 }
 
 void timer_del(struct nfs_timer *timer)
@@ -496,85 +514,25 @@ void timer_del(struct nfs_timer *timer)
 	}
 }
 
-static void timer_requeue(struct nfs_timer *timer)
-{
-	struct list_head *tmp;
-	struct nfs_timer *tmp_timer;
-
-	/* if this is merely an expiration time change, the
-	 * timer may already be on timer_list.  if so, remove it
-	 */
-	timer_del(timer);
-
-	timer->queued = true;
-
-	/* if list empty, addition is easy */
-	if (list_empty(&timer_list)) {
-		list_add(&timer->node, &timer_list);
-		return;
-	}
-
-	/* insert into timer_list in order, iterating from tail to head,
-	 * sorted by expire time
-	 */
-	tmp = timer_list.prev;		/* grab list tail */
-	while (tmp != &timer_list) {
-		tmp_timer = list_entry(tmp, struct nfs_timer, node);
-
-		if (timer->expire >= tmp_timer->expire)
-			break;
-
-		tmp = tmp->prev;
-	}
-
-	/* if search failed, we have the lowest expire time, and
-	 * belong at the head of the list
-	 */
-	if (tmp == &timer_list)
-		list_add(&timer->node, &timer_list);
-
-	/* otherwise, insert in the middle of the list */
-	else {
-		struct list_head *before, *me, *after;
-
-		before	= &tmp_timer->node;
-		me	= &timer->node;
-		after	= before->next;
-
-		me->prev = before;
-		me->next = after;
-
-		before->next = me;
-		after->prev = me;
-	}
-}
-
 static gboolean timer_cb(gpointer dummy)
 {
 	struct timezone tz = { 0, 0 };
-	struct nfs_timer *timer;
-	uint64_t next_expire = 0xffffffffffffffffULL;
+	struct nfs_timer *timer, *iter;
+	uint64_t next_expire = 0;
 
 	if (debugging > 1)
 		syslog(LOG_INFO, "TIMER callback");
 
 	gettimeofday(&current_time, &tz);
 
-	/*
-	 * iterate through timer_list, which is sorted by absolute
-	 * expire time.  when we reach an expire time in the future,
-	 * cease iteration.  we must delete the timer before calling
-	 * the callback, in case the callback decides to requeue the
-	 * timer.
-	 */
-	while (!list_empty(&timer_list)) {
-		timer = list_entry(timer_list.next, struct nfs_timer, node);
+	list_for_each_entry_safe(timer, iter, &timer_list, node) {
+		if (!next_expire)
+			next_expire = timer->expire;
+		else if (timer->expire < next_expire)
+			next_expire = timer->expire;
 
-		if (current_time.tv_sec < timer->expire) {
-			if (timer->expire < next_expire)
-				next_expire = timer->expire;
-			break;
-		}
+		if (timer->expire > current_time.tv_sec)
+			continue;
 
 		timer_del(timer);
 
@@ -585,7 +543,16 @@ static gboolean timer_cb(gpointer dummy)
 		timer_source = 0;
 		timer_expire = 0;
 	} else {
-		uint64_t interval = (next_expire - current_time.tv_sec) * 1000;
+		unsigned int interval;
+
+		if (next_expire > current_time.tv_sec) {
+			interval = (next_expire - current_time.tv_sec) * 1000;
+			timer_expire = next_expire;
+		} else {
+			interval = 1;
+			timer_expire = current_time.tv_sec + 1;
+		}
+
 		timer_source = g_timeout_add(interval, timer_cb, NULL);
 	}
 
@@ -594,7 +561,7 @@ static gboolean timer_cb(gpointer dummy)
 
 void timer_renew(struct nfs_timer *timer, unsigned int seconds)
 {
-	uint64_t interval = 0;
+	uint64_t interval = 1;
 
 	if (debugging > 1)
 		syslog(LOG_INFO, "TIMER renew (%u secs)", seconds);
@@ -603,7 +570,10 @@ void timer_renew(struct nfs_timer *timer, unsigned int seconds)
 	if (!timer_expire || (timer->expire < timer_expire))
 		timer_expire = timer->expire;
 
-	timer_requeue(timer);
+	if (!timer->queued) {
+		timer->queued = true;
+		list_add_tail(&timer->node, &timer_list);
+	}
 
 	if (timer_expire > current_time.tv_sec)
 		interval = timer_expire - current_time.tv_sec;
@@ -674,8 +644,21 @@ uint64_t srv_space_used(void)
 	return total;
 }
 
+static gboolean garbage_collect(gpointer dummy)
+{
+	if (debugging)
+		syslog(LOG_DEBUG, "Garbage collection");
+
+	drc_gc();
+	state_gc();
+
+	return FALSE;
+}
+
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 {
+	static uint64_t garbage_time;
+
 	struct timezone tz = { 0, 0 };
 	struct curbuf _cur = { msg, msg, msg_len, msg_len };
 	struct curbuf *cur = &_cur;
@@ -700,6 +683,11 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	gettimeofday(&current_time, &tz);
 
+	if (current_time.tv_sec > garbage_time) {
+		garbage_time = current_time.tv_sec + SRV_GARBAGE_TIME;
+		g_idle_add(garbage_collect, NULL);
+	}
+
 	hash = blob_hash(BLOB_HASH_INIT, msg, MIN(msg_len, 128));
 
 	xid = CR32();			/* xid */
@@ -707,7 +695,7 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	drc = drc_lookup(hash, xid, rc->host_addr);
 	if (drc) {
 		srv.stats.drc_hits++;
-		timer_renew(&drc->timer, SRV_DRC_TIME);
+		drc->expire = current_time.tv_sec + SRV_DRC_TIME;
 		gnet_conn_write(rc->conn, drc->val, drc->len);
 		if (debugging > 1)
 			syslog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",

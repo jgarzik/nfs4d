@@ -314,7 +314,6 @@ void state_free(gpointer data)
 		/* do nothing */
 		break;
 	case nst_dead:
-		timer_del(&st->u.death_timer);
 		break;
 	case nst_lock:
 		state_trash_locks(st);
@@ -330,20 +329,40 @@ void state_free(gpointer data)
 	free(st);
 }
 
-static void state_trash_timer(struct nfs_timer *timer, void *priv)
+static void state_gc_iter(gpointer key, gpointer val, gpointer user_data)
 {
-	struct nfs_state *st = priv;
-	bool rc;
+	struct nfs_state *st = val;
+	GList **list = user_data;
 
-	if (debugging)
-		syslog(LOG_DEBUG, "GC'd state (ID:%x)", st->id);
+	if (st->type != nst_dead)
+		return;
+	if (current_time.tv_sec < st->u.death_time)
+		return;
 
-	/* removing from hash table frees struct */
-	rc = g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id));
-	if (!rc) {
-		syslog(LOG_ERR, "BUG: failed to GC state");
-		state_free(st);
+	*list = g_list_prepend(*list, st);
+}
+
+void state_gc(void)
+{
+	GList *tmp, *list = NULL;
+	struct nfs_state *st;
+
+	g_hash_table_foreach(srv.state, state_gc_iter, &list);
+
+	tmp = list;
+	while (tmp) {
+		st = tmp->data;
+		
+		/* removing from hash table frees struct */
+		if (!g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id))) {
+			syslog(LOG_ERR, "BUG: failed to GC state");
+			state_free(st);
+		}
+
+		tmp = tmp->next;
 	}
+
+	g_list_free(list);
 }
 
 void state_trash(struct nfs_state *st, bool expired)
@@ -361,8 +380,7 @@ void state_trash(struct nfs_state *st, bool expired)
 
 	st->type = nst_dead;
 	st->expired = expired;
-	timer_init(&st->u.death_timer, state_trash_timer, st);
-	timer_renew(&st->u.death_timer, SRV_STATE_DEATH);
+	st->u.death_time = current_time.tv_sec + SRV_STATE_DEATH;
 }
 
 struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
@@ -391,11 +409,8 @@ struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 	switch (type) {
 	case nst_any:
 	case nst_open:
-		/* do nothing */
-		break;
-
 	case nst_dead:
-		timer_init(&st->u.death_timer, state_trash_timer, st);
+		/* do nothing */
 		break;
 
 	case nst_lock:

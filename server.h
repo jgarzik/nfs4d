@@ -58,6 +58,7 @@ enum server_limits {
 	SRV_STATE_DEATH		= 5 * 60,
 	SRV_CLID_DEATH		= SRV_LEASE_TIME * 2,
 	SRV_SPACE_USED_TTL	= 10,
+	SRV_GARBAGE_TIME	= 45,
 
 	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
@@ -328,7 +329,7 @@ struct nfs_state {
 			struct nfs_state *open;
 		} lock;
 
-		struct nfs_timer	death_timer;
+		uint64_t		death_time;
 	} u;
 
 	struct list_head	inode_node;
@@ -696,6 +697,7 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 			     struct rpc_write **wr);
 
 /* state.c */
+extern void state_gc(void);
 extern bool stateid_valid(const struct nfs_stateid *sid);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 access_ok(struct nfs_access *ac);
