@@ -127,6 +127,44 @@ srand_time:
 	srand48_r(getpid() ^ time(NULL), &srv.rng);
 }
 
+struct refbuf *refbuf_new(unsigned int size, bool clear)
+{
+	struct refbuf *rb;
+
+	rb = malloc(sizeof(*rb));
+	if (!rb)
+		return NULL;
+
+	if (clear)
+		rb->buf = calloc(1, size);
+	else
+		rb->buf = malloc(size);
+	if (!rb->buf) {
+		free(rb);
+		return NULL;
+	}
+
+	rb->len = size;
+	rb->refcnt = 1;
+
+	return rb;
+}
+
+void refbuf_unref(struct refbuf *rb)
+{
+	if (G_UNLIKELY(!rb || !rb->len || !rb->refcnt)) {
+		syslog(LOG_ERR, "BUG: invalid refbuf");
+		return;
+	}
+
+	rb->refcnt--;
+
+	if (!rb->refcnt) {
+		free(rb->buf);
+		free(rb);
+	}
+}
+
 void *cur_skip(struct curbuf *cur, unsigned int n)
 {
 	void *buf = cur->buf;
@@ -217,12 +255,12 @@ void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
 
 static unsigned int wr_free(struct rpc_write *wr)
 {
-	return wr->alloc_len - wr->len;
+	return wr->rbuf->len - wr->len;
 }
 
 static struct rpc_write *wr_alloc(unsigned int n)
 {
-	struct rpc_write *wr = calloc(1, sizeof(*wr));
+	struct rpc_write *wr = malloc(sizeof(*wr));
 	if (!wr) {
 		syslog(LOG_ERR, "OOM in wr_skip()");
 		return NULL;
@@ -231,14 +269,14 @@ static struct rpc_write *wr_alloc(unsigned int n)
 	if (n < RPC_WRITE_BUFSZ)
 		n = RPC_WRITE_BUFSZ;
 
-	wr->buf = malloc(n);
-	if (!wr->buf) {
+	wr->rbuf = refbuf_new(n, false);
+	if (!wr->rbuf) {
 		free(wr);
 		syslog(LOG_ERR, "OOM(2) in wr_skip()");
 		return NULL;
 	}
 
-	wr->alloc_len = n;
+	wr->len = 0;
 	INIT_LIST_HEAD(&wr->node);
 
 	return wr;
@@ -259,7 +297,7 @@ void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 		*wr_io = wr;
 	}
 
-	buf = wr->buf + wr->len;
+	buf = wr->rbuf->buf + wr->len;
 	wr->len += n;
 
 	return buf;
@@ -670,10 +708,10 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
 		if (_wr->len) {
-			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
+			gnet_conn_write(rc->conn, _wr->rbuf->buf, _wr->len);
 
 			if (cache) {
-				memcpy(cache + cache_used, _wr->buf,
+				memcpy(cache + cache_used, _wr->rbuf->buf,
 				       _wr->len);
 				cache_used += _wr->len;
 			}
@@ -682,8 +720,8 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 			n_writes++;
 		}
 
+		refbuf_unref(_wr->rbuf);
 		list_del(&_wr->node);
-		free(_wr->buf);
 		free(_wr);
 	}
 

@@ -191,11 +191,16 @@ struct curbuf {
 	unsigned int	len;
 };
 
+struct refbuf {
+	void			*buf;
+	unsigned int		len;
+	unsigned int		refcnt;
+};
+
 struct rpc_write {
 	unsigned int		len;		/* data buffer space used */
-	unsigned int		alloc_len;	/* data buffer allocated */
 
-	char			*buf;
+	struct refbuf		*rbuf;
 
 	struct list_head	node;
 };
@@ -621,6 +626,8 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			        bool in_setattr);
 
 /* main.c */
+extern struct refbuf *refbuf_new(unsigned int size, bool clear);
+extern void refbuf_unref(struct refbuf *rb);
 extern void timer_renew(struct nfs_timer *, unsigned int);
 extern void timer_init(struct nfs_timer *, nfs_timer_cb_t, void *);
 extern void timer_del(struct nfs_timer *);
