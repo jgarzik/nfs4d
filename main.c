@@ -59,7 +59,7 @@ struct rpc_cxn {
 
 	GConn			*conn;
 	char			*host;
-	size_t			host_len;
+	char			host_addr[GNET_INETADDR_MAX_LEN];
 
 	enum rpc_cxn_state	state;
 
@@ -71,6 +71,9 @@ struct rpc_cxn {
 
 struct drc_ent {
 	unsigned long		hash;
+
+	uint32_t		xid;
+	char			host_addr[GNET_INETADDR_MAX_LEN];
 
 	struct nfs_timer	timer;
 
@@ -447,12 +450,22 @@ static void drc_timer(struct nfs_timer *timer, void *priv)
 		syslog(LOG_DEBUG, "DRC cache expire");
 }
 
-static struct drc_ent *drc_lookup(unsigned long hash)
+static struct drc_ent *drc_lookup(unsigned long hash, uint32_t xid,
+				  const char *host_addr)
 {
-	return g_hash_table_lookup(request_cache, (void *) hash);
+	struct drc_ent *ent = g_hash_table_lookup(request_cache, (void *) hash);
+	if (!ent)
+		return NULL;
+
+	if ((ent->xid != xid) ||
+	    memcmp(ent->host_addr, host_addr, GNET_INETADDR_MAX_LEN))
+		return NULL;
+
+	return ent;
 }
 
-static void drc_store(unsigned long hash, void *cache, unsigned int cache_len)
+static void drc_store(unsigned long hash, void *cache, unsigned int cache_len,
+		      uint32_t xid, const char *host_addr)
 {
 	struct drc_ent *drc;
 
@@ -467,6 +480,8 @@ static void drc_store(unsigned long hash, void *cache, unsigned int cache_len)
 	timer_init(&drc->timer, drc_timer, drc);
 	drc->val = cache;
 	drc->len = cache_len;
+	drc->xid = xid;
+	memcpy(drc->host_addr, host_addr, GNET_INETADDR_MAX_LEN);
 
 	g_hash_table_insert(request_cache, (void *) hash, drc);
 
@@ -616,10 +631,6 @@ static void space_used_iter(gpointer key, gpointer val, gpointer user_data)
 	uint64_t *total = user_data;
 
 	*total += sizeof(struct nfs_inode);
-	if (ino->user)
-		*total += strlen(ino->user);
-	if (ino->group)
-		*total += strlen(ino->group);
 	if (ino->mimetype)
 		*total += strlen(ino->mimetype);
 
@@ -689,10 +700,11 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	gettimeofday(&current_time, &tz);
 
-	hash = blob_hash(BLOB_HASH_INIT, rc->host, rc->host_len);
-	hash = blob_hash(hash, msg, MIN(msg_len, 128));
+	hash = blob_hash(BLOB_HASH_INIT, msg, MIN(msg_len, 128));
 
-	drc = drc_lookup(hash);
+	xid = CR32();			/* xid */
+
+	drc = drc_lookup(hash, xid, rc->host_addr);
 	if (drc) {
 		srv.stats.drc_hits++;
 		timer_renew(&drc->timer, SRV_DRC_TIME);
@@ -705,10 +717,9 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 		srv.stats.drc_misses++;
 
 	/*
-	 * decode RPC header
+	 * decode RPC header (except xid, which was input above)
 	 */
 
-	xid = CR32();			/* xid */
 	if (CR32() != CALL) {		/* msg type */
 		if (debugging > 1)
 			syslog(LOG_DEBUG, "RPC: invalid msg type");
@@ -812,7 +823,7 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	srv.stats.sock_tx_bytes += n_wbytes;
 
 	if (cache)
-		drc_store(hash, cache, cache_len);
+		drc_store(hash, cache, cache_len, xid, rc->host_addr);
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "RPC reply: %u bytes, %u writes",
@@ -953,7 +964,7 @@ static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
 	rc->conn = conn;
 	rc->state = get_hdr;
 	rc->host = host;
-	rc->host_len = strlen(host);
+	gnet_inetaddr_get_bytes(conn->inetaddr, rc->host_addr);
 
 	gnet_conn_set_callback(conn, rpc_cxn_event, rc);
 

@@ -15,17 +15,20 @@ static GHashTable *tbl_groups;
 
 static int tbl_add(GHashTable *tbl, const char *name_in, unsigned int id)
 {
-	char *name = strdup(name_in);
+	char *name = NULL;
 
-	if (!name) {
+	if (asprintf(&name, "%s@localdomain", name_in) < 0) {
 		syslog(LOG_ERR, "OOM in tbl_add");
 		return -ENOMEM;
 	}
 
+	/* to avoid being confused with NULL, we assume
+	 * 0xffffffff is root@localdomain
+	 */
 	if (!id)
 		id = 0xffffffff;
 
-	g_hash_table_insert(tbl, name, GUINT_TO_POINTER(id));
+	g_hash_table_insert(tbl, GUINT_TO_POINTER(id), name);
 
 	return 0;
 }
@@ -92,10 +95,10 @@ int id_init(void)
 {
 	int rc;
 
-	tbl_users = g_hash_table_new_full(g_str_hash, g_str_equal,
-					  free, NULL);
-	tbl_groups = g_hash_table_new_full(g_str_hash, g_str_equal,
-					  free, NULL);
+	tbl_users = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					  NULL, free);
+	tbl_groups = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					   NULL, free);
 
 	if (!tbl_users || !tbl_groups)
 		return -ENOMEM;
@@ -111,33 +114,34 @@ int id_init(void)
 	return 0;
 }
 
-struct id_lookup_info {
-	unsigned int	id;
-	char		*name;
-};
-
-static void id_lookup_iter(gpointer key, gpointer val, gpointer user_data)
-{
-	unsigned int id = (unsigned long) val;
-	struct id_lookup_info *info = user_data;
-
-	if (id == info->id)
-		info->name = key;
-}
-
 char *id_lookup(enum id_type type, unsigned int id)
 {
-	struct id_lookup_info info = { id, NULL };
+	return g_hash_table_lookup(type == idt_user ? tbl_users : tbl_groups,
+				   GUINT_TO_POINTER(id));
+}
 
-	/* FIXME: this is stupid.  we originally used a hash table
-	 * due to name-lookup requirements, now we just iterate through
-	 * its values
-	 */
+struct name_search_info {
+	const char	*name;
+	size_t		name_len;
+	char		*match;
+};
 
+static void name_search_iter(gpointer key, gpointer val, gpointer user_data)
+{
+	char *name = val;
+	struct name_search_info *nsi = user_data;
+
+	if ((strlen(name) == nsi->name_len) &&
+	    !memcmp(name, nsi->name, nsi->name_len))
+		nsi->match = name;
+}
+
+char *id_lookup_name(enum id_type type, const char *name, size_t name_len)
+{
+	struct name_search_info nsi = { name, name_len, NULL };
 	g_hash_table_foreach(type == idt_user ? tbl_users : tbl_groups,
-			     id_lookup_iter,
-			     &info);
+			     name_search_iter, &nsi);
 
-	return info.name;
+	return nsi.match;
 }
 

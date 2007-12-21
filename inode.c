@@ -55,8 +55,6 @@ static void inode_free(struct nfs_inode *ino)
 	}
 
 	free(ino->mimetype);
-	free(ino->user);
-	free(ino->group);
 
 	list_for_each_entry_safe(st, iter, &ino->state_list, inode_node) {
 		state_trash(st, false);
@@ -88,14 +86,8 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 
 	/* connected users (cxn==NULL is internal allocation, e.g. root inode)*/
 	if (cxn) {
-		ino->user = strdup(cxn_getuser(cxn));
-		ino->group = strdup(cxn_getgroup(cxn));
-		if (!ino->user || !ino->group) {
-			syslog(LOG_ERR, "OOM in inode_new()");
-			free(ino->user);
-			free(ino->group);
-			goto err_out;
-		}
+		ino->user = cxn_getuser(cxn);
+		ino->group = cxn_getgroup(cxn);
 	}
 
 out:
@@ -131,6 +123,7 @@ static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 		return NULL;
 
 	ino->type = NF4DIR;
+	ino->size = 4096;
 
 	ino->u.dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
 	if (!ino->u.dir) {
@@ -229,9 +222,14 @@ bool inode_table_init(void)
 		return false;
 	root->ino = INO_ROOT;
 	root->mode = 0755;
-	root->user = strdup("root");	/* FIXME: check for OOM */
-	root->group = strdup("root");
-	root->size = 2;
+
+	root->user = id_lookup_name(idt_user, "root@localdomain", 4);
+	if (!root->user)
+		root->user = "nobody@localdomain";
+
+	root->group = id_lookup_name(idt_group, "root@localdomain", 4);
+	if (!root->group)
+		root->group = "nobody@localdomain";
 
 	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(INO_ROOT), root);
 
@@ -376,18 +374,27 @@ size_done:
 	}
 	if ((attr->bitmap & (1ULL << FATTR4_OWNER)) &&
 	    (attr->owner.len)) {
-		/* FIXME: validate owner */
-		free(ino->user);
-		ino->user = strndup(attr->owner.val, attr->owner.len);
+		char *ostr = id_lookup_name(idt_user, attr->owner.val,
+					    attr->owner.len);
+		if (!ostr) {
+			status = NFS4ERR_DENIED;
+			goto out;
+		}
+
+		ino->user = ostr;
 
 		bitmap_set |= (1ULL << FATTR4_OWNER);
 	}
 	if ((attr->bitmap & (1ULL << FATTR4_OWNER_GROUP)) &&
 	    (attr->owner_group.len)) {
-		/* FIXME: validate owner_group */
-		free(ino->group);
-		ino->group = strndup(attr->owner_group.val,
-				     attr->owner_group.len);
+		char *ostr = id_lookup_name(idt_user, attr->owner_group.val,
+					    attr->owner_group.len);
+		if (!ostr) {
+			status = NFS4ERR_DENIED;
+			goto out;
+		}
+
+		ino->group = ostr;
 
 		bitmap_set |= (1ULL << FATTR4_OWNER_GROUP);
 	}
@@ -654,8 +661,8 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 
 	user_mat = (strcmp(user, ino->user) == 0);
 	group_mat = (strcmp(group, ino->group) == 0);
-	root_user = (strcmp(user, "root") == 0);
-	root_group = (strcmp(group, "root") == 0);
+	root_user = (strcmp(user, "root@localdomain") == 0);
+	root_group = (strcmp(group, "root@localdomain") == 0);
 
 	mode = ino->mode & 0x7;
 	if (user_mat || root_user)

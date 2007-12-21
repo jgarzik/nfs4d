@@ -604,6 +604,7 @@ extern nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 
 /* id.c */
+extern char *id_lookup_name(enum id_type type, const char *name, size_t name_len);
 extern char *id_lookup(enum id_type type, unsigned int id);
 
 /* inode.c */
