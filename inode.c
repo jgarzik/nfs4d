@@ -47,8 +47,6 @@ static void inode_free(struct nfs_inode *ino)
 			tmp = tmp->next;
 		}
 		g_list_free(ino->u.buf_list);
-
-		srv.space_used -= ino->size;
 		break;
 	default:
 		/* do nothing */
@@ -282,11 +280,9 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 		if (new_size < ino->size) {
 			ofs = new_size;
 			len = ino->size - new_size;
-			srv.space_used -= len;
 		} else {
 			ofs = ino->size;
 			len = new_size - ino->size;
-			srv.space_used += len;
 		}
 
 		ac.sid = sid;

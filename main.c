@@ -611,6 +611,59 @@ void timer_init(struct nfs_timer *timer, nfs_timer_cb_t cb, void *priv)
 	timer->queued = false;
 }
 
+static void space_used_iter(gpointer key, gpointer val, gpointer user_data)
+{
+	struct nfs_inode *ino = val;
+	uint64_t *total = user_data;
+
+	*total += sizeof(struct nfs_inode);
+	if (ino->user)
+		*total += strlen(ino->user);
+	if (ino->group)
+		*total += strlen(ino->group);
+	if (ino->mimetype)
+		*total += strlen(ino->mimetype);
+
+	switch (ino->type) {
+	case NF4LNK:
+		if (ino->u.linktext)
+			*total += strlen(ino->u.linktext);
+		break;
+
+	case NF4DIR:
+		/* wild approximation of dir space.
+		 * iteration probably too costly.
+		 */
+		*total += 100;
+		break;
+
+	case NF4REG:
+		*total += ino->size;
+		break;
+
+	default:
+		/* do nothing */
+		break;
+	}
+}
+
+uint64_t srv_space_used(void)
+{
+	static uint64_t cached_total;
+	static uint64_t ttl;
+	uint64_t total = 0;
+
+	if (ttl && cached_total && (current_time.tv_sec < ttl))
+		return cached_total;
+
+	g_hash_table_foreach(srv.inode_table, space_used_iter, &total);
+
+	cached_total = total;
+	ttl = current_time.tv_sec + SRV_SPACE_USED_TTL;
+
+	return total;
+}
+
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 {
 	struct timezone tz = { 0, 0 };
@@ -971,7 +1024,6 @@ static GMainLoop *init_server(void)
 	loop = g_main_loop_new(NULL, FALSE);
 
 	memset(&srv, 0, sizeof(srv));
-	srv.space_used = 1000000;
 	srv.lease_time = SRV_LEASE_TIME;
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					     NULL, NULL);

@@ -186,7 +186,6 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 		memcpy(append_rb->buf,
 		       data.val + (data.len - size_after), size_after);
-		srv.space_used += size_after;
 	}
 
 	/* overwrite portion of existing-data region */

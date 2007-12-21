@@ -53,6 +53,7 @@ enum server_limits {
 	SRV_DRC_TIME		= 4 * 60,
 	SRV_STATE_DEATH		= 5 * 60,
 	SRV_CLID_DEATH		= SRV_LEASE_TIME * 2,
+	SRV_SPACE_USED_TTL	= 10,
 
 	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
@@ -502,8 +503,6 @@ struct nfs_server {
 
 	verifier4		instance_verf;
 
-	uint64_t		space_used;
-
 	struct nfs_server_stats	stats;
 };
 
@@ -629,6 +628,7 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 /* main.c */
 extern struct refbuf pad_rb;
 
+extern uint64_t srv_space_used(void);
 extern struct refbuf *refbuf_new(unsigned int size, bool clear);
 extern void refbuf_unref(struct refbuf *rb);
 extern void timer_renew(struct nfs_timer *, unsigned int);

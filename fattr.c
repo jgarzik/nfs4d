@@ -769,8 +769,9 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 			    attr->files_free;
 
 	attr->space_avail =
-	attr->space_free = 400000000ULL;
-	attr->space_total = srv.space_used + attr->space_free;
+	attr->space_free = 4ULL * 1024 * 1024 * 1024;
+	attr->space_used = srv_space_used();
+	attr->space_total = attr->space_used + attr->space_free;
 }
 
 static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *attr)
