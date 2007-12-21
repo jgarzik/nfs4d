@@ -1168,6 +1168,8 @@ static gboolean stats_dump(gpointer dummy)
 		"op_illegal: %lu\n"
 		"proc_null: %lu\n"
 		"proc_compound: %lu\n"
+		"compound_ok: %lu\n"
+		"compound_fail: %lu\n"
 		"state_objs: %u\n"
 		"state_alloc: %lu\n"
 		"state_free: %lu\n"
@@ -1227,6 +1229,8 @@ static gboolean stats_dump(gpointer dummy)
 		srv.stats.op_illegal,
 		srv.stats.proc_null,
 		srv.stats.proc_compound,
+		srv.stats.compound_ok,
+		srv.stats.compound_fail,
 		g_hash_table_size(srv.state),
 		srv.stats.state_alloc,
 		srv.stats.state_free,

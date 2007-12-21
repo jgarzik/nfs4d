@@ -576,6 +576,11 @@ out:
 		free(cxn);
 	}
 
+	if (status == NFS4_OK)
+		srv.stats.compound_ok++;
+	else
+		srv.stats.compound_fail++;
+
 	*stat_p = htonl(status);
 	*result_p = htonl(results);
 

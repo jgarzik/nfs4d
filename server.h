@@ -488,6 +488,9 @@ struct nfs_server_stats {
 	unsigned long		proc_null;
 	unsigned long		proc_compound;
 
+	unsigned long		compound_ok;
+	unsigned long		compound_fail;
+
 	unsigned long		state_alloc;
 	unsigned long		state_free;
 	unsigned long		clid_alloc;
