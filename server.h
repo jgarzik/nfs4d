@@ -705,6 +705,7 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 			     struct rpc_write **wr);
 
 /* state.c */
+extern bool cli_new_owner(clientid4, char *);
 extern void cli_state_add(clientid4 id_short, struct nfs_state *st);
 extern void state_gc(void);
 extern bool stateid_valid(const struct nfs_stateid *sid);

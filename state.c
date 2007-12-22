@@ -626,6 +626,27 @@ err_out:
 	return -ENOMEM;
 }
 
+bool cli_new_owner(clientid4 id_short, char *owner)
+{
+	struct nfs_state *st;
+	struct nfs_clientid *clid;
+	unsigned long id = (unsigned long) id_short;
+
+	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	if (G_UNLIKELY(!clid)) {
+		syslog(LOG_ERR, "BUG in cli_new_owner");
+		return true;
+	}
+
+	list_for_each_entry(st, &clid->state_list, cli_node) {
+		if ((st->type != nst_dead) &&
+		    !strcmp(st->owner, owner))
+			return false;
+	}
+
+	return true;
+}
+
 void cli_state_add(clientid4 id_short, struct nfs_state *st)
 {
 	struct nfs_clientid *clid;

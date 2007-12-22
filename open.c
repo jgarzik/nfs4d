@@ -109,6 +109,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_fattr_set attr;
 	uint64_t bitmap_set = 0;
 	change_info4 cinfo = { true, 0, 0 };
+	uint32_t open_flags = 0;
 
 	cxn->drc_mask |= drc_open;
 
@@ -267,6 +268,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	inode_state_add(ino, st);
 	cli_state_add(args->clientid, st);
 
+	if (cli_new_owner(args->clientid, st->owner))
+		open_flags |= OPEN4_RESULT_CONFIRM;
+
 	sid.seqid = st->my_seq;
 	sid.id = st->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
@@ -288,7 +292,7 @@ out:
 		WR32(cinfo.atomic);
 		WR64(cinfo.before);
 		WR64(cinfo.after);
-		WR32(OPEN4_RESULT_LOCKTYPE_POSIX);
+		WR32(open_flags);
 		WRMAP(bitmap_set);
 		WR32(OPEN_DELEGATE_NONE);
 		/* FIXME: handle open delegations */
