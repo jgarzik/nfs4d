@@ -307,6 +307,14 @@ enum nfs_state_type {
 	nst_lock
 };
 
+enum nfs_state_flags {
+	nsf_expired		= (1 << 0),
+	nsf_north_carolina,
+	nsf_rhode_island,
+	nsf_georgia,
+	nsf_maine,
+};
+
 struct nfs_state {
 	clientid4		cli;		/* short clientid */
 
@@ -315,7 +323,8 @@ struct nfs_state {
 	struct nfs_inode	*ino;
 
 	enum nfs_state_type	type;		/* nst_xxx */
-	bool			expired;
+
+	unsigned long		flags;		/* nsf_xxx */
 
 	uint32_t		id;
 

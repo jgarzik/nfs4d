@@ -135,7 +135,7 @@ nfsstat4 stateid_lookup(struct nfs_stateid *id_in, struct nfs_inode *ino, enum n
 		return NFS4ERR_STALE_STATEID;
 
 	if ((st->type == nst_dead) && (type != nst_dead)) {
-		if (st->expired)
+		if (st->flags & nsf_expired)
 			return NFS4ERR_EXPIRED;
 		return NFS4ERR_OLD_STATEID;
 	}
@@ -395,7 +395,7 @@ void state_trash(struct nfs_state *st, bool expired)
 	}
 
 	st->type = nst_dead;
-	st->expired = expired;
+	st->flags |= nsf_expired;
 	st->u.death_time = current_time.tv_sec + SRV_STATE_DEATH;
 }
 
