@@ -102,23 +102,33 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
-bool stateid_valid(const struct nfs_stateid *sid)
+bool stateid_bad(const struct nfs_stateid *sid)
 {
-	if (!sid)
-		return false;
-	if (memcmp(&sid->server_verf, &srv.instance_verf, 8))
-		return false;
-	return true;
+	if (memcmp(&sid->server_magic, SRV_MAGIC, 4))
+		return true;
+	return false;
 }
 
-nfsstat4 stateid_lookup(uint32_t id, struct nfs_inode *ino, enum nfs_state_type type,
+bool stateid_stale(const struct nfs_stateid *sid)
+{
+	if (memcmp(&sid->server_verf, &srv.instance_verf, 4))
+		return true;
+	return false;
+}
+
+nfsstat4 stateid_lookup(struct nfs_stateid *id_in, struct nfs_inode *ino, enum nfs_state_type type,
 			struct nfs_state **st_out)
 {
 	struct nfs_state *st;
 
 	*st_out = NULL;
 
-	st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id));
+	if (stateid_bad(id_in))
+		return NFS4ERR_BAD_STATEID;
+	if (stateid_stale(id_in))
+		return NFS4ERR_STALE_STATEID;
+
+	st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id_in->id));
 	if (!st)
 		return NFS4ERR_STALE_STATEID;
 
@@ -239,7 +249,7 @@ nfsstat4 access_ok(struct nfs_access *ac)
 
 	if (ac->sid && (ac->sid->seqid != 0) &&
 	    (ac->sid->seqid != 0xffffffffU)) {
-		nfsstat4 status = stateid_lookup(ac->sid->id, ac->ino,
+		nfsstat4 status = stateid_lookup(ac->sid, ac->ino,
 						 nst_any, &ac->self);
 		if (status != NFS4_OK)
 			return status;
@@ -352,7 +362,7 @@ void state_gc(void)
 	tmp = list;
 	while (tmp) {
 		st = tmp->data;
-		
+
 		/* removing from hash table frees struct */
 		if (!g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id))) {
 			syslog(LOG_ERR, "BUG: failed to GC state");

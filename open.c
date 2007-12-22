@@ -268,7 +268,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	sid.seqid = args->seqid + 1;
 	sid.id = st->id;
-	memcpy(&sid.server_verf, &srv.instance_verf, sizeof(srv.instance_verf));
+	memcpy(&sid.server_verf, &srv.instance_verf, 4);
+	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
 	status = NFS4_OK;
 	cxn->current_fh = ino->ino;
@@ -331,7 +332,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino, nst_open, &st);
+	status = stateid_lookup(&sid, ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -342,7 +343,8 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	sid.seqid = seqid;
 	sid.id = st->id;
-	memcpy(&sid.server_verf, &srv.instance_verf, sizeof(srv.instance_verf));
+	memcpy(&sid.server_verf, &srv.instance_verf, 4);
+	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
 out:
 	WR32(status);
@@ -389,7 +391,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino, nst_open, &st);
+	status = stateid_lookup(&sid, ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -411,7 +413,8 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	sid.seqid = st->seq;
 	sid.id = st->id;
-	memcpy(&sid.server_verf, &srv.instance_verf, sizeof(srv.instance_verf));
+	memcpy(&sid.server_verf, &srv.instance_verf, 4);
+	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
 	if (debugging)
 		syslog(LOG_INFO, "   OPEN_DOWNGRADE -> (SEQ:%u ID:%x)",
@@ -458,7 +461,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(sid.id, ino, nst_open, &st);
+	status = stateid_lookup(&sid, ino, nst_open, &st);
 	if (status != NFS4_OK)
 		goto out;
 

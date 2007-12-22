@@ -317,7 +317,7 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 			}
 			ino->u.buf_list = g_list_append(ino->u.buf_list, rb);
 		}
-		
+
 		/* truncate buffers until we reach desired length */
 		else {
 			GList *ent, *tmp = g_list_last(ino->u.buf_list);

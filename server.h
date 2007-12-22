@@ -14,6 +14,8 @@ struct nfs_timer;
 
 typedef uint32_t nfsino_t;
 
+#define SRV_MAGIC		"J721"
+
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
 
 #define CUR_SKIP(count)		cur_skip(cur, (count))
@@ -233,7 +235,8 @@ struct nfs_buf {
 struct nfs_stateid {
 	uint32_t		seqid;
 	uint32_t		id;
-	verifier4		server_verf;
+	char			server_verf[4];
+	char			server_magic[4];
 };
 
 struct nfs_open_args {
@@ -715,7 +718,7 @@ extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
-extern nfsstat4 stateid_lookup(uint32_t id, struct nfs_inode *ino, enum nfs_state_type type,
+extern nfsstat4 stateid_lookup(struct nfs_stateid *id_in, struct nfs_inode *ino, enum nfs_state_type type,
 			struct nfs_state **st_out);
 extern void state_trash(struct nfs_state *st, bool expired);
 
