@@ -259,14 +259,14 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	st->cli = args->clientid;
 	st->ino = ino;
-	st->seq = args->seqid + 1;
+	st->cli_next_seq = args->seqid + 1;
 	st->u.share.access = args->share_access;
 	st->u.share.deny = args->share_deny;
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 	list_add(&st->inode_node, &ino->state_list);
 
-	sid.seqid = args->seqid + 1;
+	sid.seqid = st->my_seq;
 	sid.id = st->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
@@ -336,12 +336,15 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != st->seq) {
+	if (seqid != st->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
-	sid.seqid = seqid;
+	st->cli_next_seq++;
+	st->my_seq++;
+
+	sid.seqid = st->my_seq;
 	sid.id = st->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
@@ -395,7 +398,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != st->seq) {
+	if (seqid != st->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -409,9 +412,10 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	st->u.share.access = share_access;
 	st->u.share.deny = share_deny;
 
-	st->seq++;
+	st->my_seq++;
+	st->cli_next_seq++;
 
-	sid.seqid = st->seq;
+	sid.seqid = st->my_seq;
 	sid.id = st->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
@@ -465,10 +469,15 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != st->seq) {
+	if (seqid != st->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
+
+	/* really only for completeness... */
+	st->cli_next_seq++;
+	st->my_seq++;
+	sid.seqid = st->my_seq;
 
 	list_for_each_entry(tmp_st, &ino->state_list, inode_node) {
 		if (tmp_st->type == nst_lock)

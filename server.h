@@ -319,7 +319,8 @@ struct nfs_state {
 
 	uint32_t		id;
 
-	uint32_t		seq;
+	uint32_t		my_seq;
+	uint32_t		cli_next_seq;
 
 	union {
 		struct {

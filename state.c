@@ -137,6 +137,8 @@ nfsstat4 stateid_lookup(struct nfs_stateid *id_in, struct nfs_inode *ino, enum n
 			return NFS4ERR_EXPIRED;
 		return NFS4ERR_OLD_STATEID;
 	}
+	if (st->my_seq != id_in->seqid)
+		return NFS4ERR_OLD_STATEID;
 
 	if ((type != nst_any) && (st->type != type))
 		return NFS4ERR_BAD_STATEID;
@@ -396,12 +398,17 @@ void state_trash(struct nfs_state *st, bool expired)
 struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 {
 	struct nfs_state *st;
+	long l;
 
 	srv.stats.state_alloc++;
 
 	st = calloc(1, sizeof(struct nfs_state));
 	if (!st)
 		return NULL;
+
+	l = 0;
+	lrand48_r(&srv.rng, &l);
+	st->my_seq = l & 0xfff;
 
 	st->type = type;
 	st->id = gen_stateid();

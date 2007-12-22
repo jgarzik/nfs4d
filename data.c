@@ -593,7 +593,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		if (status != NFS4_OK)
 			goto out;
 
-		if (open_seqid != open_st->seq) {
+		if (open_seqid != open_st->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
@@ -608,7 +608,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		if (status != NFS4_OK)
 			goto out;
 
-		if (lock_seqid != lock_st->seq) {
+		if (lock_seqid != lock_st->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
@@ -642,6 +642,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (!new_lock) {
 		st = lock_st;
+		st->my_seq++;
+		st->cli_next_seq++;
 	}
 
 	/*
@@ -665,6 +667,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		st->cli = id_short;
 		st->ino = ino;
 		st->u.lock.open = open_st;
+		st->cli_next_seq = lock_seqid + 1;
 
 		g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
 		list_add(&st->inode_node, &ino->state_list);
@@ -672,10 +675,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	list_add_tail(&lock_ent->node, &st->u.lock.list);
 
-	st->seq = lock_seqid + 1;
-
 	sid = &tmp_sid;
-	sid->seqid = lock_seqid;
+	sid->seqid = st->my_seq;
 	sid->id = st->id;
 	memcpy(&sid->server_verf, &srv.instance_verf, 4);
 	memcpy(&sid->server_magic, SRV_MAGIC, 4);
@@ -764,12 +765,10 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != st->seq) {
+	if (seqid != st->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
-
-	/* FIXME SECURITY: make sure we are the lock owner????? */
 
 	status = NFS4ERR_LOCK_RANGE;
 	list_for_each_entry_safe(lock_ent, iter, &st->u.lock.list, node) {
@@ -780,6 +779,11 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		free(lock_ent);
 		status = NFS4_OK;
 		break;
+	}
+
+	if (status == NFS4_OK) {
+		st->my_seq++;
+		st->cli_next_seq++;
 	}
 
 	if (list_empty(&st->u.lock.list))
