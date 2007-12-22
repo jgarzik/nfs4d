@@ -8,7 +8,7 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-nfsino_t next_ino = INO_RESERVED_LAST + 1;
+static nfsino_t next_ino = INO_RESERVED_LAST + 1;
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
@@ -209,6 +209,11 @@ static nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 
 out:
 	return status;
+}
+
+void inode_state_add(struct nfs_inode *ino, struct nfs_state *st)
+{
+	list_add(&st->inode_node, &ino->state_list);
 }
 
 bool inode_table_init(void)

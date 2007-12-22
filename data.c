@@ -670,7 +670,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		st->cli_next_seq = lock_seqid + 1;
 
 		g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
-		list_add(&st->inode_node, &ino->state_list);
+		inode_state_add(ino, st);
+		cli_state_add(id_short, st);
 	}
 
 	list_add_tail(&lock_ent->node, &st->u.lock.list);

@@ -25,12 +25,14 @@ struct nfs_clientid {
 	bool			pending;
 	struct list_head	node;
 
+	struct list_head	state_list;
+
 	struct nfs_timer	timer;
 };
 
 static LIST_HEAD(cli_unconfirmed);
 
-static void client_cancel_id(clientid4 cli, bool expired);
+static void client_cancel_id(struct nfs_clientid *, bool);
 static nfsstat4 clientid_touch(clientid4 id_in);
 
 static bool blob_equal(const struct blob *a, const struct blob *b)
@@ -337,6 +339,8 @@ void state_free(gpointer data)
 		st->ino = 0;
 	}
 
+	list_del(&st->cli_node);
+
 	memset(st, 0, sizeof(*st));
 	free(st);
 }
@@ -436,6 +440,7 @@ struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
 	}
 
 	INIT_LIST_HEAD(&st->inode_node);
+	INIT_LIST_HEAD(&st->cli_node);
 
 	return st;
 }
@@ -550,7 +555,7 @@ static void clientid_timer(struct nfs_timer *timer, void *priv)
 		clientid_free(clid);
 		msg = "released";
 	} else {
-		client_cancel_id(clid->id_short, true);
+		client_cancel_id(clid, true);
 
 		/* after cancelling state via lease expiration,
 		 * keep the client id around for a while longer
@@ -579,6 +584,7 @@ static int clientid_new(struct nfs_cxn *cxn,
 	if (!clid)
 		goto err_out;
 
+	INIT_LIST_HEAD(&clid->state_list);
 	INIT_LIST_HEAD(&clid->node);
 	timer_init(&clid->timer, clientid_timer, clid);
 
@@ -620,47 +626,35 @@ err_out:
 	return -ENOMEM;
 }
 
-struct cancel_search {
-	clientid4		cli;
-	GList			*list;
-};
-
-static void cli_cancel_search(gpointer key, gpointer val, gpointer user_data)
+void cli_state_add(clientid4 id_short, struct nfs_state *st)
 {
-	struct nfs_state *st = val;
-	struct cancel_search *cs = user_data;
+	struct nfs_clientid *clid;
+	unsigned long id = (unsigned long) id_short;
 
-	if (st->cli == cs->cli)
-		cs->list = g_list_append(cs->list, st);
+	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	if (G_UNLIKELY(!clid)) {
+		syslog(LOG_ERR, "BUG in cli_state_add");
+		return;
+	}
+
+	list_add(&st->cli_node, &clid->state_list);
 }
 
-static void client_cancel_id(clientid4 cli, bool expired)
+static void client_cancel_id(struct nfs_clientid *clid, bool expired)
 {
-	struct cancel_search cs = { cli };
 	struct nfs_state *st;
 	unsigned int trashed = 0;
-	GList *tmp;
 
-	/* build list of state records associated with this client */
-	g_hash_table_foreach(srv.state, cli_cancel_search, &cs);
-
-	/* destroy each state record */
-	tmp = cs.list;
-	while (tmp) {
-		st = tmp->data;
-		tmp = tmp->next;
-
+	list_for_each_entry(st, &clid->state_list, cli_node) {
 		state_trash(st, expired);
 		trashed++;
 	}
-
-	g_list_free(cs.list);
 
 	if (debugging)
 		syslog(LOG_INFO,
 		       "%s %u state recs associated with CID:%Lx",
 		       expired ? "expired" : "cancelled",
-		       trashed, (unsigned long long) cli);
+		       trashed, (unsigned long long) clid->id_short);
 }
 
 struct client_cancel_info {
@@ -689,7 +683,7 @@ static void client_cancel(const struct blob *key)
 		struct nfs_clientid *clid;
 
 		clid = tmp->data;
-		client_cancel_id(clid->id_short, false);
+		client_cancel_id(clid, false);
 
 		tmp = tmp->next;
 	}

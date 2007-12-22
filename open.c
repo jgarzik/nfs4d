@@ -264,7 +264,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	st->u.share.deny = args->share_deny;
 
 	g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
-	list_add(&st->inode_node, &ino->state_list);
+	inode_state_add(ino, st);
+	cli_state_add(args->clientid, st);
 
 	sid.seqid = st->my_seq;
 	sid.id = st->id;

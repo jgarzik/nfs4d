@@ -337,6 +337,7 @@ struct nfs_state {
 	} u;
 
 	struct list_head	inode_node;
+	struct list_head	cli_node;
 };
 
 struct nfs_inode {
@@ -627,7 +628,7 @@ extern nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      struct list_head *writes, struct rpc_write **wr,
 			      bool nverify);
-extern nfsino_t next_ino;
+extern void inode_state_add(struct nfs_inode *ino, struct nfs_state *st);
 extern struct nfs_inode *inode_get(nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
@@ -704,6 +705,7 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 			     struct rpc_write **wr);
 
 /* state.c */
+extern void cli_state_add(clientid4 id_short, struct nfs_state *st);
 extern void state_gc(void);
 extern bool stateid_valid(const struct nfs_stateid *sid);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
