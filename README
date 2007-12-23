@@ -1,5 +1,13 @@
 This is an NFSv4 server, that serves data from RAM.
 
+[Minimalist] project home page:
+
+	http://linux.yyz.us/projects/nfsv4.html
+
+Official source code repository:
+
+	git://git.kernel.org/pub/scm/daemon/nfs/nfs4-ram.git
+
 Dependencies:
 	GLib 2.0.0 or later (http://www.gtk.org/)
 	GNet 2.0.5 or later (http://www.gnetlibrary.org/)
