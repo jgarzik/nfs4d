@@ -1,1 +1,16 @@
 This is an NFSv4 server, that serves data from RAM.
+
+Dependencies:
+	GLib 2.0.0 or later (http://www.gtk.org/)
+	GNet 2.0.5 or later (http://www.gnetlibrary.org/)
+
+Using the server:
+
+	./nfs4_ramd
+
+will create an empty RAM-based filesystem, served via NFS v4, on the
+default NFS TCP port (2049).
+
+Besides the command line options (./nfs4_ramd --help), this is a
+zero-configuration daemon.  No need to set up any configuration files.
+

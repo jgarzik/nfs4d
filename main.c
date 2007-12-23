@@ -83,15 +83,15 @@ struct drc_ent {
 
 static struct argp_option options[] = {
 	{ "debug", 'd', "LEVEL", 0,
-	  "Enable debug output (0 = no debug, increase for more verbosity)" },
+	  "Enable debug output (def. 0 = no debug, increase for more verbosity.  maximum: 2)" },
 	{ "foreground", 'f', NULL, 0,
-	  "Run daemon in foreground" },
+	  "Run daemon in foreground (def: chdir to /, detach, run in background)" },
 	{ "port", 'p', "PORT", 0,
-	  "Bind to TCP port PORT (def. 2049)" },
+	  "Bind to TCP port PORT (def: 2049)" },
 	{ "pid", 'P', "FILE", 0,
-	  "Write daemon process id to FILE" },
+	  "Write daemon process id to FILE (def: nfs4_ramd.pid, in current directory)" },
 	{ "stats", 'S', "FILE", 0,
-	  "Statistics dumped to FILE, for each SIGUSR1" },
+	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4_ramd.stats, in current directory)" },
 
 	{ }
 };
