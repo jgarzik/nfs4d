@@ -26,7 +26,7 @@ void inode_touch(struct nfs_inode *ino)
 static void inode_free(struct nfs_inode *ino)
 {
 	GList *tmp;
-	struct nfs_state *st, *iter;
+	struct nfs_openfile *of, *iter;
 
 	if (!ino)
 		return;
@@ -56,8 +56,8 @@ static void inode_free(struct nfs_inode *ino)
 
 	free(ino->mimetype);
 
-	list_for_each_entry_safe(st, iter, &ino->state_list, inode_node) {
-		state_trash(st, false);
+	list_for_each_entry_safe(of, iter, &ino->openfile_list, inode_node) {
+		openfile_trash(of, false);
 	}
 
 	memset(ino, 0, sizeof(*ino));
@@ -82,7 +82,7 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
 
-	INIT_LIST_HEAD(&ino->state_list);
+	INIT_LIST_HEAD(&ino->openfile_list);
 
 	/* connected users (cxn==NULL is internal allocation, e.g. root inode)*/
 	if (cxn) {
@@ -211,9 +211,9 @@ out:
 	return status;
 }
 
-void inode_state_add(struct nfs_inode *ino, struct nfs_state *st)
+void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 {
-	list_add(&st->inode_node, &ino->state_list);
+	list_add(&of->inode_node, &ino->openfile_list);
 }
 
 bool inode_table_init(void)

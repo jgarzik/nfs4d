@@ -9,8 +9,9 @@
 #include "nfs4_prot.h"
 #include "elist.h"
 
-struct nfs_state;
 struct nfs_timer;
+struct nfs_owner;
+struct nfs_openfile;
 
 typedef uint32_t nfsino_t;
 
@@ -315,10 +316,24 @@ enum nfs_state_flags {
 	nsf_maine,
 };
 
-struct nfs_state {
+struct nfs_owner {
 	clientid4		cli;		/* short clientid */
 
 	char			*owner;		/* lock/open owner */
+
+	enum nfs_state_type	type;		/* nst_xxx */
+
+	uint32_t		my_seq;
+	uint32_t		cli_next_seq;
+
+	struct nfs_owner	*open_owner;
+
+	struct list_head	openfiles;
+	struct list_head	cli_node;
+};
+
+struct nfs_openfile {
+	struct nfs_owner	*owner;
 
 	struct nfs_inode	*ino;
 
@@ -326,10 +341,7 @@ struct nfs_state {
 
 	unsigned long		flags;		/* nsf_xxx */
 
-	uint32_t		id;
-
-	uint32_t		my_seq;
-	uint32_t		cli_next_seq;
+	uint32_t		id;		/* our short id */
 
 	union {
 		struct {
@@ -338,15 +350,15 @@ struct nfs_state {
 		} share;
 
 		struct {
-			struct list_head list;
-			struct nfs_state *open;
+			struct list_head	list;
+			struct nfs_openfile	*open;
 		} lock;
 
 		uint64_t		death_time;
 	} u;
 
 	struct list_head	inode_node;
-	struct list_head	cli_node;
+	struct list_head	owner_node;
 };
 
 struct nfs_inode {
@@ -373,7 +385,7 @@ struct nfs_inode {
 		GList		*buf_list;	/* "" regular file */
 	} u;
 
-	struct list_head	state_list;
+	struct list_head	openfile_list;
 };
 
 struct nfs_fattr_set {
@@ -505,8 +517,8 @@ struct nfs_server_stats {
 	unsigned long		compound_ok;
 	unsigned long		compound_fail;
 
-	unsigned long		state_alloc;
-	unsigned long		state_free;
+	unsigned long		openfile_alloc;
+	unsigned long		openfile_free;
 	unsigned long		clid_alloc;
 	unsigned long		clid_free;
 
@@ -521,7 +533,7 @@ struct nfs_server {
 
 	GHashTable		*clid_idx;
 
-	GHashTable		*state;
+	GHashTable		*openfiles;
 
 	unsigned int		lease_time;
 
@@ -550,8 +562,9 @@ struct nfs_access {
 	uint64_t		len;
 
 	/* output */
-	struct nfs_state	*self;
-	struct nfs_state	*match;
+	struct nfs_openfile	*self;
+
+	struct nfs_openfile	*match;
 };
 
 /* global variables */
@@ -637,7 +650,7 @@ extern nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      struct list_head *writes, struct rpc_write **wr,
 			      bool nverify);
-extern void inode_state_add(struct nfs_inode *ino, struct nfs_state *st);
+extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
 extern struct nfs_inode *inode_get(nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
@@ -715,14 +728,13 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 
 /* state.c */
 extern bool cli_new_owner(clientid4, char *);
-extern void cli_state_add(clientid4 id_short, struct nfs_state *st);
 extern void state_gc(void);
 extern bool stateid_valid(const struct nfs_stateid *sid);
 extern struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 access_ok(struct nfs_access *ac);
 extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
-extern void state_free(gpointer data);
+extern void openfile_free(gpointer data);
 extern uint32_t gen_stateid(void);
 extern nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
@@ -731,9 +743,19 @@ extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
-extern nfsstat4 stateid_lookup(struct nfs_stateid *id_in, struct nfs_inode *ino, enum nfs_state_type type,
-			struct nfs_state **st_out);
-extern void state_trash(struct nfs_state *st, bool expired);
+extern bool cli_locks_held(clientid4 id, struct nfs_buf *owner);
+
+extern void cli_owner_add(struct nfs_owner *owner);
+extern struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner);
+extern nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
+				struct nfs_owner **owner_out);
+
+extern struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o);
+extern nfsstat4 openfile_lookup(struct nfs_stateid *,
+				struct nfs_inode *,
+				enum nfs_state_type type,
+				struct nfs_openfile **);
+extern void openfile_trash(struct nfs_openfile *, bool);
 
 static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 {

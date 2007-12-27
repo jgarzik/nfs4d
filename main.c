@@ -1029,8 +1029,8 @@ static GMainLoop *init_server(void)
 	srv.lease_time = SRV_LEASE_TIME;
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					     NULL, NULL);
-	srv.state = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-					  NULL, state_free);
+	srv.openfiles = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					  NULL, openfile_free);
 	request_cache = g_hash_table_new(g_direct_hash, g_direct_equal);
 
 	if (gettimeofday(&current_time, &tz) < 0) {
@@ -1038,7 +1038,7 @@ static GMainLoop *init_server(void)
 		return NULL;
 	}
 
-	if (!srv.clid_idx || !srv.state || !request_cache) {
+	if (!srv.clid_idx || !srv.openfiles || !request_cache) {
 		syslog(LOG_ERR, "OOM in init_server()");
 		return NULL;
 	}
@@ -1170,9 +1170,9 @@ static gboolean stats_dump(gpointer dummy)
 		"proc_compound: %lu\n"
 		"compound_ok: %lu\n"
 		"compound_fail: %lu\n"
-		"state_objs: %u\n"
-		"state_alloc: %lu\n"
-		"state_free: %lu\n"
+		"openfile_objs: %u\n"
+		"openfile_alloc: %lu\n"
+		"openfile_free: %lu\n"
 		"clid_objs: %u\n"
 		"clid_alloc: %lu\n"
 		"clid_free: %lu\n"
@@ -1231,9 +1231,9 @@ static gboolean stats_dump(gpointer dummy)
 		srv.stats.proc_compound,
 		srv.stats.compound_ok,
 		srv.stats.compound_fail,
-		g_hash_table_size(srv.state),
-		srv.stats.state_alloc,
-		srv.stats.state_free,
+		g_hash_table_size(srv.openfiles),
+		srv.stats.openfile_alloc,
+		srv.stats.openfile_free,
 		g_hash_table_size(srv.clid_idx),
 		srv.stats.clid_alloc,
 		srv.stats.clid_free,

@@ -86,7 +86,6 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_state *st;
 	struct nfs_inode *ino;
 	uint64_t new_size, offset;
 	uint32_t stable;
@@ -145,8 +144,6 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = access_ok(&ac);
 	if (status != NFS4_OK)
 		goto out;
-
-	st = ac.self;
 
 	if (data.len == 0)
 		goto out;
@@ -240,7 +237,6 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_state *st;
 	struct nfs_inode *ino;
 	uint64_t read_size = 0, offset, tmp_read_size, pad_size;
 	uint32_t count;
@@ -296,8 +292,6 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = access_ok(&ac);
 	if (status != NFS4_OK)
 		goto out;
-
-	st = ac.self;
 
 	if (offset >= ino->size) {
 		read_size = 0;
@@ -455,11 +449,11 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 out:
 	if (ac.match) {
 		WR32(NFS4ERR_DENIED);
-		WR64(offset);		/* offset */
-		WR64(length);		/* length */
-		WR32(locktype);		/* lock type */
-		WR64(ac.match->cli);	/* owner id */
-		WRSTR(ac.match->owner);	/* owner name */
+		WR64(offset);			/* offset */
+		WR64(length);			/* length */
+		WR32(locktype);			/* lock type */
+		WR64(ac.match->owner->cli);	/* owner id */
+		WRSTR(ac.match->owner->owner);	/* owner name */
 	} else
 		WR32(status);
 	return status;
@@ -501,17 +495,17 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	struct nfs_state *st;
 	struct nfs_stateid *prev_sid;
 	uint32_t prev_id;
 	struct nfs_stateid *sid, lock_sid, open_sid, tmp_sid;
-	bool reclaim, new_lock;
+	bool reclaim, new_lock, new_lock_of = false;
 	uint32_t locktype, lock_seqid, open_seqid = 0;
 	uint64_t offset, length, id_short = 0;
 	struct nfs_buf owner;
 	struct nfs_lock *lock_ent;
-	struct nfs_state *open_st = NULL, *conflict = NULL;
-	struct nfs_state *lock_st = NULL;
+	struct nfs_owner *open_owner = NULL, *conflict = NULL;
+	struct nfs_owner *lock_owner = NULL;
+	struct nfs_openfile *of = NULL, *lock_of = NULL;
 	struct nfs_access ac = { NULL, };
 
 	cxn->drc_mask |= drc_lock;
@@ -589,26 +583,28 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 
 	if (new_lock) {
-		status = stateid_lookup(prev_sid, ino, nst_open, &open_st);
+		status = openfile_lookup(prev_sid, ino, nst_open, &of);
 		if (status != NFS4_OK)
 			goto out;
+		open_owner = of->owner;
 
-		if (open_seqid != open_st->cli_next_seq) {
+		if (open_seqid != open_owner->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
 
 		if ((locktype == WRITE_LT || locktype == WRITEW_LT) &&
-		    (open_st->u.share.access == OPEN4_SHARE_ACCESS_READ)) {
+		    (of->u.share.access == OPEN4_SHARE_ACCESS_READ)) {
 			status = NFS4ERR_OPENMODE;
 			goto out;
 		}
 	} else {
-		status = stateid_lookup(prev_sid, ino, nst_lock, &lock_st);
+		status = openfile_lookup(prev_sid, ino, nst_lock, &lock_of);
 		if (status != NFS4_OK)
 			goto out;
+		lock_owner = lock_of->owner;
 
-		if (lock_seqid != lock_st->cli_next_seq) {
+		if (lock_seqid != lock_owner->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
@@ -621,7 +617,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	ac.ofs = offset;
 	ac.len = length;
 	status = access_ok(&ac);
-	conflict = ac.match;
+	if (ac.match)
+		conflict = ac.match->owner;
 	if (conflict || status != NFS4_OK)
 		goto out;
 
@@ -641,9 +638,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	 */
 
 	if (!new_lock) {
-		st = lock_st;
-		st->my_seq++;
-		st->cli_next_seq++;
+		lock_owner->my_seq++;
+		lock_owner->cli_next_seq++;
 	}
 
 	/*
@@ -656,29 +652,44 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	 	*/
 		status = clientid_test(id_short);
 		if (status != NFS4_OK)
-			goto out;
+			goto err_out_lockof;
 
-		st = state_new(nst_lock, &owner);
-		if (!st) {
+		lock_owner = owner_new(nst_lock, &owner);
+		if (!lock_owner) {
 			status = NFS4ERR_RESOURCE;
-			goto out;
+			goto err_out_lockof;
 		}
 
-		st->cli = id_short;
-		st->ino = ino;
-		st->u.lock.open = open_st;
-		st->cli_next_seq = lock_seqid + 1;
+		lock_owner->cli = id_short;
+		lock_owner->open_owner = open_owner;
+		lock_owner->cli_next_seq = lock_seqid + 1;
 
-		g_hash_table_insert(srv.state, GUINT_TO_POINTER(st->id), st);
-		inode_state_add(ino, st);
-		cli_state_add(id_short, st);
+		cli_owner_add(lock_owner);
 	}
 
-	list_add_tail(&lock_ent->node, &st->u.lock.list);
+	if (!lock_of) {
+		lock_of = openfile_new(nst_lock, lock_owner);
+		if (!lock_of) {
+			status = NFS4ERR_RESOURCE;
+			goto err_out;
+		}
+
+		new_lock_of = true;
+
+		lock_of->ino = ino;
+
+		list_add(&lock_of->inode_node, &ino->openfile_list);
+		list_add(&lock_of->owner_node, &lock_owner->openfiles);
+		g_hash_table_insert(srv.openfiles,
+				    GUINT_TO_POINTER(lock_of->id),
+				    lock_of);
+	}
+
+	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
 
 	sid = &tmp_sid;
-	sid->seqid = st->my_seq;
-	sid->id = st->id;
+	sid->seqid = lock_owner->my_seq;
+	sid->id = lock_of->id;
 	memcpy(&sid->server_verf, &srv.instance_verf, 4);
 	memcpy(&sid->server_magic, SRV_MAGIC, 4);
 
@@ -686,7 +697,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging)
 		syslog(LOG_INFO, "   LOCK -> (SEQ:%u ID:%x)",
-		       sid->seqid, st->id);
+		       sid->seqid, lock_of->id);
 
 out:
 	if (conflict) {
@@ -702,6 +713,16 @@ out:
 			WRSID(sid);
 	}
 	return status;
+
+err_out_lockof:
+	if (new_lock_of) {
+		free(lock_of);
+		lock_of = NULL;
+	}
+err_out:
+	free(lock_ent);
+	lock_ent = NULL;
+	goto out;
 }
 
 nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -709,11 +730,12 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_state *st = NULL;
 	struct nfs_inode *ino;
 	uint32_t locktype, seqid;
 	uint64_t offset, length;
 	struct nfs_lock *lock_ent, *iter;
+	struct nfs_openfile *lock_of;
+	struct nfs_owner *lock_owner;
 
 	cxn->drc_mask |= drc_unlock;
 
@@ -762,17 +784,18 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = stateid_lookup(&sid, ino, nst_lock, &st);
+	status = openfile_lookup(&sid, ino, nst_lock, &lock_of);
 	if (status != NFS4_OK)
 		goto out;
+	lock_owner = lock_of->owner;
 
-	if (seqid != st->cli_next_seq) {
+	if (seqid != lock_owner->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
 	status = NFS4ERR_LOCK_RANGE;
-	list_for_each_entry_safe(lock_ent, iter, &st->u.lock.list, node) {
+	list_for_each_entry_safe(lock_ent, iter, &lock_of->u.lock.list, node) {
 		if (offset != lock_ent->ofs || length != lock_ent->len)
 			continue;
 
@@ -783,12 +806,12 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (status == NFS4_OK) {
-		st->my_seq++;
-		st->cli_next_seq++;
+		lock_owner->my_seq++;
+		lock_owner->cli_next_seq++;
 	}
 
-	if (list_empty(&st->u.lock.list))
-		state_trash(st, false);
+	if (list_empty(&lock_of->u.lock.list))
+		openfile_trash(lock_of, false);
 
 out:
 	WR32(status);
@@ -797,37 +820,12 @@ out:
 	return status;
 }
 
-struct lockowner_search_info {
-	clientid4		id;
-	struct nfs_buf		*owner;
-
-	bool			match;
-};
-
-static void lockowner_iter(gpointer key, gpointer val, gpointer user_data)
-{
-	struct nfs_state *st = val;
-	struct lockowner_search_info *lsi = user_data;
-
-	if (st->type != nst_lock)
-		return;
-	if (lsi->id != st->cli)
-		return;
-	if (strlen(st->owner) != lsi->owner->len)
-		return;
-	if (memcmp(st->owner, lsi->owner->val, lsi->owner->len))
-		return;
-
-	lsi->match = true;
-}
-
 nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	clientid4 id;
 	struct nfs_buf owner;
-	struct lockowner_search_info lsi;
 
 	if (cur->len < 12) {
 		status = NFS4ERR_BADXDR;
@@ -842,13 +840,7 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	lsi.id = id;
-	lsi.owner = &owner;
-	lsi.match = false;
-
-	g_hash_table_foreach(srv.state, lockowner_iter, &lsi);
-
-	if (lsi.match)
+	if (cli_locks_held(id, &owner))
 		status = NFS4ERR_LOCKS_HELD;
 
 out:

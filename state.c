@@ -25,7 +25,7 @@ struct nfs_clientid {
 	bool			pending;
 	struct list_head	node;
 
-	struct list_head	state_list;
+	struct list_head	owner_list;
 
 	struct nfs_timer	timer;
 };
@@ -99,7 +99,7 @@ uint32_t gen_stateid(void)
 		loop--;
 
 		nrand32(&tmp, 1);
-	} while (g_hash_table_lookup(srv.state, GUINT_TO_POINTER(tmp)) != NULL);
+	} while (g_hash_table_lookup(srv.openfiles, GUINT_TO_POINTER(tmp)) != NULL);
 
 	return tmp;
 }
@@ -118,49 +118,70 @@ bool stateid_stale(const struct nfs_stateid *sid)
 	return false;
 }
 
-nfsstat4 stateid_lookup(struct nfs_stateid *id_in, struct nfs_inode *ino, enum nfs_state_type type,
-			struct nfs_state **st_out)
+nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
+			   struct nfs_owner **owner_out)
 {
-	struct nfs_state *st;
+	struct nfs_owner *o;
+	struct nfs_clientid *clid;
 
-	*st_out = NULL;
+	*owner_out = NULL;
 
-	if (stateid_bad(id_in))
-		return NFS4ERR_BAD_STATEID;
-	if (stateid_stale(id_in))
+	clid = g_hash_table_lookup(srv.clid_idx, (void *)(unsigned long) id);
+	if (!clid)
+		return NFS4ERR_STALE_CLIENTID;
+
+	list_for_each_entry(o, &clid->owner_list, cli_node) {
+		size_t len;
+
+		len = strlen(o->owner);
+		if ((len == owner->len) &&
+		    !memcmp(owner->val, o->owner, len)) {
+			*owner_out = o;
+			return NFS4_OK;
+		}
+	}
+
+	return NFS4_OK;
+}
+
+nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
+			 struct nfs_inode *ino,
+			 enum nfs_state_type type,
+			 struct nfs_openfile **of_out)
+{
+	struct nfs_openfile *of;
+
+	*of_out = NULL;
+
+	of = g_hash_table_lookup(srv.openfiles, GUINT_TO_POINTER(id_in->id));
+	if (!of)
 		return NFS4ERR_STALE_STATEID;
 
-	st = g_hash_table_lookup(srv.state, GUINT_TO_POINTER(id_in->id));
-	if (!st)
-		return NFS4ERR_STALE_STATEID;
-
-	if ((st->type == nst_dead) && (type != nst_dead)) {
-		if (st->flags & nsf_expired)
+	if ((of->type == nst_dead) && (type != nst_dead)) {
+		if (of->flags & nsf_expired)
 			return NFS4ERR_EXPIRED;
 		return NFS4ERR_OLD_STATEID;
 	}
-	if (st->my_seq != id_in->seqid)
-		return NFS4ERR_OLD_STATEID;
 
-	if ((type != nst_any) && (st->type != type))
+	if ((type != nst_any) && (of->type != type))
 		return NFS4ERR_BAD_STATEID;
-	if (ino && (ino != st->ino))
+	if (ino && (ino != of->ino))
 		return NFS4ERR_BAD_STATEID;
 
-	*st_out = st;
+	*of_out = of;
 
-	return clientid_touch(st->cli);
+	return NFS4_OK;
 }
 
-static bool state_self(const struct nfs_access *ac, const struct nfs_state *st)
+static bool state_self(const struct nfs_access *ac, const struct nfs_openfile *of)
 {
-	if (st == ac->self)
+	if (of == ac->self)
 		return true;
 
-	if ((st->type == nst_open) && (ac->clientid == st->cli) &&
+	if ((of->type == nst_open) && (ac->clientid == of->owner->cli) &&
 	    ac->owner && ac->owner->len &&
-	    (strlen(st->owner) == ac->owner->len) &&
-	    (!memcmp(st->owner, ac->owner->val, ac->owner->len)))
+	    (strlen(of->owner->owner) == ac->owner->len) &&
+	    (!memcmp(of->owner, ac->owner->val, ac->owner->len)))
 		return true;
 
 	return false;
@@ -174,29 +195,29 @@ struct state_search_info {
 };
 
 static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
-			  struct nfs_state *st)
+			  struct nfs_openfile *of)
 {
-	switch (st->type) {
+	switch (of->type) {
 
 	case nst_open: {
 		if (!ssi->opens)
 			return;
 
-		if ((st->u.share.deny & ac->share_access) &&
-		    ((ac->op == OP_OPEN) || !state_self(ac, st))) {
-			ac->match = st;
+		if ((of->u.share.deny & ac->share_access) &&
+		    ((ac->op == OP_OPEN) || !state_self(ac, of))) {
+			ac->match = of;
 			if ((ac->op == OP_WRITE) || (ac->op == OP_READ))
 				ssi->status = NFS4ERR_LOCKED;
 			else
 				ssi->status = NFS4ERR_SHARE_DENIED;
 
-		} else if (st->u.share.access & ac->share_deny) {
-			ac->match = st;
+		} else if (of->u.share.access & ac->share_deny) {
+			ac->match = of;
 			ssi->status = NFS4ERR_SHARE_DENIED;
 
-		} else if (state_self(ac, st) &&
-			 !(st->u.share.access & ac->share_access)) {
-			ac->match = st;
+		} else if (state_self(ac, of) &&
+			 !(of->u.share.access & ac->share_access)) {
+			ac->match = of;
 			ssi->status = NFS4ERR_OPENMODE;
 		}
 		break;
@@ -214,7 +235,7 @@ static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
 		else
 			ssi_end_ofs = ac->ofs + ac->len;
 
-		list_for_each_entry(lock, &st->u.lock.list, node) {
+		list_for_each_entry(lock, &of->u.lock.list, node) {
 			if (lock->len == 0xffffffffffffffffULL)
 				end_ofs = 0xffffffffffffffffULL;
 			else
@@ -230,7 +251,7 @@ static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
 			     (ac->locktype == READW_LT)))
 				continue;
 
-			ac->match = st;
+			ac->match = of;
 			ssi->status = NFS4ERR_DENIED;
 		}
 		break;
@@ -246,14 +267,14 @@ static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
 nfsstat4 access_ok(struct nfs_access *ac)
 {
 	struct state_search_info ssi;
-	struct nfs_state *tmp_st;
+	struct nfs_openfile *tmp_of;
 
 	ac->self = NULL;
 	ac->match = NULL;
 
 	if (ac->sid && (ac->sid->seqid != 0) &&
 	    (ac->sid->seqid != 0xffffffffU)) {
-		nfsstat4 status = stateid_lookup(ac->sid, ac->ino,
+		nfsstat4 status = openfile_lookup(ac->sid, ac->ino,
 						 nst_any, &ac->self);
 		if (status != NFS4_OK)
 			return status;
@@ -287,39 +308,39 @@ nfsstat4 access_ok(struct nfs_access *ac)
 
 	ssi.status = NFS4_OK;
 
-	list_for_each_entry(tmp_st, &ac->ino->state_list, inode_node) {
-		access_search(ac, &ssi, tmp_st);
+	list_for_each_entry(tmp_of, &ac->ino->openfile_list, inode_node) {
+		access_search(ac, &ssi, tmp_of);
 	}
 
 	return ssi.status;
 }
 
-static void state_trash_locks(struct nfs_state *st)
+static void openfile_trash_locks(struct nfs_openfile *of)
 {
 	struct nfs_lock *tmp, *iter;
 
-	list_for_each_entry_safe(tmp, iter, &st->u.lock.list, node) {
+	list_for_each_entry_safe(tmp, iter, &of->u.lock.list, node) {
 		list_del(&tmp->node);
 
 		memset(tmp, 0, sizeof(*tmp));
 		free(tmp);
 	}
 
-	st->u.lock.open = NULL;
+	of->u.lock.open = NULL;
 }
 
-void state_free(gpointer data)
+void openfile_free(gpointer data)
 {
-	struct nfs_state *st = data;
+	struct nfs_openfile *of = data;
 
-	if (!st)
+	if (!of)
 		return;
 
-	srv.stats.state_free++;
+	srv.stats.openfile_free++;
 
-	free(st->owner);
+	free(of->owner);
 
-	switch (st->type) {
+	switch (of->type) {
 	case nst_any:
 		/* invalid type, should never happen */
 		/* fall through */
@@ -330,49 +351,49 @@ void state_free(gpointer data)
 	case nst_dead:
 		break;
 	case nst_lock:
-		state_trash_locks(st);
+		openfile_trash_locks(of);
 		break;
 	}
 
-	if (st->ino) {
-		list_del_init(&st->inode_node);
-		st->ino = 0;
+	if (of->ino) {
+		list_del_init(&of->inode_node);
+		of->ino = 0;
 	}
 
-	list_del(&st->cli_node);
+	list_del(&of->owner_node);
 
-	memset(st, 0, sizeof(*st));
-	free(st);
+	memset(of, 0, sizeof(*of));
+	free(of);
 }
 
-static void state_gc_iter(gpointer key, gpointer val, gpointer user_data)
+static void openfile_gc_iter(gpointer key, gpointer val, gpointer user_data)
 {
-	struct nfs_state *st = val;
+	struct nfs_openfile *of = val;
 	GList **list = user_data;
 
-	if (st->type != nst_dead)
+	if (of->type != nst_dead)
 		return;
-	if (current_time.tv_sec < st->u.death_time)
+	if (current_time.tv_sec < of->u.death_time)
 		return;
 
-	*list = g_list_prepend(*list, st);
+	*list = g_list_prepend(*list, of);
 }
 
 void state_gc(void)
 {
 	GList *tmp, *list = NULL;
-	struct nfs_state *st;
+	struct nfs_openfile *of;
 
-	g_hash_table_foreach(srv.state, state_gc_iter, &list);
+	g_hash_table_foreach(srv.openfiles, openfile_gc_iter, &list);
 
 	tmp = list;
 	while (tmp) {
-		st = tmp->data;
+		of = tmp->data;
 
 		/* removing from hash table frees struct */
-		if (!g_hash_table_remove(srv.state, GUINT_TO_POINTER(st->id))) {
+		if (!g_hash_table_remove(srv.openfiles, GUINT_TO_POINTER(of->id))) {
 			syslog(LOG_ERR, "BUG: failed to GC state");
-			state_free(st);
+			openfile_free(of);
 		}
 
 		tmp = tmp->next;
@@ -381,68 +402,86 @@ void state_gc(void)
 	g_list_free(list);
 }
 
-void state_trash(struct nfs_state *st, bool expired)
+void openfile_trash(struct nfs_openfile *of, bool expired)
 {
-	if (st->type == nst_dead)
+	if (of->type == nst_dead)
 		return;
 
-	if (st->type == nst_lock)
-		state_trash_locks(st);
+	if (of->type == nst_lock)
+		openfile_trash_locks(of);
 
-	if (st->ino) {
-		list_del_init(&st->inode_node);
-		st->ino = 0;
+	if (of->ino) {
+		list_del_init(&of->inode_node);
+		of->ino = 0;
 	}
 
-	st->type = nst_dead;
-	st->flags |= nsf_expired;
-	st->u.death_time = current_time.tv_sec + SRV_STATE_DEATH;
+	of->type = nst_dead;
+	if (expired)
+		of->flags |= nsf_expired;
+	of->u.death_time = current_time.tv_sec + SRV_STATE_DEATH;
 }
 
-struct nfs_state *state_new(enum nfs_state_type type, struct nfs_buf *owner)
+struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 {
-	struct nfs_state *st;
+	struct nfs_owner *o;
 	long l;
 
-	srv.stats.state_alloc++;
+	srv.stats.openfile_alloc++;
 
-	st = calloc(1, sizeof(struct nfs_state));
-	if (!st)
+	o = calloc(1, sizeof(struct nfs_owner));
+	if (!o)
 		return NULL;
 
 	l = 0;
 	lrand48_r(&srv.rng, &l);
-	st->my_seq = l & 0xfff;
+	o->my_seq = l & 0xfff;
 
-	st->type = type;
-	st->id = gen_stateid();
-	if (!st->id) {
-		free(st);
+	o->type = type;
+
+	o->owner = strndup(owner->val, owner->len);
+	if (!o->owner) {
+		free(o);
 		return NULL;
 	}
 
-	st->owner = strndup(owner->val, owner->len);
-	if (!st->owner) {
-		free(st);
+	INIT_LIST_HEAD(&o->openfiles);
+	INIT_LIST_HEAD(&o->cli_node);
+
+	return o;
+}
+
+struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
+{
+	struct nfs_openfile *of;
+
+	of = calloc(1, sizeof(*of));
+	if (!of)
+		return NULL;
+	
+	of->owner = o;
+	of->type = type;
+	of->id = gen_stateid();
+	if (!of->id) {
+		free(of);
 		return NULL;
 	}
 
 	switch (type) {
 	case nst_any:
-	case nst_open:
 	case nst_dead:
+	case nst_open:
 		/* do nothing */
 		break;
-
+	
 	case nst_lock:
-		INIT_LIST_HEAD(&st->u.lock.list);
+		INIT_LIST_HEAD(&of->u.lock.list);
 		break;
 	}
 
-	INIT_LIST_HEAD(&st->inode_node);
-	INIT_LIST_HEAD(&st->cli_node);
+	INIT_LIST_HEAD(&of->inode_node);
+	INIT_LIST_HEAD(&of->owner_node);
 
-	return st;
+	return of;
 }
 
 static void gen_clientid4(clientid4 *id)
@@ -520,6 +559,8 @@ static void free_cb_client4(cb_client4 *cbc)
 
 static void clientid_free(struct nfs_clientid *clid)
 {
+	struct nfs_owner *o, *iter;
+
 	srv.stats.clid_free++;
 
 	if (!clid)
@@ -532,6 +573,16 @@ static void clientid_free(struct nfs_clientid *clid)
 
 	free(clid->id.buf);
 	free_cb_client4(&clid->callback);
+
+	list_for_each_entry_safe(o, iter, &clid->owner_list, cli_node) {
+		free(o->owner);
+		free(o);
+
+		/* FIXME technically we should loop through o->openfiles
+		 * and free resources, but I /think/ all paths already
+		 * do that for us
+		 */
+	}
 
 	memset(clid, 0, sizeof(*clid));
 	free(clid);
@@ -584,7 +635,7 @@ static int clientid_new(struct nfs_cxn *cxn,
 	if (!clid)
 		goto err_out;
 
-	INIT_LIST_HEAD(&clid->state_list);
+	INIT_LIST_HEAD(&clid->owner_list);
 	INIT_LIST_HEAD(&clid->node);
 	timer_init(&clid->timer, clientid_timer, clid);
 
@@ -626,49 +677,17 @@ err_out:
 	return -ENOMEM;
 }
 
-bool cli_new_owner(clientid4 id_short, char *owner)
-{
-	struct nfs_state *st;
-	struct nfs_clientid *clid;
-	unsigned long id = (unsigned long) id_short;
-
-	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
-	if (G_UNLIKELY(!clid)) {
-		syslog(LOG_ERR, "BUG in cli_new_owner");
-		return true;
-	}
-
-	list_for_each_entry(st, &clid->state_list, cli_node) {
-		if ((st->type != nst_dead) &&
-		    !strcmp(st->owner, owner))
-			return false;
-	}
-
-	return true;
-}
-
-void cli_state_add(clientid4 id_short, struct nfs_state *st)
-{
-	struct nfs_clientid *clid;
-	unsigned long id = (unsigned long) id_short;
-
-	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
-	if (G_UNLIKELY(!clid)) {
-		syslog(LOG_ERR, "BUG in cli_state_add");
-		return;
-	}
-
-	list_add(&st->cli_node, &clid->state_list);
-}
-
 static void client_cancel_id(struct nfs_clientid *clid, bool expired)
 {
-	struct nfs_state *st;
+	struct nfs_owner *owner;
+	struct nfs_openfile *of;
 	unsigned int trashed = 0;
 
-	list_for_each_entry(st, &clid->state_list, cli_node) {
-		state_trash(st, expired);
-		trashed++;
+	list_for_each_entry(owner, &clid->owner_list, cli_node) {
+		list_for_each_entry(of, &owner->openfiles, owner_node) {
+			openfile_trash(of, expired);
+			trashed++;
+		}
 	}
 
 	if (debugging)
@@ -710,6 +729,27 @@ static void client_cancel(const struct blob *key)
 	}
 
 	g_list_free(cci.list);
+}
+
+bool cli_locks_held(clientid4 id, struct nfs_buf *owner)
+{
+	struct nfs_owner *o = NULL;
+
+	if (owner_lookup_name(id, owner, &o) != NFS4_OK)
+		return false;
+
+	return list_empty(&o->openfiles) ? false : true;
+}
+
+void cli_owner_add(struct nfs_owner *owner)
+{
+	struct nfs_clientid *clid;
+
+	clid = g_hash_table_lookup(srv.clid_idx,
+				   (void *)(unsigned long) owner->cli);
+	/* FIXME: handle NULL */
+	
+	list_add(&owner->cli_node, &clid->owner_list);
 }
 
 static void cli_clear_pending(const struct blob *key)
