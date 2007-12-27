@@ -127,14 +127,22 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (open_owner && args->seqid != open_owner->cli_next_seq) {
-		status = NFS4ERR_BAD_SEQID;
-		goto out;
+	if (open_owner) {
+		if (args->seqid != open_owner->cli_next_seq) {
+			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+
+		open_owner->my_seq++;
+		open_owner->cli_next_seq++;
 	}
 
 	/* for the moment, we only support CLAIM_NULL */
 	if (args->claim != CLAIM_NULL) {
-		status = NFS4ERR_NOTSUPP;
+		if (args->claim == CLAIM_PREVIOUS)
+			status = NFS4ERR_RECLAIM_BAD;
+		else
+			status = NFS4ERR_NOTSUPP;
 		goto out;
 	}
 
@@ -471,7 +479,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_openfile *of = NULL, *tmp_of, *iter;
+	struct nfs_openfile *of = NULL;
 	struct nfs_inode *ino;
 	uint32_t seqid;
 	struct nfs_owner *open_owner = NULL;
@@ -516,11 +524,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	open_owner->my_seq++;
 	sid.seqid = open_owner->my_seq;
 
-	list_for_each_entry_safe(tmp_of, iter, &open_owner->openfiles,
-				 owner_node) {
-		if (tmp_of->type == nst_lock)
-			openfile_trash(tmp_of, false);
-	}
+	owner_trash_locks(open_owner);
 
 	openfile_trash(of, false);
 

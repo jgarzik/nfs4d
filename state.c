@@ -104,7 +104,6 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
-#if 0
 static bool stateid_bad(const struct nfs_stateid *sid)
 {
 	if (memcmp(&sid->server_magic, SRV_MAGIC, 4))
@@ -118,7 +117,6 @@ static bool stateid_stale(const struct nfs_stateid *sid)
 		return true;
 	return false;
 }
-#endif
 
 nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 			   struct nfs_owner **owner_out)
@@ -155,12 +153,10 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 
 	*of_out = NULL;
 
-#if 0
 	if (stateid_bad(id_in))
 		return NFS4ERR_BAD_STATEID;
 	if (stateid_stale(id_in))
 		return NFS4ERR_STALE_STATEID;
-#endif
 
 	of = g_hash_table_lookup(srv.openfiles, GUINT_TO_POINTER(id_in->id));
 	if (!of)
@@ -171,6 +167,8 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 			return NFS4ERR_EXPIRED;
 		return NFS4ERR_OLD_STATEID;
 	}
+	if ((of->type != nst_dead) && (id_in->seqid != of->owner->my_seq))
+		return NFS4ERR_OLD_STATEID;
 
 	if ((type != nst_any) && (of->type != type))
 		return NFS4ERR_BAD_STATEID;
@@ -426,6 +424,29 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 	if (expired)
 		of->flags |= nsf_expired;
 	of->u.death_time = current_time.tv_sec + SRV_STATE_DEATH;
+	of->owner = NULL;
+}
+
+void owner_trash_locks(struct nfs_owner *o)
+{
+	struct nfs_clientid *clid;
+	unsigned long id = o->cli;
+	struct nfs_owner *tmp;
+	struct nfs_openfile *lock_of, *iter;
+
+	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	if (!clid)
+		return;
+
+	list_for_each_entry(tmp, &clid->owner_list, cli_node) {
+		if ((tmp->type != nst_lock) || (tmp->open_owner != o))
+			continue;
+
+		list_for_each_entry_safe(lock_of, iter, &tmp->openfiles,
+					 owner_node) {
+			openfile_trash(lock_of, false);
+		}
+	}
 }
 
 struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)

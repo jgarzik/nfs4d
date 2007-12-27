@@ -746,6 +746,7 @@ extern void rand_verifier(verifier4 *verf);
 extern bool cli_locks_held(clientid4 id, struct nfs_buf *owner);
 
 extern void cli_owner_add(struct nfs_owner *owner);
+extern void owner_trash_locks(struct nfs_owner *o);
 extern struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 				struct nfs_owner **owner_out);

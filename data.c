@@ -685,6 +685,9 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 				    lock_of);
 	}
 
+	if (new_lock)
+		open_owner->cli_next_seq++;
+
 	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
 
 	sid = &tmp_sid;
