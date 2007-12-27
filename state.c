@@ -104,19 +104,21 @@ uint32_t gen_stateid(void)
 	return tmp;
 }
 
-bool stateid_bad(const struct nfs_stateid *sid)
+#if 0
+static bool stateid_bad(const struct nfs_stateid *sid)
 {
 	if (memcmp(&sid->server_magic, SRV_MAGIC, 4))
 		return true;
 	return false;
 }
 
-bool stateid_stale(const struct nfs_stateid *sid)
+static bool stateid_stale(const struct nfs_stateid *sid)
 {
 	if (memcmp(&sid->server_verf, &srv.instance_verf, 4))
 		return true;
 	return false;
 }
+#endif
 
 nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 			   struct nfs_owner **owner_out)
@@ -152,6 +154,13 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 	struct nfs_openfile *of;
 
 	*of_out = NULL;
+
+#if 0
+	if (stateid_bad(id_in))
+		return NFS4ERR_BAD_STATEID;
+	if (stateid_stale(id_in))
+		return NFS4ERR_STALE_STATEID;
+#endif
 
 	of = g_hash_table_lookup(srv.openfiles, GUINT_TO_POINTER(id_in->id));
 	if (!of)
@@ -337,8 +346,6 @@ void openfile_free(gpointer data)
 		return;
 
 	srv.stats.openfile_free++;
-
-	free(of->owner);
 
 	switch (of->type) {
 	case nst_any:
