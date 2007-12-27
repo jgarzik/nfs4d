@@ -435,6 +435,21 @@ void *wr_map(struct list_head *writes, struct rpc_write **wr,
 	return p;
 }
 
+static void drc_ent_free(gpointer data)
+{
+	struct drc_ent *drc = data;
+
+	if (!drc)
+		return;
+
+	free(drc->val);
+
+	memset(drc, 0, sizeof(*drc));
+	free(drc);
+
+	srv.stats.drc_free++;
+}
+
 static void drc_gc_iter(gpointer key, gpointer val, gpointer user_data)
 {
 	struct drc_ent *ent = val;
@@ -449,21 +464,16 @@ static void drc_gc_iter(gpointer key, gpointer val, gpointer user_data)
 static void drc_gc(void)
 {
 	GList *list = NULL, *tmp;
+	struct drc_ent *drc;
 
 	g_hash_table_foreach(request_cache, drc_gc_iter, &list);
 
 	tmp = list;
 	while (tmp) {
-		struct drc_ent *drc = tmp->data;
+		drc = tmp->data;
 
 		g_hash_table_remove(request_cache, (void *) drc->hash);
 
-		free(drc->val);
-
-		memset(drc, 0, sizeof(*drc));
-		free(drc);
-
-		srv.stats.drc_free++;
 		tmp = tmp->next;
 	}
 
@@ -493,8 +503,10 @@ static void drc_store(unsigned long hash, void *cache, unsigned int cache_len,
 	srv.stats.drc_store_bytes += cache_len;
 
 	drc = malloc(sizeof(*drc));
-	if (!drc)
+	if (!drc) {
+		free(cache);
 		return;		/* ok to ignore OOM here */
+	}
 
 	drc->hash = hash;
 	drc->expire = current_time.tv_sec + SRV_DRC_TIME;
@@ -503,7 +515,7 @@ static void drc_store(unsigned long hash, void *cache, unsigned int cache_len,
 	drc->xid = xid;
 	memcpy(drc->host_addr, host_addr, GNET_INETADDR_MAX_LEN);
 
-	g_hash_table_insert(request_cache, (void *) hash, drc);
+	g_hash_table_replace(request_cache, (void *) hash, drc);
 }
 
 void timer_del(struct nfs_timer *timer)
@@ -1031,7 +1043,8 @@ static GMainLoop *init_server(void)
 					     NULL, NULL);
 	srv.openfiles = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					  NULL, openfile_free);
-	request_cache = g_hash_table_new(g_direct_hash, g_direct_equal);
+	request_cache = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+					 NULL, drc_ent_free);
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
