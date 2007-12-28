@@ -608,19 +608,16 @@ void timer_init(struct nfs_timer *timer, nfs_timer_cb_t cb, void *priv)
 	timer->queued = false;
 }
 
-static void space_used_iter(gpointer key, gpointer val, gpointer user_data)
+static void space_used_iter(struct nfs_inode *ino, uint64_t *total)
 {
-	struct nfs_inode *ino = val;
-	uint64_t *total = user_data;
-
 	*total += sizeof(struct nfs_inode);
 	if (ino->mimetype)
 		*total += strlen(ino->mimetype);
 
 	switch (ino->type) {
 	case NF4LNK:
-		if (ino->u.linktext)
-			*total += strlen(ino->u.linktext);
+		if (ino->linktext)
+			*total += strlen(ino->linktext);
 		break;
 
 	case NF4DIR:
@@ -645,11 +642,19 @@ uint64_t srv_space_used(void)
 	static uint64_t cached_total;
 	static uint64_t ttl;
 	uint64_t total = 0;
+	unsigned int i;
+	struct nfs_inode *ino;
 
 	if (ttl && cached_total && (current_time.tv_sec < ttl))
 		return cached_total;
 
-	g_hash_table_foreach(srv.inode_table, space_used_iter, &total);
+	for (i = 0; i < srv.inode_table->len; i++) {
+		ino = &g_array_index(srv.inode_table, struct nfs_inode, i);
+		if (!ino->parents)
+			continue;
+
+		space_used_iter(ino, &total);
+	}
 
 	cached_total = total;
 	ttl = current_time.tv_sec + SRV_SPACE_USED_TTL;
@@ -1257,7 +1262,7 @@ static gboolean stats_dump(gpointer dummy)
 		srv.stats.drc_store_bytes,
 		srv.stats.drc_hits,
 		srv.stats.drc_misses,
-		g_hash_table_size(srv.inode_table),
+		srv.inode_table->len,
 		(unsigned long long) current_time.tv_sec,
 		(unsigned long long) current_time.tv_usec);
 

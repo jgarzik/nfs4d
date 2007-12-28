@@ -765,8 +765,7 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 
 	attr->files_avail =
 	attr->files_free = 33000000ULL;
-	attr->files_total = g_hash_table_size(srv.inode_table) +
-			    attr->files_free;
+	attr->files_total = srv.inode_table->len + attr->files_free;
 
 	attr->space_avail =
 	attr->space_free = 4ULL * 1024 * 1024 * 1024;
@@ -793,7 +792,7 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 		attr->numlinks = 1;
 
 	if (ino->type == NF4BLK || ino->type == NF4CHR)
-		memcpy(&attr->rawdev, &ino->u.devdata, sizeof(specdata4));
+		memcpy(&attr->rawdev, &ino->devdata, sizeof(specdata4));
 	else
 		memset(&attr->rawdev, 0, sizeof(specdata4));
 

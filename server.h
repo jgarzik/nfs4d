@@ -39,7 +39,7 @@ typedef uint32_t nfsino_t;
 enum {
 	INO_ROOT		= 10,
 	INO_FIRST		= INO_ROOT,
-	INO_RESERVED_LAST	= 999,
+	INO_RESERVED_LAST	= 99,
 
 	NFS_CLI_CONFIRMED	= (1 << 0),
 
@@ -354,15 +354,13 @@ struct nfs_openfile {
 			struct list_head	list;
 			struct nfs_openfile	*open;
 		} lock;
-
-		struct {
-			uint64_t		time;
-			struct list_head	node;
-		} death;
 	} u;
 
 	struct list_head	inode_node;
 	struct list_head	owner_node;
+
+	struct list_head	death_node;
+	uint64_t		death_time;
 };
 
 struct nfs_inode {
@@ -382,12 +380,10 @@ struct nfs_inode {
 	char			*group;
 	char			*mimetype;
 
-	union {
-		GTree		*dir;		/* state for a directory */
-		char		*linktext;	/* state for a symlink */
-		uint32_t	devdata[2];	/* "" blk/chrdev */
-		GList		*buf_list;	/* "" regular file */
-	} u;
+	GTree			*dir;		/* state for a directory */
+	char			*linktext;	/* state for a symlink */
+	uint32_t		devdata[2];	/* "" blk/chrdev */
+	GList			*buf_list;	/* "" regular file */
 
 	struct list_head	openfile_list;
 };
@@ -465,7 +461,7 @@ struct nfs_fattr_set {
 };
 
 struct nfs_dirent {
-	nfsino_t		ino;
+	struct nfs_inode	*ino;
 };
 
 struct nfs_server_stats {
@@ -533,7 +529,7 @@ struct nfs_server_stats {
 };
 
 struct nfs_server {
-	GHashTable		*inode_table;
+	GArray			*inode_table;
 
 	GHashTable		*clid_idx;
 
@@ -608,7 +604,7 @@ extern nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
-		      nfsino_t inum);
+		      struct nfs_inode *ent_ino);
 void dirent_free(gpointer p);
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
 nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
@@ -768,4 +764,24 @@ static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 	rb->refcnt++;
 	return rb;
 }
+
+static inline bool nfs_seqid_inc_ok(nfsstat4 status)
+{
+	switch (status) {
+	case NFS4ERR_BAD_SEQID:
+	case NFS4ERR_STALE_CLIENTID:
+	case NFS4ERR_STALE_STATEID:
+	case NFS4ERR_BAD_STATEID:
+	case NFS4ERR_BADXDR:
+	case NFS4ERR_RESOURCE:
+	case NFS4ERR_NOFILEHANDLE:
+		return false;
+
+	default:
+		return true;
+	}
+
+	/* not reached */
+}
+
 #endif /* __SERVER_H__ */

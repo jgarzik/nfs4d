@@ -332,8 +332,6 @@ static void openfile_trash_locks(struct nfs_openfile *of)
 		memset(tmp, 0, sizeof(*tmp));
 		free(tmp);
 	}
-
-	of->u.lock.open = NULL;
 }
 
 void openfile_free(gpointer data)
@@ -378,8 +376,8 @@ void state_gc(void)
 {
 	struct nfs_openfile *of, *iter;
 
-	list_for_each_entry_safe(of, iter, &srv.dead, u.death.node) {
-		if (of->u.death.time > current_time.tv_sec)
+	list_for_each_entry_safe(of, iter, &srv.dead, death_node) {
+		if (of->death_time > current_time.tv_sec)
 			break;
 
 		g_hash_table_remove(srv.openfiles, GUINT_TO_POINTER(of->id));
@@ -395,21 +393,23 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 		openfile_trash_locks(of);
 
 	if (of->ino) {
+		struct nfs_inode *ino = of->ino;
+
+		of->ino = NULL;
+
 		list_del_init(&of->inode_node);
 
 		if (of->type == nst_open) {
 			struct nfs_openfile *tmp_of, *iter;
 
 			list_for_each_entry_safe(tmp_of, iter,
-						 &of->ino->openfile_list,
+						 &ino->openfile_list,
 						 inode_node) {
 				if (tmp_of->type == nst_lock &&
 				    tmp_of->u.lock.open == of)
 					openfile_trash(tmp_of, expired);
 			}
 		}
-
-		of->ino = NULL;
 	}
 
 	if (of->flags & nsf_owned) {
@@ -420,9 +420,8 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 	of->type = nst_dead;
 	if (expired)
 		of->flags |= nsf_expired;
-	of->u.death.time = current_time.tv_sec + SRV_STATE_DEATH;
-	INIT_LIST_HEAD(&of->u.death.node);
-	list_add_tail(&of->u.death.node, &srv.dead);
+	of->death_time = current_time.tv_sec + SRV_STATE_DEATH;
+	list_add_tail(&of->death_node, &srv.dead);
 	of->owner = NULL;
 }
 
@@ -485,6 +484,7 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 
 	INIT_LIST_HEAD(&of->inode_node);
 	INIT_LIST_HEAD(&of->owner_node);
+	INIT_LIST_HEAD(&of->death_node);
 
 	return of;
 }

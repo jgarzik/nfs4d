@@ -240,7 +240,7 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	linktext = ino->u.linktext;
+	linktext = ino->linktext;
 
 	if (debugging)
 		syslog(LOG_INFO, "   READLINK -> '%s'", linktext);

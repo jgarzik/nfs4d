@@ -158,8 +158,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 
 	case NFS4_OK:
-		ino = inode_get(de->ino);
-		if (!ino) {	/* should never happen */
+		ino = de->ino;
+		if (!ino || !ino->parents) {	/* should never happen */
 			status = NFS4ERR_SERVERFAULT;
 			goto out;
 		}
@@ -447,6 +447,9 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	open_owner->my_seq++;
+	open_owner->cli_next_seq++;
+
 	if ((!(share_access & of->u.share.access)) ||
 	    (!(share_deny & of->u.share.deny))) {
 		status = NFS4ERR_INVAL;
@@ -455,9 +458,6 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	of->u.share.access = share_access;
 	of->u.share.deny = share_deny;
-
-	open_owner->my_seq++;
-	open_owner->cli_next_seq++;
 
 	sid.seqid = open_owner->my_seq;
 	sid.id = of->id;

@@ -12,9 +12,16 @@ static nfsino_t next_ino = INO_RESERVED_LAST + 1;
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
-	g_assert(srv.inode_table != NULL);
+	struct nfs_inode *ino;
 
-	return g_hash_table_lookup(srv.inode_table, GUINT_TO_POINTER(inum));
+	if (!srv.inode_table || (inum >= srv.inode_table->len))
+		return NULL;
+
+	ino = &g_array_index(srv.inode_table, struct nfs_inode, inum);
+	if (!ino->parents)
+		return NULL;
+
+	return ino;
 }
 
 void inode_touch(struct nfs_inode *ino)
@@ -27,30 +34,40 @@ static void inode_free(struct nfs_inode *ino)
 {
 	GList *tmp;
 	struct nfs_openfile *of, *iter;
+	nfsino_t ino_n;
+	uint64_t iver;
 
 	if (!ino)
 		return;
 
-	if (ino->parents) {
+	ino_n = ino->ino;
+	iver = ino->version;
+
+	if (debugging > 2)
+		syslog(LOG_DEBUG, "freeing inode %u", ino_n);
+
+	if (ino->parents)
 		g_array_free(ino->parents, TRUE);
-		ino->parents = NULL;
+	else {
+		syslog(LOG_ERR, "BUG: inode double-free: %u", ino_n);
+		return;
 	}
 
 	switch (ino->type) {
 	case NF4DIR:
-		if (ino->u.dir)
-			g_tree_destroy(ino->u.dir);
+		if (ino->dir)
+			g_tree_destroy(ino->dir);
 		break;
 	case NF4LNK:
-		free(ino->u.linktext);
+		free(ino->linktext);
 		break;
 	case NF4REG:
-		tmp = ino->u.buf_list;
+		tmp = ino->buf_list;
 		while (tmp) {
 			refbuf_unref(tmp->data);
 			tmp = tmp->next;
 		}
-		g_list_free(ino->u.buf_list);
+		g_list_free(ino->buf_list);
 		break;
 	default:
 		/* do nothing */
@@ -60,16 +77,55 @@ static void inode_free(struct nfs_inode *ino)
 	free(ino->mimetype);
 
 	list_for_each_entry_safe(of, iter, &ino->openfile_list, inode_node) {
-		openfile_trash(of, false);
+		if (of->type == nst_open)
+			openfile_trash(of, false);
 	}
 
 	memset(ino, 0, sizeof(*ino));
-	free(ino);
+
+	/* restore the few fields whose values are important across uses */
+	ino->ino = ino_n;
+	ino->version = iver;
+
+	if (ino_n < next_ino)
+		next_ino = ino_n;
+}
+
+static struct nfs_inode *inode_alloc(void)
+{
+	unsigned int i;
+	struct nfs_inode *ino, tmp;
+
+	for (i = next_ino; i < srv.inode_table->len; i++) {
+		ino = &g_array_index(srv.inode_table, struct nfs_inode, i);
+		if (ino->parents)
+			continue;
+
+		ino->ino = i;
+		INIT_LIST_HEAD(&ino->openfile_list);
+		return ino;
+	}
+
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.ino = srv.inode_table->len;
+	tmp.version = 1ULL;
+	g_array_append_val(srv.inode_table, tmp);
+
+	ino = &g_array_index(srv.inode_table, struct nfs_inode,
+			     srv.inode_table->len - 1);
+
+	INIT_LIST_HEAD(&ino->openfile_list);
+
+	next_ino = ino->ino + 1;
+
+	return ino;
 }
 
 static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 {
-	struct nfs_inode *ino = calloc(1, sizeof(struct nfs_inode));
+	struct nfs_inode *ino;
+
+	ino = inode_alloc();
 	if (!ino)
 		goto out;
 
@@ -77,15 +133,11 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	if (!ino->parents)
 		goto err_out;
 
-	ino->ino = next_ino++;
-
-	ino->version = 1ULL;
+	ino->version++;
 	ino->ctime =
 	ino->atime =
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
-
-	INIT_LIST_HEAD(&ino->openfile_list);
 
 	/* connected users (cxn==NULL is internal allocation, e.g. root inode)*/
 	if (cxn) {
@@ -97,7 +149,7 @@ out:
 	return ino;
 
 err_out:
-	free(ino);
+	inode_free(ino);
 	ino = NULL;
 	goto out;
 }
@@ -109,7 +161,7 @@ struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)
 		return NULL;
 
 	ino->type = NF4REG;
-	ino->u.buf_list = NULL;
+	ino->buf_list = NULL;
 
 	return ino;
 }
@@ -128,8 +180,8 @@ static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 	ino->type = NF4DIR;
 	ino->size = 4096;
 
-	ino->u.dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
-	if (!ino->u.dir) {
+	ino->dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
+	if (!ino->dir) {
 		inode_free(ino);
 		return NULL;
 	}
@@ -145,7 +197,7 @@ static struct nfs_inode *inode_new_dev(struct nfs_cxn *cxn,
 		return NULL;
 
 	ino->type = type;
-	memcpy(&ino->u.devdata[0], devdata, sizeof(uint32_t) * 2);
+	memcpy(&ino->devdata[0], devdata, sizeof(uint32_t) * 2);
 
 	return ino;
 }
@@ -157,7 +209,7 @@ static struct nfs_inode *inode_new_symlink(struct nfs_cxn *cxn, char *linktext)
 		return NULL;
 
 	ino->type = NF4LNK;
-	ino->u.linktext = linktext;
+	ino->linktext = linktext;
 
 	return ino;
 }
@@ -221,15 +273,35 @@ void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 
 bool inode_table_init(void)
 {
-	struct nfs_inode *root;
+	struct nfs_inode *root, dummy;
 
-	srv.inode_table = g_hash_table_new(g_direct_hash, g_direct_equal);
-
-	root = inode_new_dir(NULL);
-	if (!root)
+	srv.inode_table = g_array_sized_new(FALSE, TRUE,
+					    sizeof(struct nfs_inode),
+					    10000);
+	if (!srv.inode_table)
 		return false;
-	root->ino = INO_ROOT;
+
+	memset(&dummy, 0, sizeof(dummy));
+
+	while (srv.inode_table->len <= INO_RESERVED_LAST) {
+		dummy.ino = srv.inode_table->len;
+		dummy.version = 1ULL;
+		g_array_append_val(srv.inode_table, dummy);
+	}
+
+	root = &g_array_index(srv.inode_table, struct nfs_inode, INO_ROOT);
 	root->mode = 0755;
+
+	root->type = NF4DIR;
+	root->size = 4096;
+
+	root->dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
+	if (!root->dir)
+		return false;
+
+	root->parents = g_array_new(false, false, sizeof(nfsino_t));
+	if (!root->parents)
+		return false;
 
 	root->user = id_lookup_name(idt_user, "root@localdomain", 4);
 	if (!root->user)
@@ -239,28 +311,33 @@ bool inode_table_init(void)
 	if (!root->group)
 		root->group = "nobody@localdomain";
 
-	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(INO_ROOT), root);
-
 	return true;
 }
 
 void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 {
 	unsigned int i;
+	bool found = false;
+
+	if (!ino || !ino->parents) {
+		syslog(LOG_ERR, "BUG: null in inode_unlink");
+		return;
+	}
 
 	for (i = 0; i < ino->parents->len; i++)
-		if (g_array_index(ino->parents, nfsino_t, i) == dir_ref)
+		if (g_array_index(ino->parents, nfsino_t, i) == dir_ref) {
+			g_array_remove_index(ino->parents, i);
+			inode_touch(ino);
+			found = true;
 			break;
+		}
 
-	if (i < ino->parents->len) {
-		g_array_remove_index(ino->parents, i);
-		inode_touch(ino);
-	}
+	if (!found)
+		syslog(LOG_ERR, "BUG: dir_ref %u not found in inode_unlink",
+			dir_ref);
 
-	if (ino->parents->len == 0) {
-		g_hash_table_remove(srv.inode_table, GUINT_TO_POINTER(ino->ino));
+	if (ino->parents->len == 0)
 		inode_free(ino);
-	}
 }
 
 enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
@@ -323,12 +400,12 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 				status = NFS4ERR_NOSPC;
 				goto out;
 			}
-			ino->u.buf_list = g_list_append(ino->u.buf_list, rb);
+			ino->buf_list = g_list_append(ino->buf_list, rb);
 		}
 
 		/* truncate buffers until we reach desired length */
 		else {
-			GList *ent, *tmp = g_list_last(ino->u.buf_list);
+			GList *ent, *tmp = g_list_last(ino->buf_list);
 			while (len > 0) {
 				ent = tmp;
 				tmp = tmp->prev;
@@ -337,8 +414,8 @@ enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 				if (rb->len <= len) {
 					len -= rb->len;
 					refbuf_unref(rb);
-					ino->u.buf_list = g_list_delete_link(
-						ino->u.buf_list, ent);
+					ino->buf_list = g_list_delete_link(
+						ino->buf_list, ent);
 				} else {
 					rb->len -= len;
 					len = 0;
@@ -427,16 +504,13 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		goto out;
 	}
 
-	g_hash_table_insert(srv.inode_table, GUINT_TO_POINTER(new_ino->ino),
-			    new_ino);
-
 	cinfo->atomic = true;
 	cinfo->before =
 	cinfo->after = dir_ino->version;
 
-	status = dir_add(dir_ino, name, new_ino->ino);
+	status = dir_add(dir_ino, name, new_ino);
 	if (status != NFS4_OK) {
-		inode_unlink(new_ino, 0);
+		inode_free(new_ino);
 		goto out;
 	}
 
@@ -786,7 +860,7 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 		if (attr->case_preserving != true)
 			return false;
         if (bitmap & (1ULL << FATTR4_FILES_TOTAL))
-		if (attr->files_total != g_hash_table_size(srv.inode_table))
+		if (attr->files_total != srv.inode_table->len)
 			return false;
         if (bitmap & (1ULL << FATTR4_HOMOGENEOUS))
 		if (attr->homogeneous != true)
@@ -842,8 +916,8 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 		if (attr->numlinks != ino->parents->len)
 			return false;
         if (bitmap & (1ULL << FATTR4_RAWDEV))
-		if ((attr->rawdev.specdata1 != ino->u.devdata[0]) ||
-		    (attr->rawdev.specdata2 != ino->u.devdata[1]))
+		if ((attr->rawdev.specdata1 != ino->devdata[0]) ||
+		    (attr->rawdev.specdata2 != ino->devdata[1]))
 			return false;
         if (bitmap & (1ULL << FATTR4_TIME_ACCESS))
 		if ((attr->time_access.seconds != ino->atime) ||

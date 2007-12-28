@@ -75,7 +75,7 @@ static GList *inode_data_ofs(struct nfs_inode *ino, uint64_t ofs,
 	if (G_UNLIKELY(!ino || ino->type != NF4REG))
 		return NULL;
 
-	tmp = ino->u.buf_list;
+	tmp = ino->buf_list;
 	while (tmp) {
 		rb = tmp->data;
 
@@ -224,11 +224,11 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* store zero-filled region */
 	if (zero_rb)
-		ino->u.buf_list = g_list_append(ino->u.buf_list, zero_rb);
+		ino->buf_list = g_list_append(ino->buf_list, zero_rb);
 
 	/* store data in appended-data region */
 	if (append_rb)
-		ino->u.buf_list = g_list_append(ino->u.buf_list, append_rb);
+		ino->buf_list = g_list_append(ino->buf_list, append_rb);
 
 	ino->size = new_size;
 

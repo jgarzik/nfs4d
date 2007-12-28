@@ -81,9 +81,9 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 	if (!name)
 		return NFS4ERR_RESOURCE;
 
-	g_assert(dir_ino->u.dir != NULL);
+	g_assert(dir_ino->dir != NULL);
 
-	dirent = g_tree_lookup(dir_ino->u.dir, name);
+	dirent = g_tree_lookup(dir_ino->dir, name);
 
 	free(name);
 
@@ -132,7 +132,12 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	cxn->current_fh = dirent->ino;
+	if (!dirent->ino) {
+		status = NFS4ERR_NOENT;
+		goto out;
+	}
+
+	cxn->current_fh = dirent->ino->ino;
 
 	if (debugging) {
 		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
@@ -192,7 +197,7 @@ void dirent_free(gpointer p)
 }
 
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
-		      nfsino_t inum)
+		      struct nfs_inode *ent_ino)
 {
 	struct nfs_dirent *dirent;
 	char *name;
@@ -211,14 +216,14 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 	if (!name)
 		return NFS4ERR_RESOURCE;
 
-	dirent = calloc(1, sizeof(struct nfs_dirent));
+	dirent = malloc(sizeof(struct nfs_dirent));
 	if (!dirent) {
 		status = NFS4ERR_RESOURCE;
 		goto out_name;
 	}
-	dirent->ino = inum;
+	dirent->ino = ent_ino;
 
-	g_tree_insert(dir_ino->u.dir, name, dirent);
+	g_tree_insert(dir_ino->dir, name, dirent);
 	inode_touch(dir_ino);
 
 	goto out;
@@ -279,7 +284,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	before = dir_ino->version;
 
-	status = dir_add(dir_ino, &newname, cxn->save_fh);
+	status = dir_add(dir_ino, &newname, src_ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -341,15 +346,15 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* lookup target name in directory */
-	dirent = g_tree_lookup(dir_ino->u.dir, name);
+	dirent = g_tree_lookup(dir_ino->dir, name);
 	if (!dirent) {
 		status = NFS4ERR_NOENT;
 		goto out_name;
 	}
 
 	/* reference target inode */
-	target_ino = inode_get(dirent->ino);
-	if (!target_ino) {			/* should never happen */
+	target_ino = dirent->ino;
+	if (!target_ino || !target_ino->parents) { /* should never happen */
 		status = NFS4ERR_SERVERFAULT;
 		goto out_name;
 	}
@@ -361,7 +366,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* prevent removal of non-empty dirs */
 	if ((target_ino->type == NF4DIR) &&
-	    (g_tree_nnodes(target_ino->u.dir) > 0)) {
+	    (g_tree_nnodes(target_ino->dir) > 0)) {
 		status = NFS4ERR_NOTEMPTY;
 		goto out_name;
 	}
@@ -373,7 +378,8 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* remove target inode from directory */
-	g_tree_remove(dir_ino->u.dir, name);
+	dirent->ino = NULL;
+	g_tree_remove(dir_ino->dir, name);
 
 	/* record directory change info */
 	cinfo.before = dir_ino->version;
@@ -451,25 +457,25 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* lookup source, target names */
-	old_dirent = g_tree_lookup(src_dir->u.dir, old_name);
+	old_dirent = g_tree_lookup(src_dir->dir, old_name);
 	if (!old_dirent) {
 		status = NFS4ERR_NOENT;
 		goto out_name;
 	}
-	old_file = inode_get(old_dirent->ino);
-	if (!old_file) {			/* should never happen */
+	old_file = old_dirent->ino;
+	if (!old_file || !old_file->parents) {	/* should never happen */
 		status = NFS4ERR_SERVERFAULT;
 		goto out_name;
 	}
-	new_dirent = g_tree_lookup(target_dir->u.dir, new_name);
+	new_dirent = g_tree_lookup(target_dir->dir, new_name);
 
 	/* if target (newname) is present, attempt to remove */
 	if (new_dirent != NULL) {
 		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
-		new_file = inode_get(new_dirent->ino);
-		if (!new_file) {		/* should never happen */
+		new_file = new_dirent->ino;
+		if (!new_file || !new_file->parents) { /* should never happen */
 			status = NFS4ERR_SERVERFAULT;
 			goto out_name;
 		}
@@ -484,7 +490,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		if (old_file->type == NF4DIR && new_file->type == NF4DIR) {
-			if (g_tree_nnodes(new_file->u.dir) == 0)
+			if (g_tree_nnodes(new_file->dir) == 0)
 				ok_to_remove = true;
 		}
 		else if (old_file->type != NF4DIR && new_file->type != NF4DIR) {
@@ -493,7 +499,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		if (ok_to_remove) {
 			/* remove target inode from directory */
-			g_tree_remove(target_dir->u.dir, new_name);
+			g_tree_remove(target_dir->dir, new_name);
 
 			/* remove link, possibly deleting inode */
 			inode_unlink(new_file, target_dir->ino);
@@ -510,8 +516,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 	new_dirent->ino = old_dirent->ino;
 
-	g_tree_remove(src_dir->u.dir, old_name);
-	g_tree_insert(target_dir->u.dir, new_name, new_dirent);
+	g_tree_remove(src_dir->dir, old_name);
+	g_tree_insert(target_dir->dir, new_name, new_dirent);
 	new_name = NULL;	/* prevent function exit from freeing */
 
 	/* record directory change info */
@@ -589,8 +595,8 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->cookie_found = true;
 	}
 
-	ino = inode_get(de->ino);
-	if (!ino) {
+	ino = de->ino;
+	if (!ino || !ino->parents) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;
 		ri->status = NFS4ERR_SERVERFAULT;
@@ -736,12 +742,12 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	ri.dir_pos = 3;
 	ri.first_time = true;
 
-	if (g_tree_nnodes(ino->u.dir) == 0) {
+	if (g_tree_nnodes(ino->dir) == 0) {
 		WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
 
 		ri.val_follows = WRSKIP(4);
 	} else {
-		g_tree_foreach(ino->u.dir, readdir_iter, &ri);
+		g_tree_foreach(ino->dir, readdir_iter, &ri);
 	}
 
 	/* terminate final entry4.nextentry and dirlist4.entries */
