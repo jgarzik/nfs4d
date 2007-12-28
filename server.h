@@ -310,6 +310,7 @@ enum nfs_state_type {
 
 enum nfs_state_flags {
 	nsf_expired		= (1 << 0),
+	nsf_owned		= (1 << 1),	/* owner_node on list */
 	nsf_north_carolina,
 	nsf_rhode_island,
 	nsf_georgia,
@@ -345,8 +346,8 @@ struct nfs_openfile {
 
 	union {
 		struct {
-			uint32_t	access;
-			uint32_t	deny;
+			uint32_t		access;
+			uint32_t		deny;
 		} share;
 
 		struct {
@@ -354,7 +355,10 @@ struct nfs_openfile {
 			struct nfs_openfile	*open;
 		} lock;
 
-		uint64_t		death_time;
+		struct {
+			uint64_t		time;
+			struct list_head	node;
+		} death;
 	} u;
 
 	struct list_head	inode_node;
@@ -534,6 +538,8 @@ struct nfs_server {
 	GHashTable		*clid_idx;
 
 	GHashTable		*openfiles;
+
+	struct list_head	dead;
 
 	unsigned int		lease_time;
 
@@ -746,7 +752,6 @@ extern void rand_verifier(verifier4 *verf);
 extern bool cli_locks_held(clientid4 id, struct nfs_buf *owner);
 
 extern void cli_owner_add(struct nfs_owner *owner);
-extern void owner_trash_locks(struct nfs_owner *o);
 extern struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner);
 extern nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 				struct nfs_owner **owner_out);

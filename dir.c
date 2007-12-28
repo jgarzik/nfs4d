@@ -354,6 +354,11 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_name;
 	}
 
+	if (target_ino->ino == INO_ROOT) {	/* should never happen */
+		status = NFS4ERR_INVAL;
+		goto out_name;
+	}
+
 	/* prevent removal of non-empty dirs */
 	if ((target_ino->type == NF4DIR) &&
 	    (g_tree_nnodes(target_ino->u.dir) > 0)) {

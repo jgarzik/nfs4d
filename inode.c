@@ -31,7 +31,10 @@ static void inode_free(struct nfs_inode *ino)
 	if (!ino)
 		return;
 
-	g_array_free(ino->parents, true);
+	if (ino->parents) {
+		g_array_free(ino->parents, TRUE);
+		ino->parents = NULL;
+	}
 
 	switch (ino->type) {
 	case NF4DIR:

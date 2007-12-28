@@ -291,6 +291,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	list_add(&of->inode_node, &ino->openfile_list);
 	list_add(&of->owner_node, &open_owner->openfiles);
+	of->flags |= nsf_owned;
 	g_hash_table_insert(srv.openfiles, GUINT_TO_POINTER(of->id), of);
 
 	if (new_owner)
@@ -512,21 +513,20 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = openfile_lookup(&sid, ino, nst_open, &of);
 	if (status != NFS4_OK)
 		goto out;
-	open_owner = of->owner;
+	if (of)
+		open_owner = of->owner;
 
 	if (seqid != open_owner->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
+	openfile_trash(of, false);
+
 	/* really only for completeness... */
 	open_owner->cli_next_seq++;
 	open_owner->my_seq++;
 	sid.seqid = open_owner->my_seq;
-
-	owner_trash_locks(open_owner);
-
-	openfile_trash(of, false);
 
 out:
 	WR32(status);

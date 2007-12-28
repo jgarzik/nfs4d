@@ -710,9 +710,11 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		new_lock_of = true;
 
 		lock_of->ino = ino;
+		lock_of->u.lock.open = of;
 
 		list_add(&lock_of->inode_node, &ino->openfile_list);
 		list_add(&lock_of->owner_node, &lock_owner->openfiles);
+		lock_of->flags |= nsf_owned;
 		g_hash_table_insert(srv.openfiles,
 				    GUINT_TO_POINTER(lock_of->id),
 				    lock_of);

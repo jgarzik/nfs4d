@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <argp.h>
+#include <mcheck.h>
 #include <locale.h>
 #include <syslog.h>
 #include <gnet.h>
@@ -1038,6 +1039,7 @@ static GMainLoop *init_server(void)
 	loop = g_main_loop_new(NULL, FALSE);
 
 	memset(&srv, 0, sizeof(srv));
+	INIT_LIST_HEAD(&srv.dead);
 	srv.lease_time = SRV_LEASE_TIME;
 	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					     NULL, NULL);
@@ -1306,6 +1308,8 @@ int main (int argc, char *argv[])
 {
 	GMainLoop *loop;
 	error_t rc;
+
+	mcheck(NULL);
 
 	setlocale(LC_ALL, "");
 

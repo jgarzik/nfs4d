@@ -362,49 +362,28 @@ void openfile_free(gpointer data)
 
 	if (of->ino) {
 		list_del_init(&of->inode_node);
-		of->ino = 0;
+		of->ino = NULL;
 	}
 
-	list_del(&of->owner_node);
+	if (of->flags & nsf_owned) {
+		list_del_init(&of->owner_node);
+		of->flags &= ~nsf_owned;
+	}
 
 	memset(of, 0, sizeof(*of));
 	free(of);
 }
 
-static void openfile_gc_iter(gpointer key, gpointer val, gpointer user_data)
-{
-	struct nfs_openfile *of = val;
-	GList **list = user_data;
-
-	if (of->type != nst_dead)
-		return;
-	if (current_time.tv_sec < of->u.death_time)
-		return;
-
-	*list = g_list_prepend(*list, of);
-}
-
 void state_gc(void)
 {
-	GList *tmp, *list = NULL;
-	struct nfs_openfile *of;
+	struct nfs_openfile *of, *iter;
 
-	g_hash_table_foreach(srv.openfiles, openfile_gc_iter, &list);
+	list_for_each_entry_safe(of, iter, &srv.dead, u.death.node) {
+		if (of->u.death.time > current_time.tv_sec)
+			break;
 
-	tmp = list;
-	while (tmp) {
-		of = tmp->data;
-
-		/* removing from hash table frees struct */
-		if (!g_hash_table_remove(srv.openfiles, GUINT_TO_POINTER(of->id))) {
-			syslog(LOG_ERR, "BUG: failed to GC state");
-			openfile_free(of);
-		}
-
-		tmp = tmp->next;
+		g_hash_table_remove(srv.openfiles, GUINT_TO_POINTER(of->id));
 	}
-
-	g_list_free(list);
 }
 
 void openfile_trash(struct nfs_openfile *of, bool expired)
@@ -417,39 +396,34 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 
 	if (of->ino) {
 		list_del_init(&of->inode_node);
-		of->ino = 0;
+
+		if (of->type == nst_open) {
+			struct nfs_openfile *tmp_of, *iter;
+
+			list_for_each_entry_safe(tmp_of, iter,
+						 &of->ino->openfile_list,
+						 inode_node) {
+				if (tmp_of->type == nst_lock &&
+				    tmp_of->u.lock.open == of)
+					openfile_trash(tmp_of, expired);
+			}
+		}
+
+		of->ino = NULL;
+	}
+
+	if (of->flags & nsf_owned) {
+		list_del_init(&of->owner_node);
+		of->flags &= ~nsf_owned;
 	}
 
 	of->type = nst_dead;
 	if (expired)
 		of->flags |= nsf_expired;
-	of->u.death_time = current_time.tv_sec + SRV_STATE_DEATH;
+	of->u.death.time = current_time.tv_sec + SRV_STATE_DEATH;
+	INIT_LIST_HEAD(&of->u.death.node);
+	list_add_tail(&of->u.death.node, &srv.dead);
 	of->owner = NULL;
-}
-
-void owner_trash_locks(struct nfs_owner *o)
-{
-	struct nfs_clientid *clid;
-	unsigned long id = o->cli;
-	struct nfs_owner *tmp;
-	struct nfs_openfile *lock_of, *iter;
-
-	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
-	if (!clid) {
-		syslog(LOG_ERR, "BUG: CLID:%Lx not found in owner_trash_locks()",
-		       (unsigned long long) o->cli);
-		return;
-	}
-
-	list_for_each_entry(tmp, &clid->owner_list, cli_node) {
-		if ((tmp->type != nst_lock) || (tmp->open_owner != o))
-			continue;
-
-		list_for_each_entry_safe(lock_of, iter, &tmp->openfiles,
-					 owner_node) {
-			openfile_trash(lock_of, false);
-		}
-	}
 }
 
 struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
@@ -711,19 +685,22 @@ err_out:
 static void client_cancel_id(struct nfs_clientid *clid, bool expired)
 {
 	struct nfs_owner *owner;
-	struct nfs_openfile *of;
+	struct nfs_openfile *of, *iter;
 	unsigned int trashed = 0;
 
 	list_for_each_entry(owner, &clid->owner_list, cli_node) {
-		list_for_each_entry(of, &owner->openfiles, owner_node) {
-			openfile_trash(of, expired);
-			trashed++;
+		list_for_each_entry_safe(of, iter, &owner->openfiles,
+					 owner_node) {
+			if (of->type == nst_open) {
+				openfile_trash(of, expired);
+				trashed++;
+			}
 		}
 	}
 
 	if (debugging)
 		syslog(LOG_INFO,
-		       "%s %u state recs associated with CID:%Lx",
+		       "%s %u openfile recs associated with CID:%Lx",
 		       expired ? "expired" : "cancelled",
 		       trashed, (unsigned long long) clid->id_short);
 }
