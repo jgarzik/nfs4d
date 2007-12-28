@@ -394,6 +394,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	clientid4 owner_id;
 	struct nfs_buf owner;
 	struct nfs_access ac = { NULL, };
+	struct nfs_owner *o = NULL;
 
 	if (cur->len < 28) {
 		WR32(NFS4ERR_BADXDR);
@@ -439,12 +440,21 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	status = owner_lookup_name(owner_id, &owner, &o);
+	if (status != NFS4_OK)
+		goto out;
+
 	ac.ino = ino;
 	ac.op = OP_LOCKT;
 	ac.locktype = locktype;
 	ac.ofs = offset;
 	ac.len = length;
 	status = access_ok(&ac);
+
+	if (ac.match && (ac.match->owner == o)) {
+		ac.match = NULL;
+		status = NFS4_OK;
+	}
 
 out:
 	if (ac.match) {
