@@ -435,8 +435,11 @@ void owner_trash_locks(struct nfs_owner *o)
 	struct nfs_openfile *lock_of, *iter;
 
 	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
-	if (!clid)
+	if (!clid) {
+		syslog(LOG_ERR, "BUG: CLID:%Lx not found in owner_trash_locks()",
+		       (unsigned long long) o->cli);
 		return;
+	}
 
 	list_for_each_entry(tmp, &clid->owner_list, cli_node) {
 		if ((tmp->type != nst_lock) || (tmp->open_owner != o))
