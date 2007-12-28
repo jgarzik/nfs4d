@@ -488,7 +488,7 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 	of = calloc(1, sizeof(*of));
 	if (!of)
 		return NULL;
-	
+
 	of->owner = o;
 	of->type = type;
 	of->id = gen_stateid();
@@ -503,7 +503,7 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 	case nst_open:
 		/* do nothing */
 		break;
-	
+
 	case nst_lock:
 		INIT_LIST_HEAD(&of->u.lock.list);
 		break;
@@ -779,7 +779,7 @@ void cli_owner_add(struct nfs_owner *owner)
 	clid = g_hash_table_lookup(srv.clid_idx,
 				   (void *)(unsigned long) owner->cli);
 	/* FIXME: handle NULL */
-	
+
 	list_add(&owner->cli_node, &clid->owner_list);
 }
 

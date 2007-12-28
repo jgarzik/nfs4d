@@ -22,13 +22,18 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino;
-	uint64_t offset = CR64();
-	uint32_t count = CR32();
+	uint64_t offset;
+	uint32_t count;
+
+	/* read COMMIT args */
+	offset = CR64();
+	count = CR32();
 
 	if (debugging)
 		syslog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%x)",
 		       (unsigned long long) offset, count);
 
+	/* obtain and validate inode */
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -44,10 +49,15 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* validate offset+count */
 	if ((uint64_t) count > ~(uint64_t)offset) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
+
+	/* since this is a RAM-based server, we do nothing else.
+	 * everything is already committed.
+	 */
 
 out:
 	WR32(status);
@@ -396,11 +406,15 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_access ac = { NULL, };
 	struct nfs_owner *o = NULL;
 
+	/* easy check for incomplete args (our routines will return
+	 * zeroes if overflow occurs, so this is just nice)
+	 */
 	if (cur->len < 28) {
 		WR32(NFS4ERR_BADXDR);
 		return NFS4ERR_BADXDR;
 	}
 
+	/* read LOCKT args */
 	locktype = CR32();
 	offset = CR64();
 	length = CR64();
@@ -416,12 +430,14 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		       owner.len,
 		       owner.val);
 
+	/* validate length and offset+length */
 	if (!length || ((length != ~0ULL) &&
 		     ((uint64_t)length > ~(uint64_t)offset))) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
+	/* grab and validate inode */
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -440,6 +456,10 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/*
+	 * find nfs_owner, given clientid and lock owner name
+	 * 'o' may be NULL after this returns NFS4_OK.
+	 */
 	status = owner_lookup_name(owner_id, &owner, &o);
 	if (status != NFS4_OK)
 		goto out;
@@ -451,6 +471,9 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	ac.len = length;
 	status = access_ok(&ac);
 
+	/* if we found a matching lock, and it matches the
+	 * owner given in the args, return success
+	 */
 	if (ac.match && (ac.match->owner == o)) {
 		ac.match = NULL;
 		status = NFS4_OK;
@@ -750,13 +773,18 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_openfile *lock_of;
 	struct nfs_owner *lock_owner;
 
+	/* indicate this RPC message should be cached in DRC */
 	cxn->drc_mask |= drc_unlock;
 
+	/* easy check for incomplete args (our routines will return
+	 * zeroes if overflow occurs, so this is just nice)
+	 */
 	if (cur->len < 40) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
 
+	/* read LOCKU arguments */
 	locktype = CR32();
 	seqid = CR32();
 	CURSID(&sid);
@@ -773,12 +801,14 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		       sid.seqid,
 		       sid.id);
 
+	/* validate length and offset+length */
 	if (!length || ((length != ~0ULL) &&
 		     ((uint64_t)length > ~(uint64_t)offset))) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
+	/* grab and validate inode */
 	ino = inode_get(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -797,6 +827,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* obtain lock-openfile and lock_owner via stateid lookup */
 	status = openfile_lookup(&sid, ino, nst_lock, &lock_of);
 	if (status != NFS4_OK)
 		goto out;
@@ -807,6 +838,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* delete the first matching lock range, on lock openfile's list */
 	status = NFS4ERR_LOCK_RANGE;
 	list_for_each_entry_safe(lock_ent, iter, &lock_of->u.lock.list, node) {
 		if (offset != lock_ent->ofs || length != lock_ent->len)
@@ -818,11 +850,13 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 	}
 
+	/* if successful, increment seqids */
 	if (status == NFS4_OK) {
 		lock_owner->my_seq++;
 		lock_owner->cli_next_seq++;
 	}
 
+	/* if last lock range unlocked, dispose of lock-openfile */
 	if (list_empty(&lock_of->u.lock.list))
 		openfile_trash(lock_of, false);
 
@@ -840,19 +874,27 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 	clientid4 id;
 	struct nfs_buf owner;
 
+	/* easy check for incomplete args (our routines will return
+	 * zeroes if overflow occurs, so this is just nice)
+	 */
 	if (cur->len < 12) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
 
+	/* read RELEASE_LOCKOWNER arguments */
 	id = CR64();
 	CURBUF(&owner);
 
+	/* validate owner */
 	if (!owner.len || !owner.val) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
 
+	/* at the moment, we do nothing other than the minimum:
+	 * return NFS4ERR_LOCKS_HELD or NFS4_OK as specified
+	 */
 	if (cli_locks_held(id, &owner))
 		status = NFS4ERR_LOCKS_HELD;
 
