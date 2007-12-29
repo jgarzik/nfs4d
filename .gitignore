@@ -26,3 +26,4 @@ nfs4-ram-config.h*
 
 nfs4_ramd.pid
 nfs4_ramd.stats
+nfs4_ramd.dump*

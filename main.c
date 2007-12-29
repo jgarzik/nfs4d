@@ -38,6 +38,7 @@ static char startup_cwd[PATH_MAX];
 static bool opt_foreground;
 static char *pid_fn = "nfs4_ramd.pid";
 static char *stats_fn = "nfs4_ramd.stats";
+static char *dump_fn = "nfs4_ramd.dump";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
@@ -93,6 +94,8 @@ static struct argp_option options[] = {
 	  "Write daemon process id to FILE (def: nfs4_ramd.pid, in current directory)" },
 	{ "stats", 'S', "FILE", 0,
 	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4_ramd.stats, in current directory)" },
+	{ "dump", 'D', "FILE", 0,
+	  "Diagnostic RAM data dumped to FILE, for each SIGUSR2 (def: nfs4_ramd.dump, in current directory)" },
 
 	{ }
 };
@@ -1110,6 +1113,10 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		pid_fn = arg;
 		break;
 
+	case 'D':
+		dump_fn = arg;
+		break;
+
 	case 'S':
 		stats_fn = arg;
 		break;
@@ -1303,6 +1310,121 @@ static void stats_signal(int signal)
 	g_idle_add(stats_dump, NULL);
 }
 
+static gboolean dump_dir_iter(gpointer _k, gpointer _v, gpointer _d)
+{
+	struct nfs_dirent *de = _v;
+	FILE *f = _d;
+
+	fprintf(f, "\tDIRENT (%u,%u) == %.*s\n",
+		de->ino_n,
+		de->generation,
+		de->name.len,
+		de->name.val);
+
+	return FALSE;
+}
+
+static void dump_inode(FILE *f, const struct nfs_inode *ino)
+{
+	unsigned int i;
+
+	fprintf(f,
+		"INODE: %u\n"
+		"generation: %u\n"
+		"type: %s\n"
+		"version: %Lu\n"
+		,
+		ino->ino,
+		ino->generation,
+		name_nfs_ftype4[ino->type],
+		(unsigned long long) ino->version);
+
+	if (ino->ctime || ino->atime || ino->mtime)
+		fprintf(f, "time: create %Lu access %Lu modify %Lu\n",
+			(unsigned long long) ino->ctime,
+			(unsigned long long) ino->atime,
+			(unsigned long long) ino->mtime);
+	if (ino->mode)
+		fprintf(f, "mode: %o\n", ino->mode);
+	if (ino->user)
+		fprintf(f, "user: %s\n", ino->user);
+	if (ino->group)
+		fprintf(f, "group: %s\n", ino->group);
+	if (ino->mimetype)
+		fprintf(f, "mime-type: %s\n", ino->mimetype);
+
+	if (ino->parents) {
+		fprintf(f, "parent%s:",
+			ino->parents->len > 1 ? "s" : "");
+
+		for (i = 0; i < ino->parents->len; i++)
+			fprintf(f, " %u",
+				g_array_index(ino->parents, nfsino_t, i));
+		
+		fprintf(f, "\n");
+	}
+
+	switch (ino->type) {
+	case NF4DIR:
+		fprintf(f, "dir-length: %u\n", g_tree_nnodes(ino->dir));
+		g_tree_foreach(ino->dir, dump_dir_iter, f);
+		break;
+	case NF4LNK:
+		fprintf(f, "linktext: %s\n", ino->linktext);
+		break;
+	case NF4BLK:
+	case NF4CHR:
+		fprintf(f, "devdata: %u %u\n", ino->devdata[0], ino->devdata[1]);
+		break;
+	case NF4REG:
+		fprintf(f, "size: %Lu\n", (unsigned long long) ino->size);
+		break;
+
+	default:
+		/* do nothing */
+		break;
+	}
+
+	fprintf(f, "===========================\n");
+}
+
+static gboolean diag_dump(gpointer dummy)
+{
+	FILE *f;
+	unsigned int i;
+
+	if (dump_fn[0] != '/') {
+		char *fn;
+
+		if (asprintf(&fn, "%s%s", startup_cwd, dump_fn) < 0)
+			exit(1);
+
+		dump_fn = fn;		/* NOTE: never freed */
+	}
+
+	f = fopen(dump_fn, "a");
+	if (!f) {
+		syslogerr(dump_fn);
+		goto out;
+	}
+
+	fprintf(f, "inode-table-size: %u\n", srv.inode_table->len);
+
+	for (i = 0; i < srv.inode_table->len; i++)
+		dump_inode(f, &g_array_index(srv.inode_table,
+					     struct nfs_inode, i));
+
+out:
+	return FALSE;
+}
+
+static void dump_signal(int signal)
+{
+	syslog(LOG_INFO, "Got SIGUSR2, initiating bg diag dump");
+
+	g_idle_add(diag_dump, NULL);
+}
+
 static void srv_exit_cleanup(void)
 {
 	if (pid_opened && unlink(pid_fn) < 0)
@@ -1331,6 +1453,7 @@ int main (int argc, char *argv[])
 	signal(SIGINT, term_signal);
 	signal(SIGTERM, term_signal);
 	signal(SIGUSR1, stats_signal);
+	signal(SIGUSR2, dump_signal);
 
 	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
 
