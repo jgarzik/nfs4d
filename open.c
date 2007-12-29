@@ -291,7 +291,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	list_add(&of->inode_node, &ino->openfile_list);
 	list_add(&of->owner_node, &open_owner->openfiles);
-	of->flags |= nsf_owned;
 	g_hash_table_insert(srv.openfiles, GUINT_TO_POINTER(of->id), of);
 
 	if (new_owner)
@@ -327,7 +326,7 @@ out:
 
 err_out:
 	if (new_owner) {
-		free(open_owner);
+		owner_free(open_owner);
 		open_owner = NULL;
 	}
 	goto out;

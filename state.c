@@ -47,14 +47,13 @@ static bool blob_equal(const struct blob *a, const struct blob *b)
 static void nrand32(void *mem, unsigned int dwords)
 {
 	uint32_t *v = mem;
-	long l;
+	long l[4] = { 0, };
 	int i;
 
 	for (i = 0; i < dwords; i++) {
-		l = 0;
-		lrand48_r(&srv.rng, &l);
+		lrand48_r(&srv.rng, l);
 
-		v[i] = l;
+		v[i] = l[0];
 	}
 }
 
@@ -162,18 +161,24 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 	if (!of)
 		return NFS4ERR_STALE_STATEID;
 
-	if ((of->type == nst_dead) && (type != nst_dead)) {
-		if (of->flags & nsf_expired)
-			return NFS4ERR_EXPIRED;
-		return NFS4ERR_OLD_STATEID;
-	}
-	if ((of->type != nst_dead) && (id_in->seqid != of->owner->my_seq))
-		return NFS4ERR_OLD_STATEID;
+	if (of->type == nst_dead) {
+		if (type != nst_dead) {
+			if (of->flags & nsf_expired)
+				return NFS4ERR_EXPIRED;
+			return NFS4ERR_OLD_STATEID;
+		}
+	} else {
+		g_assert(of->owner != NULL);
 
-	if ((type != nst_any) && (of->type != type))
-		return NFS4ERR_BAD_STATEID;
-	if (ino && (ino != of->ino))
-		return NFS4ERR_BAD_STATEID;
+		if ((type != nst_any) && (of->type != type))
+			return NFS4ERR_BAD_STATEID;
+
+		if (id_in->seqid != of->owner->my_seq)
+			return NFS4ERR_OLD_STATEID;
+
+		if (ino && (ino != of->ino))
+			return NFS4ERR_BAD_STATEID;
+	}
 
 	*of_out = of;
 
@@ -363,9 +368,9 @@ void openfile_free(gpointer data)
 		of->ino = NULL;
 	}
 
-	if (of->flags & nsf_owned) {
+	if (of->owner) {
 		list_del_init(&of->owner_node);
-		of->flags &= ~nsf_owned;
+		of->owner = NULL;
 	}
 
 	memset(of, 0, sizeof(*of));
@@ -412,9 +417,9 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 		}
 	}
 
-	if (of->flags & nsf_owned) {
+	if (of->owner) {
 		list_del_init(&of->owner_node);
-		of->flags &= ~nsf_owned;
+		of->owner = NULL;
 	}
 
 	of->type = nst_dead;
@@ -422,31 +427,43 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 		of->flags |= nsf_expired;
 	of->death_time = current_time.tv_sec + SRV_STATE_DEATH;
 	list_add_tail(&of->death_node, &srv.dead);
-	of->owner = NULL;
+}
+
+void owner_free(struct nfs_owner *o)
+{
+	if (!o)
+		return;
+
+	free(o->owner);
+
+	/* FIXME technically we should loop through o->openfiles
+	 * and free resources, but I /think/ all paths already
+	 * do that for us
+	 */
+
+	free(o);
 }
 
 struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 {
 	struct nfs_owner *o;
-	long l;
 
-	srv.stats.openfile_alloc++;
-
-	o = calloc(1, sizeof(struct nfs_owner));
+	o = malloc(sizeof(struct nfs_owner));
 	if (!o)
 		return NULL;
 
-	l = 0;
-	lrand48_r(&srv.rng, &l);
-	o->my_seq = l & 0xfff;
-
-	o->type = type;
+	o->cli = 0;
 
 	o->owner = strndup(owner->val, owner->len);
 	if (!o->owner) {
 		free(o);
 		return NULL;
 	}
+
+	o->type = type;
+	o->my_seq = random() & 0xfff;
+	o->cli_next_seq = 0;
+	o->open_owner = NULL;
 
 	INIT_LIST_HEAD(&o->openfiles);
 	INIT_LIST_HEAD(&o->cli_node);
@@ -457,6 +474,13 @@ struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 {
 	struct nfs_openfile *of;
+
+	if (!o)
+		return NULL;
+	if ((type != nst_open) && (type != nst_lock))
+		return NULL;
+
+	srv.stats.openfile_alloc++;
 
 	of = calloc(1, sizeof(*of));
 	if (!of)
@@ -580,13 +604,8 @@ static void clientid_free(struct nfs_clientid *clid)
 	free_cb_client4(&clid->callback);
 
 	list_for_each_entry_safe(o, iter, &clid->owner_list, cli_node) {
-		free(o->owner);
-		free(o);
-
-		/* FIXME technically we should loop through o->openfiles
-		 * and free resources, but I /think/ all paths already
-		 * do that for us
-		 */
+		list_del(&o->cli_node);
+		owner_free(o);
 	}
 
 	memset(clid, 0, sizeof(*clid));
@@ -782,6 +801,8 @@ static void clientid_promote(struct nfs_clientid *old_clid,
 	unsigned long id_short;
 
 	if (old_clid) {
+		list_splice_init(&old_clid->owner_list, &new_clid->owner_list);
+
 		id_short = (unsigned long) old_clid->id_short;
 		g_hash_table_remove(srv.clid_idx, (void *) id_short);
 		clientid_free(old_clid);
