@@ -357,6 +357,7 @@ void openfile_free(gpointer data)
 		/* do nothing */
 		break;
 	case nst_dead:
+		list_del_init(&of->death_node);
 		break;
 	case nst_lock:
 		openfile_trash_locks(of);
