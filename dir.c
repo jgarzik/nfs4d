@@ -56,7 +56,6 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out)
 {
 	struct nfs_dirent *dirent;
-	char *name;
 
 	if (dirent_out)
 		*dirent_out = NULL;
@@ -77,15 +76,7 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 	if (str->len > SRV_MAX_NAME)
 		return NFS4ERR_NAMETOOLONG;
 
-	name = copy_utf8string(str);
-	if (!name)
-		return NFS4ERR_RESOURCE;
-
-	g_assert(dir_ino->dir != NULL);
-
-	dirent = g_tree_lookup(dir_ino->dir, name);
-
-	free(name);
+	dirent = g_tree_lookup(dir_ino->dir, str);
 
 	if (!dirent)
 		return NFS4ERR_NOENT;
@@ -132,12 +123,12 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (!dirent->ino) {
+	if (!dirent->ino_n) {
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
 
-	cxn->current_fh = dirent->ino->ino;
+	cxn->current_fh = dirent->ino_n;
 
 	if (debugging) {
 		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
@@ -184,12 +175,9 @@ out:
 	return status;
 }
 
-void dirent_free(gpointer p)
+static void dirent_free(struct nfs_dirent *dirent)
 {
-	struct nfs_dirent *dirent = p;
-
-	if (!dirent)
-		return;
+	free(dirent->name.val);
 
 	memset(dirent, 0, sizeof(*dirent));
 
@@ -212,24 +200,25 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		return status;
 	}
 
-	name = copy_utf8string(name_in);
+	name = strndup(name_in->val, name_in->len);
 	if (!name)
 		return NFS4ERR_RESOURCE;
 
 	dirent = malloc(sizeof(struct nfs_dirent));
 	if (!dirent) {
+		free(name);
 		status = NFS4ERR_RESOURCE;
-		goto out_name;
+		goto out;
 	}
-	dirent->ino = ent_ino;
 
-	g_tree_insert(dir_ino->dir, name, dirent);
+	dirent->ino_n = ent_ino->ino;
+	dirent->generation = ent_ino->generation;
+	dirent->name.val = name;
+	dirent->name.len = strlen(name);
+
+	g_tree_replace(dir_ino->dir, &dirent->name, dirent);
 	inode_touch(dir_ino);
 
-	goto out;
-
-out_name:
-	free(name);
 out:
 	return status;
 }
@@ -308,7 +297,6 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *dir_ino, *target_ino;
 	struct nfs_dirent *dirent;
-	char *name;
 	struct nfs_buf target;
 	change_info4 cinfo = { true, 0, 0 };
 
@@ -338,48 +326,43 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	/* copy target name */
-	name = copy_utf8string(&target);
-	if (!name) {
-		status = NFS4ERR_RESOURCE;
+	/* lookup target name in directory */
+	dirent = g_tree_lookup(dir_ino->dir, &target);
+	if (!dirent) {
+		status = NFS4ERR_NOENT;
 		goto out;
 	}
 
-	/* lookup target name in directory */
-	dirent = g_tree_lookup(dir_ino->dir, name);
-	if (!dirent) {
-		status = NFS4ERR_NOENT;
-		goto out_name;
-	}
-
 	/* reference target inode */
-	target_ino = dirent->ino;
-	if (!target_ino || !target_ino->parents) { /* should never happen */
-		status = NFS4ERR_SERVERFAULT;
-		goto out_name;
+	target_ino = inode_get(dirent->ino_n);
+	if (!target_ino || (target_ino->generation != dirent->generation)) {
+		status = NFS4ERR_NOENT;
+		goto out;
 	}
 
 	if (target_ino->ino == INO_ROOT) {	/* should never happen */
 		status = NFS4ERR_INVAL;
-		goto out_name;
+		goto out;
 	}
 
 	/* prevent removal of non-empty dirs */
 	if ((target_ino->type == NF4DIR) &&
 	    (g_tree_nnodes(target_ino->dir) > 0)) {
 		status = NFS4ERR_NOTEMPTY;
-		goto out_name;
+		goto out;
 	}
 
 	/* prevent root dir deletion */
 	if (target_ino->ino == INO_ROOT) {
 		status = NFS4ERR_INVAL;
-		goto out_name;
+		goto out;
 	}
 
 	/* remove target inode from directory */
-	dirent->ino = NULL;
-	g_tree_remove(dir_ino->dir, name);
+	if (!g_tree_remove(dir_ino->dir, &target))
+		syslog(LOG_ERR, "BUG: tree remove failed in op-remove");
+	
+	dirent_free(dirent);
 
 	/* record directory change info */
 	cinfo.before = dir_ino->version;
@@ -389,8 +372,6 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* remove link, possibly deleting inode */
 	inode_unlink(target_ino, dir_ino->ino);
 
-out_name:
-	free(name);
 out:
 	WR32(status);
 	if (status == NFS4_OK) {
@@ -408,7 +389,6 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *src_dir, *target_dir;
 	struct nfs_inode *old_file;
 	struct nfs_dirent *old_dirent, *new_dirent;
-	char *old_name, *new_name;
 	struct nfs_buf oldname, newname;
 	change_info4 src = { true, 0, 0 };
 	change_info4 target = { true, 0, 0 };
@@ -448,36 +428,28 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	/* copy source, target names */
-	old_name = copy_utf8string(&oldname);
-	new_name = copy_utf8string(&newname);
-	if (!old_name || !new_name) {
-		status = NFS4ERR_RESOURCE;
-		goto out_name;
-	}
-
 	/* lookup source, target names */
-	old_dirent = g_tree_lookup(src_dir->dir, old_name);
+	old_dirent = g_tree_lookup(src_dir->dir, &oldname);
 	if (!old_dirent) {
 		status = NFS4ERR_NOENT;
-		goto out_name;
+		goto out;
 	}
-	old_file = old_dirent->ino;
-	if (!old_file || !old_file->parents) {	/* should never happen */
-		status = NFS4ERR_SERVERFAULT;
-		goto out_name;
+	old_file = inode_get(old_dirent->ino_n);
+	if (!old_file || (old_file->generation != old_dirent->generation)) {
+		status = NFS4ERR_NOENT;
+		goto out;
 	}
-	new_dirent = g_tree_lookup(target_dir->dir, new_name);
+	new_dirent = g_tree_lookup(target_dir->dir, &newname);
 
 	/* if target (newname) is present, attempt to remove */
 	if (new_dirent != NULL) {
 		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
-		new_file = new_dirent->ino;
-		if (!new_file || !new_file->parents) { /* should never happen */
-			status = NFS4ERR_SERVERFAULT;
-			goto out_name;
+		new_file = inode_get(new_dirent->ino_n);
+		if (!new_file || (new_file->generation != new_dirent->generation)) {
+			status = NFS4ERR_NOENT;
+			goto out;
 		}
 
 		/* do oldname and newname refer to same file? */
@@ -486,7 +458,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 			src.before = src_dir->version;
 			target.after =
 			target.before = target_dir->version;
-			goto out_name;
+			goto out;
 		}
 
 		if (old_file->type == NF4DIR && new_file->type == NF4DIR) {
@@ -499,26 +471,38 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		if (ok_to_remove) {
 			/* remove target inode from directory */
-			g_tree_remove(target_dir->dir, new_name);
+			if (!g_tree_remove(target_dir->dir, &newname))
+				syslog(LOG_ERR, "BUG: tree remove failed in op-rename");
+			dirent_free(new_dirent);
 
 			/* remove link, possibly deleting inode */
 			inode_unlink(new_file, target_dir->ino);
 		} else {
 			status = NFS4ERR_EXIST;
-			goto out_name;
+			goto out;
 		}
 	}
 
-	new_dirent = calloc(1, sizeof(struct nfs_dirent));
+	new_dirent = malloc(sizeof(struct nfs_dirent));
 	if (!new_dirent) {
 		status = NFS4ERR_RESOURCE;
-		goto out_name;
+		goto out;
 	}
-	new_dirent->ino = old_dirent->ino;
+	new_dirent->ino_n = old_dirent->ino_n;
+	new_dirent->generation = old_dirent->generation;
+	new_dirent->name.val = strndup(newname.val, newname.len);
+	if (!new_dirent->name.val) {
+		free(new_dirent);
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+	new_dirent->name.len = strlen(new_dirent->name.val);
 
-	g_tree_remove(src_dir->dir, old_name);
-	g_tree_insert(target_dir->dir, new_name, new_dirent);
-	new_name = NULL;	/* prevent function exit from freeing */
+	if (!g_tree_remove(src_dir->dir, &oldname))
+		syslog(LOG_ERR, "BUG: tree remove #2 failed in op-rename");
+	dirent_free(old_dirent);
+
+	g_tree_replace(target_dir->dir, &new_dirent->name, new_dirent);
 
 	/* record directory change info */
 	src.before = src_dir->version;
@@ -531,9 +515,6 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	src.after = src_dir->version;
 	target.after = target_dir->version;
 
-out_name:
-	free(old_name);
-	free(new_name);
 out:
 	WR32(status);
 	if (status == NFS4_OK) {
@@ -572,14 +553,11 @@ struct readdir_info {
 
 static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 {
-	char *name = key;
-	size_t name_len = strlen(name);
 	uint64_t bitmap_out = 0;
 	struct nfs_dirent *de = value;
 	struct readdir_info *ri = user_data;
 	uint32_t dirlen, maxlen;
 	struct nfs_fattr_set attr;
-	struct nfs_buf nb;
 	struct nfs_inode *ino;
 	struct list_head *writes = ri->writes;
 	struct rpc_write **wr = ri->wr;
@@ -595,11 +573,11 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->cookie_found = true;
 	}
 
-	ino = de->ino;
-	if (!ino || !ino->parents) {
+	ino = inode_get(de->ino_n);
+	if (!ino || (ino->generation != de->generation)) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;
-		ri->status = NFS4ERR_SERVERFAULT;
+		ri->status = NFS4ERR_NOENT;
 		return TRUE;
 	}
 
@@ -607,14 +585,14 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 
 	fattr_fill(ino, &attr);
 
-	dirlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4);
+	dirlen = 8 + 4 + (XDR_QUADLEN(de->name.len) * 4);
 	if (dirlen > ri->dircount) {
 		ri->hit_limit = true;
 		ri->stop = true;
 		goto out;
 	}
 
-	maxlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4) +
+	maxlen = 8 + 4 + (XDR_QUADLEN(de->name.len) * 4) +
 		 16 + fattr_size(&attr) + 4;
 	if (maxlen > ri->maxcount) {
 		ri->hit_limit = true;
@@ -640,9 +618,7 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 
 	WR64(ri->dir_pos);		/* entry4.cookie */
 
-	nb.len = name_len;		/* entry4.name */
-	nb.val = name;
-	WRBUF(&nb);
+	WRBUF(&de->name);		/* entry4.name */
 
 	/* entry4.attrs */
 	attr.bitmap = ri->attr_request;
@@ -651,8 +627,9 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->stop = true;
 
 	if (debugging)
-		syslog(LOG_DEBUG, "   READDIR ent: '%s' (MAP:%Lx WRLEN:%u)",
-			name, (unsigned long long) bitmap_out, (*wr)->len);
+		syslog(LOG_DEBUG, "   READDIR ent: '%.*s' (MAP:%Lx WRLEN:%u)",
+			de->name.len, de->name.val,
+			(unsigned long long) bitmap_out, (*wr)->len);
 
 	ri->val_follows = WRSKIP(4);	/* entry4.nextentry */
 

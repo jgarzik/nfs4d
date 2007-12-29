@@ -365,6 +365,8 @@ struct nfs_openfile {
 
 struct nfs_inode {
 	nfsino_t		ino;
+	uint32_t		generation;
+
 	enum nfs_ftype4		type;		/* inode type: link, dir, ...*/
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
@@ -461,7 +463,10 @@ struct nfs_fattr_set {
 };
 
 struct nfs_dirent {
-	struct nfs_inode	*ino;
+	nfsino_t		ino_n;
+	uint32_t		generation;
+
+	struct nfs_buf		name;
 };
 
 struct nfs_server_stats {
@@ -605,7 +610,6 @@ extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		      struct nfs_inode *ent_ino);
-void dirent_free(gpointer p);
 nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
 nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out);
@@ -719,7 +723,6 @@ extern char *cxn_getuser(const struct nfs_cxn *cxn);
 extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 
 extern bool valid_utf8string(const struct nfs_buf *str);
-extern char *copy_utf8string(const struct nfs_buf *str);
 extern int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out);
 extern int nfsproc_null(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 			 struct curbuf *cur, struct list_head *writes,

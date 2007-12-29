@@ -158,9 +158,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 
 	case NFS4_OK:
-		ino = de->ino;
-		if (!ino || !ino->parents) {	/* should never happen */
-			status = NFS4ERR_SERVERFAULT;
+		ino = inode_get(de->ino_n);
+		if (!ino || (ino->generation != de->generation)) {
+			status = NFS4ERR_NOENT;
 			goto out;
 		}
 		if (ino->type != NF4REG) {

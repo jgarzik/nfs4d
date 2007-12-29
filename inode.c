@@ -14,7 +14,7 @@ struct nfs_inode *inode_get(nfsino_t inum)
 {
 	struct nfs_inode *ino;
 
-	if (!srv.inode_table || (inum >= srv.inode_table->len))
+	if (!srv.inode_table || !inum || (inum >= srv.inode_table->len))
 		return NULL;
 
 	ino = &g_array_index(srv.inode_table, struct nfs_inode, inum);
@@ -35,13 +35,13 @@ static void inode_free(struct nfs_inode *ino)
 	GList *tmp;
 	struct nfs_openfile *of, *iter;
 	nfsino_t ino_n;
-	uint64_t iver;
+	uint32_t igen;
 
 	if (!ino)
 		return;
 
 	ino_n = ino->ino;
-	iver = ino->version;
+	igen = ino->generation;
 
 	if (debugging > 2)
 		syslog(LOG_DEBUG, "freeing inode %u", ino_n);
@@ -85,7 +85,8 @@ static void inode_free(struct nfs_inode *ino)
 
 	/* restore the few fields whose values are important across uses */
 	ino->ino = ino_n;
-	ino->version = iver;
+	ino->generation = igen + 1;
+	INIT_LIST_HEAD(&ino->openfile_list);
 
 	if (ino_n < next_ino)
 		next_ino = ino_n;
@@ -101,14 +102,12 @@ static struct nfs_inode *inode_alloc(void)
 		if (ino->parents)
 			continue;
 
-		ino->ino = i;
-		INIT_LIST_HEAD(&ino->openfile_list);
 		return ino;
 	}
 
 	memset(&tmp, 0, sizeof(tmp));
 	tmp.ino = srv.inode_table->len;
-	tmp.version = 1ULL;
+	tmp.generation = 1;
 	g_array_append_val(srv.inode_table, tmp);
 
 	ino = &g_array_index(srv.inode_table, struct nfs_inode,
@@ -133,7 +132,7 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	if (!ino->parents)
 		goto err_out;
 
-	ino->version++;
+	ino->version = 1ULL;
 	ino->ctime =
 	ino->atime =
 	ino->mtime = current_time.tv_sec;
@@ -166,9 +165,22 @@ struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)
 	return ino;
 }
 
-static gint cstr_compare(gconstpointer a, gconstpointer b, gpointer user_data)
+static gint nfstr_compare(gconstpointer _a, gconstpointer _b)
 {
-	return strcmp(a, b);
+	const struct nfs_buf *a = _a;
+	const struct nfs_buf *b = _b;
+	int res;
+
+	res = strncmp(a->val, b->val, MIN(a->len, b->len));
+	if (res)
+		return res;
+
+	if (a->len < b->len)
+		return -1;
+	if (a->len > b->len)
+		return 1;
+
+	return 0;
 }
 
 static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
@@ -180,7 +192,7 @@ static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
 	ino->type = NF4DIR;
 	ino->size = 4096;
 
-	ino->dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
+	ino->dir = g_tree_new(nfstr_compare);
 	if (!ino->dir) {
 		inode_free(ino);
 		return NULL;
@@ -233,7 +245,7 @@ static nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 		new_ino = inode_new_dev(cxn, objtype, specdata);
 		break;
 	case NF4LNK: {
-		char *linktext = copy_utf8string(linkdata);
+		char *linktext = strndup(linkdata->val, linkdata->len);
 		if (!linktext) {
 			status = NFS4ERR_RESOURCE;
 			goto out;
@@ -273,7 +285,8 @@ void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 
 bool inode_table_init(void)
 {
-	struct nfs_inode *root, dummy;
+	struct nfs_inode *root, dummy, *ino;
+	unsigned int i;
 
 	srv.inode_table = g_array_sized_new(FALSE, TRUE,
 					    sizeof(struct nfs_inode),
@@ -283,19 +296,27 @@ bool inode_table_init(void)
 
 	memset(&dummy, 0, sizeof(dummy));
 
-	while (srv.inode_table->len <= INO_RESERVED_LAST) {
-		dummy.ino = srv.inode_table->len;
-		dummy.version = 1ULL;
+	while (srv.inode_table->len <= INO_RESERVED_LAST)
 		g_array_append_val(srv.inode_table, dummy);
+
+	for (i = 0; i < srv.inode_table->len; i++) {
+		ino = &g_array_index(srv.inode_table, struct nfs_inode, i);
+		ino->ino = i;
+		ino->generation = 1;
+		INIT_LIST_HEAD(&ino->openfile_list);
 	}
 
 	root = &g_array_index(srv.inode_table, struct nfs_inode, INO_ROOT);
 	root->mode = 0755;
 
 	root->type = NF4DIR;
-	root->size = 4096;
+	root->version = 1ULL;
+	root->size = 4096ULL;
+	root->ctime =
+	root->atime =
+	root->mtime = current_time.tv_sec;
 
-	root->dir = g_tree_new_full(cstr_compare, NULL, free, dirent_free);
+	root->dir = g_tree_new(nfstr_compare);
 	if (!root->dir)
 		return false;
 

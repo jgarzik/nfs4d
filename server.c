@@ -104,11 +104,6 @@ bool valid_utf8string(const struct nfs_buf *str)
 	return true;
 }
 
-char *copy_utf8string(const struct nfs_buf *str)
-{
-	return strndup(str->val, str->len);
-}
-
 char *cxn_getuser(const struct nfs_cxn *cxn)
 {
 	char *s = NULL;
