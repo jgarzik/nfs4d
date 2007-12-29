@@ -175,6 +175,25 @@ out:
 	return status;
 }
 
+static struct nfs_dirent *dirent_new(const struct nfs_buf *name)
+{
+	struct nfs_dirent *new_dirent;
+
+	new_dirent = calloc(1, sizeof(struct nfs_dirent));
+	if (!new_dirent)
+		return NULL;
+
+	new_dirent->name.val = strndup(name->val, name->len);
+	if (!new_dirent->name.val) {
+		free(new_dirent);
+		return NULL;
+	}
+
+	new_dirent->name.len = strlen(new_dirent->name.val);
+
+	return new_dirent;
+}
+
 static void dirent_free(struct nfs_dirent *dirent)
 {
 	free(dirent->name.val);
@@ -188,7 +207,6 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		      struct nfs_inode *ent_ino)
 {
 	struct nfs_dirent *dirent;
-	char *name;
 	enum nfsstat4 status = NFS4_OK, lu_stat;
 
 	lu_stat = dir_lookup(dir_ino, name_in, NULL);
@@ -200,21 +218,14 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		return status;
 	}
 
-	name = strndup(name_in->val, name_in->len);
-	if (!name)
-		return NFS4ERR_RESOURCE;
-
-	dirent = malloc(sizeof(struct nfs_dirent));
+	dirent = dirent_new(name_in);
 	if (!dirent) {
-		free(name);
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 
 	dirent->ino_n = ent_ino->ino;
 	dirent->generation = ent_ino->generation;
-	dirent->name.val = name;
-	dirent->name.len = strlen(name);
 
 	g_tree_replace(dir_ino->dir, &dirent->name, dirent);
 	inode_touch(dir_ino);
@@ -397,7 +408,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&newname);
 
 	if (debugging)
-		syslog(LOG_INFO, "op REMOVE (OLD:%.*s, NEW:%.*s)",
+		syslog(LOG_INFO, "op RENAME (OLD:%.*s, NEW:%.*s)",
 		       oldname.len,
 		       oldname.val,
 		       newname.len,
@@ -483,20 +494,13 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 	}
 
-	new_dirent = malloc(sizeof(struct nfs_dirent));
+	new_dirent = dirent_new(&newname);
 	if (!new_dirent) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
 	new_dirent->ino_n = old_dirent->ino_n;
 	new_dirent->generation = old_dirent->generation;
-	new_dirent->name.val = strndup(newname.val, newname.len);
-	if (!new_dirent->name.val) {
-		free(new_dirent);
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
-	new_dirent->name.len = strlen(new_dirent->name.val);
 
 	if (!g_tree_remove(src_dir->dir, &oldname))
 		syslog(LOG_ERR, "BUG: tree remove #2 failed in op-rename");
