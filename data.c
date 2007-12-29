@@ -673,6 +673,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (!new_lock) {
 		lock_owner->my_seq++;
 		lock_owner->cli_next_seq++;
+
+		open_owner = lock_owner->open_owner;
 	}
 
 	/*
@@ -719,8 +721,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 				    lock_of);
 	}
 
-	if (new_lock)
-		open_owner->cli_next_seq++;
+	open_owner->cli_next_seq++;
 
 	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
 
@@ -855,11 +856,15 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status == NFS4_OK) {
 		lock_owner->my_seq++;
 		lock_owner->cli_next_seq++;
+
+		lock_owner->open_owner->cli_next_seq++;
+
+		sid.seqid = lock_owner->my_seq;
 	}
 
-	/* if last lock range unlocked, dispose of lock-openfile */
-	if (list_empty(&lock_of->u.lock.list))
-		openfile_trash(lock_of, false);
+	if (debugging)
+		syslog(LOG_INFO, "   UNLOCK -> (SEQ:%u ID:%x)",
+		       sid.seqid, sid.id);
 
 out:
 	WR32(status);
