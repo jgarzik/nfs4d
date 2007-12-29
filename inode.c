@@ -43,7 +43,7 @@ static void inode_free(struct nfs_inode *ino)
 	ino_n = ino->ino;
 	igen = ino->generation;
 
-	if (debugging > 2)
+	if (debugging > 1)
 		syslog(LOG_DEBUG, "freeing inode %u", ino_n);
 
 	if (ino->parents)

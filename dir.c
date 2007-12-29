@@ -372,7 +372,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* remove target inode from directory */
 	if (!g_tree_remove(dir_ino->dir, &target))
 		syslog(LOG_ERR, "BUG: tree remove failed in op-remove");
-	
+
 	dirent_free(dirent);
 
 	/* record directory change info */

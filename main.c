@@ -147,10 +147,12 @@ static void init_rng(void)
 		goto srand_time;
 
 	srand48_r(v, &srv.rng);
+	srand(v);
 	return;
 
 srand_time:
 	srand48_r(getpid() ^ time(NULL), &srv.rng);
+	srand(getpid() ^ time(NULL));
 }
 
 struct refbuf *refbuf_new(unsigned int size, bool clear)
@@ -1360,7 +1362,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 		for (i = 0; i < ino->parents->len; i++)
 			fprintf(f, " %u",
 				g_array_index(ino->parents, nfsino_t, i));
-		
+
 		fprintf(f, "\n");
 	}
 
