@@ -299,6 +299,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (new_owner)
 		open_flags |= OPEN4_RESULT_CONFIRM;
+	else
+		of->flags |= nsf_confirmed;
 
 	sid.seqid = of->my_seq;
 	sid.id = of->id;
@@ -382,7 +384,12 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	/* FIXME: actually confirm.... */
+	if (of->flags & nsf_confirmed) {
+		status = NFS4ERR_BAD_STATEID;
+		goto out;
+	}
+
+	of->flags |= nsf_confirmed;
 
 	of->cli_next_seq++;
 	of->my_seq++;
@@ -449,8 +456,13 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	of->my_seq++;
 	of->cli_next_seq++;
 
-	if ((!(share_access & of->u.share.access)) ||
-	    (!(share_deny & of->u.share.deny))) {
+	if (share_access &&
+	    ((share_access & of->u.share.access) != share_access)) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+	if (share_deny &&
+	    ((share_deny & of->u.share.deny) != share_deny)) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}

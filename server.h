@@ -312,6 +312,7 @@ enum nfs_state_type {
 
 enum nfs_state_flags {
 	nsf_expired		= (1 << 0),
+	nsf_confirmed		= (1 << 1),
 	nsf_north_carolina,
 	nsf_rhode_island,
 	nsf_georgia,
