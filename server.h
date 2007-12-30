@@ -332,7 +332,8 @@ struct nfs_owner {
 struct nfs_openfile {
 	struct nfs_owner	*owner;
 
-	struct nfs_inode	*ino;
+	nfsino_t		ino;
+	uint32_t		generation;
 
 	enum nfs_state_type	type;		/* nst_xxx */
 

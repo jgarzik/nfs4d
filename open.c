@@ -278,7 +278,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto err_out;
 		}
 
-		of->ino = ino;
+		of->ino = ino->ino;
+		of->generation = ino->generation;
 		of->cli_next_seq = args->seqid + 1;
 		of->u.share.access = args->share_access;
 		of->u.share.deny = args->share_deny;

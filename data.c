@@ -702,7 +702,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		new_lock_of = true;
 
-		lock_of->ino = ino;
+		lock_of->ino = ino->ino;
+		lock_of->generation = ino->generation;
 		lock_of->cli_next_seq = lock_seqid + 1;
 		lock_of->u.lock.open = of;
 

@@ -194,7 +194,9 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		if (id_in->seqid != of->my_seq)
 			return NFS4ERR_OLD_STATEID;
 
-		if (ino && (ino != of->ino))
+		if (ino &&
+		    ((ino->ino != of->ino) ||
+		     (ino->generation != of->generation)))
 			return NFS4ERR_BAD_STATEID;
 	}
 
@@ -384,7 +386,7 @@ void openfile_free(gpointer data)
 
 	if (of->ino) {
 		list_del_init(&of->inode_node);
-		of->ino = NULL;
+		of->ino = 0;
 	}
 
 	if (of->owner) {
@@ -417,13 +419,13 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 		openfile_trash_locks(of);
 
 	if (of->ino) {
-		struct nfs_inode *ino = of->ino;
+		struct nfs_inode *ino = inode_get(of->ino);
 
-		of->ino = NULL;
+		of->ino = 0;
 
 		list_del_init(&of->inode_node);
 
-		if (of->type == nst_open) {
+		if (ino && of->type == nst_open) {
 			struct nfs_openfile *tmp_of, *iter;
 
 			list_for_each_entry_safe(tmp_of, iter,

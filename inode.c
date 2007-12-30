@@ -55,8 +55,12 @@ static void inode_free(struct nfs_inode *ino)
 
 	switch (ino->type) {
 	case NF4DIR:
-		if (ino->dir)
+		if (ino->dir) {
+			if (g_tree_nnodes(ino->dir) > 0)
+				syslog(LOG_ERR,
+					"BUG: freeing non-empty dir inode");
 			g_tree_destroy(ino->dir);
+		}
 		break;
 	case NF4LNK:
 		free(ino->linktext);
