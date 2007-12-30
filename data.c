@@ -643,6 +643,10 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 	}
 
+	if (!new_lock)
+		open_owner = lock_owner->open_owner;
+	open_owner->cli_next_seq++;
+
 	ac.sid = prev_sid;
 	ac.ino = ino;
 	ac.op = OP_LOCK;
@@ -673,8 +677,6 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (!new_lock) {
 		lock_owner->my_seq++;
 		lock_owner->cli_next_seq++;
-
-		open_owner = lock_owner->open_owner;
 	}
 
 	/*
@@ -720,8 +722,6 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 				    GUINT_TO_POINTER(lock_of->id),
 				    lock_of);
 	}
-
-	open_owner->cli_next_seq++;
 
 	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
 
@@ -856,8 +856,6 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status == NFS4_OK) {
 		lock_owner->my_seq++;
 		lock_owner->cli_next_seq++;
-
-		lock_owner->open_owner->cli_next_seq++;
 
 		sid.seqid = lock_owner->my_seq;
 	}
