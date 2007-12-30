@@ -653,9 +653,9 @@ uint64_t srv_space_used(void)
 	if (ttl && cached_total && (current_time.tv_sec < ttl))
 		return cached_total;
 
-	for (i = 0; i < srv.inode_table->len; i++) {
-		ino = &g_array_index(srv.inode_table, struct nfs_inode, i);
-		if (!ino->parents)
+	for (i = 0; i < srv.inode_table_len; i++) {
+		ino = srv.inode_table[i];
+		if (!ino || !ino->parents)
 			continue;
 
 		space_used_iter(ino, &total);
@@ -1271,7 +1271,7 @@ static gboolean stats_dump(gpointer dummy)
 		srv.stats.drc_store_bytes,
 		srv.stats.drc_hits,
 		srv.stats.drc_misses,
-		srv.inode_table->len,
+		srv.inode_table_len,
 		(unsigned long long) current_time.tv_sec,
 		(unsigned long long) current_time.tv_usec);
 
@@ -1329,6 +1329,9 @@ static gboolean dump_dir_iter(gpointer _k, gpointer _v, gpointer _d)
 static void dump_inode(FILE *f, const struct nfs_inode *ino)
 {
 	unsigned int i;
+
+	if (!ino)
+		return;
 
 	fprintf(f,
 		"INODE: %u\n"
@@ -1410,11 +1413,10 @@ static gboolean diag_dump(gpointer dummy)
 		goto out;
 	}
 
-	fprintf(f, "inode-table-size: %u\n", srv.inode_table->len);
+	fprintf(f, "inode-table-size: %u\n", srv.inode_table_len);
 
-	for (i = 0; i < srv.inode_table->len; i++)
-		dump_inode(f, &g_array_index(srv.inode_table,
-					     struct nfs_inode, i));
+	for (i = 0; i < srv.inode_table_len; i++)
+		dump_inode(f, srv.inode_table[i]);
 
 out:
 	return FALSE;

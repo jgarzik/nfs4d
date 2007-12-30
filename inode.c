@@ -8,17 +8,17 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static nfsino_t next_ino = INO_RESERVED_LAST + 1;
+static nfsino_t next_ino;		/* start next free-inode scan here */
 
 struct nfs_inode *inode_get(nfsino_t inum)
 {
 	struct nfs_inode *ino;
 
-	if (!srv.inode_table || !inum || (inum >= srv.inode_table->len))
+	if (!srv.inode_table || !inum || (inum >= srv.inode_table_len))
 		return NULL;
 
-	ino = &g_array_index(srv.inode_table, struct nfs_inode, inum);
-	if (!ino->parents)
+	ino = srv.inode_table[inum];
+	if (!ino || !ino->parents)
 		return NULL;
 
 	return ino;
@@ -99,25 +99,47 @@ static void inode_free(struct nfs_inode *ino)
 static struct nfs_inode *inode_alloc(void)
 {
 	unsigned int i;
-	struct nfs_inode *ino, tmp;
+	struct nfs_inode *ino;
 
-	for (i = next_ino; i < srv.inode_table->len; i++) {
-		ino = &g_array_index(srv.inode_table, struct nfs_inode, i);
+	if (next_ino <= INO_RESERVED_LAST)
+		next_ino = INO_RESERVED_LAST + 1;
+
+	for (i = MIN(next_ino, srv.inode_table_len);
+	     i < srv.inode_table_len; i++) {
+		ino = srv.inode_table[i];
+		if (!ino)
+			break;
 		if (ino->parents)
 			continue;
 
 		return ino;
 	}
 
-	memset(&tmp, 0, sizeof(tmp));
-	tmp.ino = srv.inode_table->len;
-	tmp.generation = 1;
-	g_array_append_val(srv.inode_table, tmp);
+	if (i == srv.inode_table_len) {
+		unsigned int old_size = srv.inode_table_len;
+		unsigned int new_size = old_size * 2;
+		void *mem = realloc(srv.inode_table, 
+				    new_size * sizeof(struct nfs_inode *));
+		if (!mem)
+			return NULL;
 
-	ino = &g_array_index(srv.inode_table, struct nfs_inode,
-			     srv.inode_table->len - 1);
+		srv.inode_table = mem;
+		srv.inode_table_len = new_size;
 
+		old_size *= sizeof(struct nfs_inode *);
+		new_size *= sizeof(struct nfs_inode *);
+		memset(mem + old_size, 0, new_size - old_size);
+	}
+
+	ino = calloc(1, sizeof(struct nfs_inode));
+	if (!ino)
+		return NULL;
+
+	ino->ino = i;
+	ino->generation = 1;
 	INIT_LIST_HEAD(&ino->openfile_list);
+
+	srv.inode_table[i] = ino;
 
 	next_ino = ino->ino + 1;
 
@@ -289,28 +311,24 @@ void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 
 bool inode_table_init(void)
 {
-	struct nfs_inode *root, dummy, *ino;
-	unsigned int i;
+	struct nfs_inode *root;
 
-	srv.inode_table = g_array_sized_new(FALSE, TRUE,
-					    sizeof(struct nfs_inode),
-					    10000);
+	srv.inode_table = calloc(SRV_INIT_INO, sizeof(struct nfs_inode *));
 	if (!srv.inode_table)
 		return false;
 
-	memset(&dummy, 0, sizeof(dummy));
+	srv.inode_table_len = SRV_INIT_INO;
 
-	while (srv.inode_table->len <= INO_RESERVED_LAST)
-		g_array_append_val(srv.inode_table, dummy);
+	root = calloc(1, sizeof(struct nfs_inode));
+	if (!root)
+		return false;
+	root->ino = INO_ROOT;
+	root->generation = 1;
 
-	for (i = 0; i < srv.inode_table->len; i++) {
-		ino = &g_array_index(srv.inode_table, struct nfs_inode, i);
-		ino->ino = i;
-		ino->generation = 1;
-		INIT_LIST_HEAD(&ino->openfile_list);
-	}
+	INIT_LIST_HEAD(&root->openfile_list);
 
-	root = &g_array_index(srv.inode_table, struct nfs_inode, INO_ROOT);
+	srv.inode_table[INO_ROOT] = root;
+
 	root->mode = 0755;
 
 	root->type = NF4DIR;
@@ -885,7 +903,7 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 		if (attr->case_preserving != true)
 			return false;
         if (bitmap & (1ULL << FATTR4_FILES_TOTAL))
-		if (attr->files_total != srv.inode_table->len)
+		if (attr->files_total != srv.inode_table_len)
 			return false;
         if (bitmap & (1ULL << FATTR4_HOMOGENEOUS))
 		if (attr->homogeneous != true)

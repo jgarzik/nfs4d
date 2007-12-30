@@ -56,6 +56,8 @@ enum server_limits {
 	SRV_MAX_READ		= 1024 * 128,	/* max contig. read */
 	SRV_MAX_WRITE		= 1024 * 128,	/* max contig. write */
 
+	SRV_INIT_INO		= 1237,		/* initial inode table size */
+
 	SRV_LEASE_TIME		= 3 * 60,
 	SRV_DRC_TIME		= 4 * 60,
 	SRV_STATE_DEATH		= 5 * 60,
@@ -534,7 +536,8 @@ struct nfs_server_stats {
 };
 
 struct nfs_server {
-	GArray			*inode_table;
+	struct nfs_inode	**inode_table;
+	unsigned int		inode_table_len;
 
 	GHashTable		*clid_idx;
 
