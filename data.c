@@ -619,9 +619,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = openfile_lookup(prev_sid, ino, nst_open, &of);
 		if (status != NFS4_OK)
 			goto out;
-		open_owner = of->owner;
 
-		if (open_seqid != open_owner->cli_next_seq) {
+		if (open_seqid != of->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
@@ -637,15 +636,15 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		lock_owner = lock_of->owner;
 
-		if (lock_seqid != lock_owner->cli_next_seq) {
+		if (lock_seqid != lock_of->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
+
+		of = lock_of->u.lock.open;
 	}
 
-	if (!new_lock)
-		open_owner = lock_owner->open_owner;
-	open_owner->cli_next_seq++;
+	of->cli_next_seq++;
 
 	ac.sid = prev_sid;
 	ac.ino = ino;
@@ -671,18 +670,9 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	lock_ent->type = locktype;
 
 	/*
-	 * update lock state
-	 */
-
-	if (!new_lock) {
-		lock_owner->my_seq++;
-		lock_owner->cli_next_seq++;
-	}
-
-	/*
 	 * otherwise, create new lock state
 	 */
-	else {
+	if (new_lock) {
 
 		/*
 	 	* look up shorthand client id (clientid4) for new lock owner
@@ -699,7 +689,6 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		lock_owner->cli = id_short;
 		lock_owner->open_owner = open_owner;
-		lock_owner->cli_next_seq = lock_seqid + 1;
 
 		cli_owner_add(lock_owner);
 	}
@@ -714,6 +703,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		new_lock_of = true;
 
 		lock_of->ino = ino;
+		lock_of->cli_next_seq = lock_seqid + 1;
 		lock_of->u.lock.open = of;
 
 		list_add(&lock_of->inode_node, &ino->openfile_list);
@@ -721,12 +711,15 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		g_hash_table_insert(srv.openfiles,
 				    GUINT_TO_POINTER(lock_of->id),
 				    lock_of);
+	} else {
+		lock_of->my_seq++;
+		lock_of->cli_next_seq++;
 	}
 
 	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
 
 	sid = &tmp_sid;
-	sid->seqid = lock_owner->my_seq;
+	sid->seqid = lock_of->my_seq;
 	sid->id = lock_of->id;
 	memcpy(&sid->server_verf, &srv.instance_verf, 4);
 	memcpy(&sid->server_magic, SRV_MAGIC, 4);
@@ -773,7 +766,6 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint64_t offset, length;
 	struct nfs_lock *lock_ent, *iter;
 	struct nfs_openfile *lock_of;
-	struct nfs_owner *lock_owner;
 
 	/* indicate this RPC message should be cached in DRC */
 	cxn->drc_mask |= drc_unlock;
@@ -833,9 +825,8 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = openfile_lookup(&sid, ino, nst_lock, &lock_of);
 	if (status != NFS4_OK)
 		goto out;
-	lock_owner = lock_of->owner;
 
-	if (seqid != lock_owner->cli_next_seq) {
+	if (seqid != lock_of->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -854,10 +845,10 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* if successful, increment seqids */
 	if (status == NFS4_OK) {
-		lock_owner->my_seq++;
-		lock_owner->cli_next_seq++;
+		lock_of->my_seq++;
+		lock_of->cli_next_seq++;
 
-		sid.seqid = lock_owner->my_seq;
+		sid.seqid = lock_of->my_seq;
 	}
 
 	if (debugging)

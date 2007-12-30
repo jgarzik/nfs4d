@@ -323,9 +323,6 @@ struct nfs_owner {
 
 	enum nfs_state_type	type;		/* nst_xxx */
 
-	uint32_t		my_seq;
-	uint32_t		cli_next_seq;
-
 	struct nfs_owner	*open_owner;
 
 	struct list_head	openfiles;
@@ -342,6 +339,9 @@ struct nfs_openfile {
 	unsigned long		flags;		/* nsf_xxx */
 
 	uint32_t		id;		/* our short id */
+
+	uint32_t		my_seq;
+	uint32_t		cli_next_seq;
 
 	union {
 		struct {
@@ -756,6 +756,9 @@ extern nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 				struct nfs_owner **owner_out);
 
 extern struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o);
+extern nfsstat4 openfile_lookup_owner(struct nfs_owner *,
+					struct nfs_inode *,
+					struct nfs_openfile **);
 extern nfsstat4 openfile_lookup(struct nfs_stateid *,
 				struct nfs_inode *,
 				enum nfs_state_type type,

@@ -127,16 +127,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (open_owner) {
-		if (args->seqid != open_owner->cli_next_seq) {
-			status = NFS4ERR_BAD_SEQID;
-			goto out;
-		}
-
-		open_owner->my_seq++;
-		open_owner->cli_next_seq++;
-	}
-
 	/* for the moment, we only support CLAIM_NULL */
 	if (args->claim != CLAIM_NULL) {
 		if (args->claim == CLAIM_PREVIOUS)
@@ -272,31 +262,44 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		open_owner->cli = args->clientid;
-		open_owner->cli_next_seq = args->seqid + 1;
 
 		cli_owner_add(open_owner);
 
 		new_owner = true;
 	}
 
-	of = openfile_new(nst_open, open_owner);
+	status = openfile_lookup_owner(open_owner, ino, &of);
+	if (status != NFS4_OK)
+		goto out;
 	if (!of) {
-		status = NFS4ERR_RESOURCE;
-		goto err_out;
+		of = openfile_new(nst_open, open_owner);
+		if (!of) {
+			status = NFS4ERR_RESOURCE;
+			goto err_out;
+		}
+
+		of->ino = ino;
+		of->cli_next_seq = args->seqid + 1;
+		of->u.share.access = args->share_access;
+		of->u.share.deny = args->share_deny;
+
+		list_add(&of->inode_node, &ino->openfile_list);
+		list_add(&of->owner_node, &open_owner->openfiles);
+		g_hash_table_insert(srv.openfiles, GUINT_TO_POINTER(of->id),of);
+	} else {
+		if (args->seqid != of->cli_next_seq) {
+			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+
+		of->my_seq++;
+		of->cli_next_seq++;
 	}
-
-	of->ino = ino;
-	of->u.share.access = args->share_access;
-	of->u.share.deny = args->share_deny;
-
-	list_add(&of->inode_node, &ino->openfile_list);
-	list_add(&of->owner_node, &open_owner->openfiles);
-	g_hash_table_insert(srv.openfiles, GUINT_TO_POINTER(of->id), of);
 
 	if (new_owner)
 		open_flags |= OPEN4_RESULT_CONFIRM;
 
-	sid.seqid = open_owner->my_seq;
+	sid.seqid = of->my_seq;
 	sid.id = of->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
@@ -339,7 +342,6 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_stateid sid;
 	struct nfs_inode *ino;
 	uint32_t seqid;
-	struct nfs_owner *open_owner = NULL;
 	struct nfs_openfile *of = NULL;
 
 	cxn->drc_mask |= drc_open;
@@ -373,19 +375,18 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = openfile_lookup(&sid, ino, nst_open, &of);
 	if (status != NFS4_OK)
 		goto out;
-	open_owner = of->owner;
 
-	if (seqid != open_owner->cli_next_seq) {
+	if (seqid != of->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
 	/* FIXME: actually confirm.... */
 
-	open_owner->cli_next_seq++;
-	open_owner->my_seq++;
+	of->cli_next_seq++;
+	of->my_seq++;
 
-	sid.seqid = open_owner->my_seq;
+	sid.seqid = of->my_seq;
 	sid.id = of->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
@@ -404,7 +405,6 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_stateid sid;
 	struct nfs_inode *ino;
 	uint32_t seqid, share_access, share_deny;
-	struct nfs_owner *open_owner = NULL;
 	struct nfs_openfile *of = NULL;
 
 	cxn->drc_mask |= drc_open;
@@ -439,15 +439,14 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = openfile_lookup(&sid, ino, nst_open, &of);
 	if (status != NFS4_OK)
 		goto out;
-	open_owner = of->owner;
 
-	if (seqid != open_owner->cli_next_seq) {
+	if (seqid != of->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
-	open_owner->my_seq++;
-	open_owner->cli_next_seq++;
+	of->my_seq++;
+	of->cli_next_seq++;
 
 	if ((!(share_access & of->u.share.access)) ||
 	    (!(share_deny & of->u.share.deny))) {
@@ -458,7 +457,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	of->u.share.access = share_access;
 	of->u.share.deny = share_deny;
 
-	sid.seqid = open_owner->my_seq;
+	sid.seqid = of->my_seq;
 	sid.id = of->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
@@ -482,7 +481,6 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_openfile *of = NULL;
 	struct nfs_inode *ino;
 	uint32_t seqid;
-	struct nfs_owner *open_owner = NULL;
 
 	cxn->drc_mask |= drc_close;
 
@@ -512,10 +510,8 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = openfile_lookup(&sid, ino, nst_open, &of);
 	if (status != NFS4_OK)
 		goto out;
-	if (of)
-		open_owner = of->owner;
 
-	if (seqid != open_owner->cli_next_seq) {
+	if (seqid != of->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -523,9 +519,9 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	openfile_trash(of, false);
 
 	/* really only for completeness... */
-	open_owner->cli_next_seq++;
-	open_owner->my_seq++;
-	sid.seqid = open_owner->my_seq;
+	of->cli_next_seq++;
+	of->my_seq++;
+	sid.seqid = of->my_seq;
 
 out:
 	WR32(status);

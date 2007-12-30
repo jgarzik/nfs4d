@@ -143,6 +143,24 @@ nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 	return NFS4_OK;
 }
 
+nfsstat4 openfile_lookup_owner(struct nfs_owner *o,
+			 struct nfs_inode *ino,
+			 struct nfs_openfile **of_out)
+{
+	struct nfs_openfile *of;
+
+	*of_out = NULL;
+
+	list_for_each_entry(of, &ino->openfile_list, inode_node) {
+		if (of->type == nst_open && of->owner == o) {
+			*of_out = of;
+			break;
+		}
+	}
+
+	return NFS4_OK;
+}
+
 nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 			 struct nfs_inode *ino,
 			 enum nfs_state_type type,
@@ -173,7 +191,7 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		if ((type != nst_any) && (of->type != type))
 			return NFS4ERR_BAD_STATEID;
 
-		if (id_in->seqid != of->owner->my_seq)
+		if (id_in->seqid != of->my_seq)
 			return NFS4ERR_OLD_STATEID;
 
 		if (ino && (ino != of->ino))
@@ -462,8 +480,6 @@ struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 	}
 
 	o->type = type;
-	o->my_seq = random() & 0xfff;
-	o->cli_next_seq = 0;
 	o->open_owner = NULL;
 
 	INIT_LIST_HEAD(&o->openfiles);
@@ -489,6 +505,8 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 
 	of->owner = o;
 	of->type = type;
+	of->my_seq = random() & 0xfff;
+	of->cli_next_seq = 0;
 	of->id = gen_stateid();
 	if (!of->id) {
 		free(of);
