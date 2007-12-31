@@ -242,6 +242,78 @@ struct nfs_stateid {
 	char			server_magic[4];
 };
 
+struct nfs_fattr_set {
+	uint64_t			bitmap;
+
+	uint64_t			supported_attrs;
+
+	fattr4_type			type;
+	fattr4_fh_expire_type		fh_expire_type;
+	fattr4_change			change;
+	fattr4_size			size;
+	fattr4_link_support		link_support;
+	fattr4_symlink_support		symlink_support;
+	fattr4_named_attr		named_attr;
+	fattr4_fsid			fsid;
+	fattr4_unique_handles		unique_handles;
+	fattr4_lease_time		lease_time;
+	fattr4_rdattr_error		rdattr_error;
+	fattr4_acl			acl;
+	fattr4_aclsupport		aclsupport;
+	fattr4_archive			archive;
+	fattr4_cansettime		cansettime;
+	fattr4_case_insensitive		case_insensitive;
+	fattr4_case_preserving		case_preserving;
+	fattr4_chown_restricted		chown_restricted;
+
+	nfsino_t			filehandle;
+
+	fattr4_fileid			fileid;
+	fattr4_files_avail		files_avail;
+	fattr4_files_free		files_free;
+	fattr4_files_total		files_total;
+	fattr4_fs_locations		fs_locations;
+	fattr4_hidden			hidden;
+	fattr4_homogeneous		homogeneous;
+	fattr4_maxfilesize		maxfilesize;
+	fattr4_maxlink			maxlink;
+	fattr4_maxname			maxname;
+	fattr4_maxread			maxread;
+	fattr4_maxwrite			maxwrite;
+
+	struct nfs_buf			mimetype;
+
+	fattr4_mode			mode;
+	fattr4_no_trunc			no_trunc;
+	fattr4_numlinks			numlinks;
+
+	struct nfs_buf			owner;
+	struct nfs_buf			owner_group;
+
+	fattr4_quota_avail_hard		quota_avail_hard;
+	fattr4_quota_avail_soft		quota_avail_soft;
+	fattr4_quota_used		quota_used;
+	fattr4_rawdev			rawdev;
+	fattr4_space_avail		space_avail;
+	fattr4_space_free		space_free;
+	fattr4_space_total		space_total;
+	fattr4_space_used		space_used;
+	fattr4_system			system;
+	fattr4_time_access		time_access;
+
+	nfstime4			time_access_set;
+
+	fattr4_time_backup		time_backup;
+	fattr4_time_create		time_create;
+	fattr4_time_delta		time_delta;
+	fattr4_time_metadata		time_metadata;
+	fattr4_time_modify		time_modify;
+
+	nfstime4			time_modify_set;
+
+	fattr4_mounted_on_fileid	mounted_on_fileid;
+};
+
 struct nfs_open_args {
 	seqid4			seqid;
 
@@ -253,6 +325,7 @@ struct nfs_open_args {
 
 	opentype4		opentype;
 	createhow4		how;
+	struct nfs_fattr_set	attr;
 
 	open_claim_type4	claim;
 	union {
@@ -374,6 +447,8 @@ struct nfs_inode {
 	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
 
+	verifier4		create_verf;
+
 	uint64_t		size;
 
 	uint64_t		ctime;		/* creation time */
@@ -391,78 +466,6 @@ struct nfs_inode {
 	GList			*buf_list;	/* "" regular file */
 
 	struct list_head	openfile_list;
-};
-
-struct nfs_fattr_set {
-	uint64_t			bitmap;
-
-	uint64_t			supported_attrs;
-
-	fattr4_type			type;
-	fattr4_fh_expire_type		fh_expire_type;
-	fattr4_change			change;
-	fattr4_size			size;
-	fattr4_link_support		link_support;
-	fattr4_symlink_support		symlink_support;
-	fattr4_named_attr		named_attr;
-	fattr4_fsid			fsid;
-	fattr4_unique_handles		unique_handles;
-	fattr4_lease_time		lease_time;
-	fattr4_rdattr_error		rdattr_error;
-	fattr4_acl			acl;
-	fattr4_aclsupport		aclsupport;
-	fattr4_archive			archive;
-	fattr4_cansettime		cansettime;
-	fattr4_case_insensitive		case_insensitive;
-	fattr4_case_preserving		case_preserving;
-	fattr4_chown_restricted		chown_restricted;
-
-	nfsino_t			filehandle;
-
-	fattr4_fileid			fileid;
-	fattr4_files_avail		files_avail;
-	fattr4_files_free		files_free;
-	fattr4_files_total		files_total;
-	fattr4_fs_locations		fs_locations;
-	fattr4_hidden			hidden;
-	fattr4_homogeneous		homogeneous;
-	fattr4_maxfilesize		maxfilesize;
-	fattr4_maxlink			maxlink;
-	fattr4_maxname			maxname;
-	fattr4_maxread			maxread;
-	fattr4_maxwrite			maxwrite;
-
-	struct nfs_buf			mimetype;
-
-	fattr4_mode			mode;
-	fattr4_no_trunc			no_trunc;
-	fattr4_numlinks			numlinks;
-
-	struct nfs_buf			owner;
-	struct nfs_buf			owner_group;
-
-	fattr4_quota_avail_hard		quota_avail_hard;
-	fattr4_quota_avail_soft		quota_avail_soft;
-	fattr4_quota_used		quota_used;
-	fattr4_rawdev			rawdev;
-	fattr4_space_avail		space_avail;
-	fattr4_space_free		space_free;
-	fattr4_space_total		space_total;
-	fattr4_space_used		space_used;
-	fattr4_system			system;
-	fattr4_time_access		time_access;
-
-	nfstime4			time_access_set;
-
-	fattr4_time_backup		time_backup;
-	fattr4_time_create		time_create;
-	fattr4_time_delta		time_delta;
-	fattr4_time_metadata		time_metadata;
-	fattr4_time_modify		time_modify;
-
-	nfstime4			time_modify_set;
-
-	fattr4_mounted_on_fileid	mounted_on_fileid;
 };
 
 struct nfs_dirent {

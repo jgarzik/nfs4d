@@ -11,8 +11,7 @@ static const char *name_open_claim_type4[] = {
 	[CLAIM_DELEGATE_PREV] = "DELEGATE_PREV",
 };
 
-static nfsstat4 cur_open(struct curbuf *cur, struct nfs_open_args *args,
-			 struct nfs_fattr_set *attr)
+static nfsstat4 cur_open(struct curbuf *cur, struct nfs_open_args *args)
 {
 	if (cur->len < (6 * 4))
 		return NFS4ERR_BADXDR;
@@ -38,7 +37,7 @@ static nfsstat4 cur_open(struct curbuf *cur, struct nfs_open_args *args,
 			   (how->mode == GUARDED4)) {
 			nfsstat4 status;
 
-			status = cur_readattr(cur, attr);
+			status = cur_readattr(cur, &args->attr);
 			if (status != NFS4_OK)
 				return status;
 		} else
@@ -82,12 +81,27 @@ static void print_open_args(struct nfs_open_args *args)
 	       args->u.file.len,
 	       args->u.file.val);
 
-	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x HOW:%s CLM:%s)",
+	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x CR:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
 	       args->share_deny,
-	       args->opentype == OPEN4_CREATE ? "CR" : "NOC",
+	       args->opentype == OPEN4_CREATE ? "YES" : "NO",
 	       name_open_claim_type4[args->claim]);
+
+	if (args->opentype == OPEN4_CREATE && args->how.mode == EXCLUSIVE4) {
+		uint64_t x;
+		memcpy(&x, args->how.createhow4_u.createverf, 8);
+		syslog(LOG_INFO, "   OPEN (MODE:EXCL VERF:%Lx)",
+		       (unsigned long long) x);
+	}
+	else if (args->opentype == OPEN4_CREATE) {
+		const char *pfx;
+		if (args->how.mode == GUARDED4)
+			pfx = "   OPEN (MODE:GUARD)";
+		else
+			pfx = "   OPEN (MODE:UNCHK)";
+		print_fattr(pfx, &args->attr);
+	}
 
 	syslog(LOG_INFO, "   OPEN (CID:%Lx OWNER:%.*s)",
 	       (unsigned long long) args->clientid,
@@ -105,7 +119,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	bool creating, recreating = false;
 	struct nfs_open_args _args;
 	struct nfs_open_args *args = &_args;
-	struct nfs_fattr_set attr;
 	uint64_t bitmap_set = 0;
 	change_info4 cinfo = { true, 0, 0 };
 	uint32_t open_flags = 0;
@@ -115,9 +128,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_open;
 
-	memset(&attr, 0, sizeof(attr));
+	memset(args, 0, sizeof(struct nfs_open_args));
 
-	status = cur_open(cur, args, &attr);
+	status = cur_open(cur, args);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -169,6 +182,20 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	if (open_owner && ino)
+		status = openfile_lookup_owner(open_owner, ino, &of);
+	if (status != NFS4_OK)
+		goto out;
+	if (of) {
+		if (args->seqid != of->cli_next_seq) {
+			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+
+		of->my_seq++;
+		of->cli_next_seq++;
+	}
+
 	creating = (args->opentype == OPEN4_CREATE);
 
 	if (creating && ino &&
@@ -185,8 +212,27 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 	if (creating && (lu_stat == NFS4_OK)) {
-		status = NFS4ERR_EXIST;
-		goto out;
+		bool match_verf = false;
+
+		if (args->how.mode == EXCLUSIVE4 && debugging) {
+			uint64_t x;
+			memcpy(&x, ino->create_verf, 8);
+			syslog(LOG_DEBUG, "   OPEN (EXISTING VERF %Lx)",
+			       (unsigned long long) x);
+		}
+
+		if (args->how.mode == EXCLUSIVE4 &&
+		    !memcmp(&args->how.createhow4_u.createverf,
+			    &ino->create_verf,
+			    sizeof(verifier4)))
+			match_verf = true;
+
+		if (!match_verf) {
+			status = NFS4ERR_EXIST;
+			goto out;
+		}
+
+		creating = false;
 	}
 
 	/*
@@ -221,10 +267,25 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 
-		status = inode_add(dir_ino, ino, &attr, &args->u.file,
+		status = inode_add(dir_ino, ino, &args->attr, &args->u.file,
 				   &bitmap_set, &cinfo);
 		if (status != NFS4_OK)
 			goto out;
+
+		if (args->how.mode == EXCLUSIVE4) {
+			memcpy(&ino->create_verf,
+			       &args->how.createhow4_u.createverf,
+			       sizeof(verifier4));
+			if (debugging) {
+				uint64_t x, y;
+				memcpy(&x, args->how.createhow4_u.createverf, 8);
+				memcpy(&y, ino->create_verf, 8);
+				syslog(LOG_DEBUG, "   OPEN (OLD VERF %Lx)",
+					(unsigned long long) x);
+				syslog(LOG_DEBUG, "   OPEN (STORED VERF %Lx)",
+					(unsigned long long) y);
+			}
+		}
 	}
 
 	/* FIXME: undo file creation, if this test fails? */
@@ -247,9 +308,10 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 * if re-creating, only size attribute applies
 	 */
 	if (recreating) {
-		attr.supported_attrs &= (1ULL << FATTR4_SIZE);
+		_args.attr.supported_attrs &= (1ULL << FATTR4_SIZE);
 
-		status = inode_apply_attrs(ino, &attr, &bitmap_set, NULL,false);
+		status = inode_apply_attrs(ino, &args->attr, &bitmap_set,
+					   NULL, false);
 		if (status != NFS4_OK)
 			goto out;
 	}
@@ -268,9 +330,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		new_owner = true;
 	}
 
-	status = openfile_lookup_owner(open_owner, ino, &of);
-	if (status != NFS4_OK)
-		goto out;
 	if (!of) {
 		of = openfile_new(nst_open, open_owner);
 		if (!of) {
@@ -287,14 +346,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		list_add(&of->inode_node, &ino->openfile_list);
 		list_add(&of->owner_node, &open_owner->openfiles);
 		g_hash_table_insert(srv.openfiles, GUINT_TO_POINTER(of->id),of);
-	} else {
-		if (args->seqid != of->cli_next_seq) {
-			status = NFS4ERR_BAD_SEQID;
-			goto out;
-		}
-
-		of->my_seq++;
-		of->cli_next_seq++;
 	}
 
 	if (new_owner)
@@ -315,7 +366,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		       sid.seqid, of->id);
 
 out:
-	fattr_free(&attr);
+	fattr_free(&args->attr);
 
 	WR32(status);
 	if (status == NFS4_OK) {
