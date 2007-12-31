@@ -456,6 +456,10 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	of->my_seq++;
 	of->cli_next_seq++;
 
+	if (!share_access) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
 	if (share_access &&
 	    ((share_access & of->u.share.access) != share_access)) {
 		status = NFS4ERR_INVAL;
