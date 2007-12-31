@@ -198,6 +198,8 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		    ((ino->ino != of->ino) ||
 		     (ino->generation != of->generation)))
 			return NFS4ERR_BAD_STATEID;
+
+		clientid_touch(of->owner->cli);
 	}
 
 	*of_out = of;
