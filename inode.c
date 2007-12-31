@@ -539,9 +539,10 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   const struct nfs_fattr_set *attr, const struct nfs_buf *name,
 		   uint64_t *attrset, change_info4 *cinfo)
 {
-	nfsstat4 status;
+	nfsstat4 status = NFS4_OK;
 
-	status = inode_apply_attrs(new_ino, attr, attrset, NULL, false);
+	if (attr)
+		status = inode_apply_attrs(new_ino, attr, attrset, NULL, false);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
 		goto out;

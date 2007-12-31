@@ -124,7 +124,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t open_flags = 0;
 	struct nfs_owner *open_owner = NULL;
 	struct nfs_openfile *of = NULL;
-	bool new_owner = false;
+	bool new_owner = false, exclusive = false;
 
 	cxn->drc_mask |= drc_open;
 
@@ -197,6 +197,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	creating = (args->opentype == OPEN4_CREATE);
+	if (creating)
+		exclusive = (args->how.mode == EXCLUSIVE4);
 
 	if (creating && ino &&
 	    (args->how.mode == UNCHECKED4)) {
@@ -214,14 +216,14 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (creating && (lu_stat == NFS4_OK)) {
 		bool match_verf = false;
 
-		if (args->how.mode == EXCLUSIVE4 && debugging) {
+		if (exclusive && debugging) {
 			uint64_t x;
 			memcpy(&x, ino->create_verf, 8);
 			syslog(LOG_DEBUG, "   OPEN (EXISTING VERF %Lx)",
 			       (unsigned long long) x);
 		}
 
-		if (args->how.mode == EXCLUSIVE4 &&
+		if (exclusive &&
 		    !memcmp(&args->how.createhow4_u.createverf,
 			    &ino->create_verf,
 			    sizeof(verifier4)))
@@ -267,12 +269,13 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 
-		status = inode_add(dir_ino, ino, &args->attr, &args->u.file,
-				   &bitmap_set, &cinfo);
+		status = inode_add(dir_ino, ino,
+				   exclusive ? NULL : &args->attr,
+				   &args->u.file, &bitmap_set, &cinfo);
 		if (status != NFS4_OK)
 			goto out;
 
-		if (args->how.mode == EXCLUSIVE4) {
+		if (exclusive) {
 			memcpy(&ino->create_verf,
 			       &args->how.createhow4_u.createverf,
 			       sizeof(verifier4));
@@ -307,7 +310,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	/*
 	 * if re-creating, only size attribute applies
 	 */
-	if (recreating) {
+	if (recreating && !exclusive) {
 		_args.attr.supported_attrs &= (1ULL << FATTR4_SIZE);
 
 		status = inode_apply_attrs(ino, &args->attr, &bitmap_set,
