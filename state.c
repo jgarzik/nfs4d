@@ -485,6 +485,7 @@ struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 
 	o->type = type;
 	o->open_owner = NULL;
+	o->cli_next_seq = 0;
 
 	INIT_LIST_HEAD(&o->openfiles);
 	INIT_LIST_HEAD(&o->cli_node);
@@ -510,7 +511,6 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 	of->owner = o;
 	of->type = type;
 	of->my_seq = random() & 0xfff;
-	of->cli_next_seq = 0;
 	of->id = gen_stateid();
 	if (!of->id) {
 		free(of);

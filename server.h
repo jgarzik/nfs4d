@@ -399,6 +399,8 @@ struct nfs_owner {
 
 	enum nfs_state_type	type;		/* nst_xxx */
 
+	uint32_t		cli_next_seq;
+
 	struct nfs_owner	*open_owner;
 
 	struct list_head	openfiles;
@@ -418,7 +420,6 @@ struct nfs_openfile {
 	uint32_t		id;		/* our short id */
 
 	uint32_t		my_seq;
-	uint32_t		cli_next_seq;
 
 	union {
 		struct {

@@ -140,6 +140,15 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
+	if (open_owner) {
+		if (args->seqid != open_owner->cli_next_seq) {
+			status = NFS4ERR_BAD_SEQID;
+			goto out;
+		}
+
+		open_owner->cli_next_seq++;
+	}
+
 	/* for the moment, we only support CLAIM_NULL */
 	if (args->claim != CLAIM_NULL) {
 		if (args->claim == CLAIM_PREVIOUS)
@@ -186,15 +195,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = openfile_lookup_owner(open_owner, ino, &of);
 	if (status != NFS4_OK)
 		goto out;
-	if (of) {
-		if (args->seqid != of->cli_next_seq) {
-			status = NFS4ERR_BAD_SEQID;
-			goto out;
-		}
-
+	if (of)
 		of->my_seq++;
-		of->cli_next_seq++;
-	}
 
 	creating = (args->opentype == OPEN4_CREATE);
 	if (creating)
@@ -327,6 +329,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		open_owner->cli = args->clientid;
+		open_owner->cli_next_seq = args->seqid + 1;
 
 		cli_owner_add(open_owner);
 
@@ -342,7 +345,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		of->ino = ino->ino;
 		of->generation = ino->generation;
-		of->cli_next_seq = args->seqid + 1;
 		of->u.share.access = args->share_access;
 		of->u.share.deny = args->share_deny;
 
@@ -433,7 +435,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != of->cli_next_seq) {
+	if (seqid != of->owner->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -445,7 +447,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	of->flags |= nsf_confirmed;
 
-	of->cli_next_seq++;
+	of->owner->cli_next_seq++;
 	of->my_seq++;
 
 	sid.seqid = of->my_seq;
@@ -502,13 +504,13 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != of->cli_next_seq) {
+	if (seqid != of->owner->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
 	of->my_seq++;
-	of->cli_next_seq++;
+	of->owner->cli_next_seq++;
 
 	if (!share_access) {
 		status = NFS4ERR_INVAL;
@@ -582,15 +584,16 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != of->cli_next_seq) {
+	if (seqid != of->owner->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
 
+	of->owner->cli_next_seq++;
+
 	openfile_trash(of, false);
 
-	/* really only for completeness... */
-	of->cli_next_seq++;
+	/* really only for completeness */
 	of->my_seq++;
 	sid.seqid = of->my_seq;
 

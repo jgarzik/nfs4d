@@ -620,10 +620,12 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		if (status != NFS4_OK)
 			goto out;
 
-		if (open_seqid != of->cli_next_seq) {
+		if (open_seqid != of->owner->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
+
+		of->owner->cli_next_seq++;
 
 		if ((locktype == WRITE_LT || locktype == WRITEW_LT) &&
 		    (of->u.share.access == OPEN4_SHARE_ACCESS_READ)) {
@@ -636,15 +638,13 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		lock_owner = lock_of->owner;
 
-		if (lock_seqid != lock_of->cli_next_seq) {
+		if (lock_seqid != lock_of->owner->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
 			goto out;
 		}
 
 		of = lock_of->u.lock.open;
 	}
-
-	of->cli_next_seq++;
 
 	ac.sid = prev_sid;
 	ac.ino = ino;
@@ -689,9 +689,11 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		lock_owner->cli = id_short;
 		lock_owner->open_owner = open_owner;
+		lock_owner->cli_next_seq = lock_seqid + 1;
 
 		cli_owner_add(lock_owner);
-	}
+	} else
+		lock_owner->cli_next_seq++;
 
 	if (!lock_of) {
 		lock_of = openfile_new(nst_lock, lock_owner);
@@ -704,7 +706,6 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		lock_of->ino = ino->ino;
 		lock_of->generation = ino->generation;
-		lock_of->cli_next_seq = lock_seqid + 1;
 		lock_of->u.lock.open = of;
 
 		list_add(&lock_of->inode_node, &ino->openfile_list);
@@ -712,10 +713,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		g_hash_table_insert(srv.openfiles,
 				    GUINT_TO_POINTER(lock_of->id),
 				    lock_of);
-	} else {
+	} else
 		lock_of->my_seq++;
-		lock_of->cli_next_seq++;
-	}
 
 	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
 
@@ -827,7 +826,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (seqid != lock_of->cli_next_seq) {
+	if (seqid != lock_of->owner->cli_next_seq) {
 		status = NFS4ERR_BAD_SEQID;
 		goto out;
 	}
@@ -847,7 +846,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* if successful, increment seqids */
 	if (status == NFS4_OK) {
 		lock_of->my_seq++;
-		lock_of->cli_next_seq++;
+		lock_of->owner->cli_next_seq++;
 
 		sid.seqid = lock_of->my_seq;
 	}
