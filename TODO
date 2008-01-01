@@ -1,0 +1,29 @@
+
+Various to-do items
+-------------------
+cred-based access checks (not just share reservations and locks; OPEN20)
+GSSAPI
+Delegations
+Lock upgrade, downgrade
+Open upgrade
+LOCKU on unlocked area should return NFS4_OK
+"fair" locking for blocking locks
+overlapping locks
+test: OPDG2
+	OPENDOWNGRADE to never opened mode should return
+	NFS4ERR_INVAL, instead got NFS4_OK
+test: OPEN2
+	Attrs on recreate should be ignored: For mode expected
+	420, got 384
+test: RLOWN1
+	OP_RELEASE_LOCKOWNER should return NFS4_OK, instead
+	got NFS4ERR_LOCKS_HELD
+replay cache for open/lock/etc.
+open exclusive: bitmap-out should indicate which attr we used for
+	storing create verifier?
+
+
+Maybe
+-----
+LOCKU inside a locked area should return OK
+ditch GNet for epoll?

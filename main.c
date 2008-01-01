@@ -125,6 +125,7 @@ static unsigned long blob_hash(unsigned long hash, const void *_buf,
 	return hash;
 }
 
+/* seed our RNGs with high quality data from /dev/random */
 static void init_rng(void)
 {
 	unsigned long v;
