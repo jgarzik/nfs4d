@@ -15,9 +15,6 @@ test: OPDG2
 test: OPEN2
 	Attrs on recreate should be ignored: For mode expected
 	420, got 384
-test: RLOWN1
-	OP_RELEASE_LOCKOWNER should return NFS4_OK, instead
-	got NFS4ERR_LOCKS_HELD
 replay cache for open/lock/etc.
 open exclusive: bitmap-out should indicate which attr we used for
 	storing create verifier?

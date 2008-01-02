@@ -756,7 +756,6 @@ extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
-extern bool cli_locks_held(clientid4 id, struct nfs_buf *owner);
 
 extern void cli_owner_add(struct nfs_owner *owner);
 extern void owner_free(struct nfs_owner *owner);

@@ -868,6 +868,9 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	clientid4 id;
 	struct nfs_buf owner;
+	struct nfs_owner *o = NULL;
+	struct nfs_openfile *tmp_of, *iter;
+	bool found = false;
 
 	/* easy check for incomplete args (our routines will return
 	 * zeroes if overflow occurs, so this is just nice)
@@ -881,17 +884,47 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 	id = CR64();
 	CURBUF(&owner);
 
+	if (debugging)
+		syslog(LOG_INFO, "op RELEASE_LOCKOWNER (OCID:%Lx OWNER:%.*s)",
+		       (unsigned long long) id,
+		       owner.len,
+		       owner.val);
+
 	/* validate owner */
 	if (!owner.len || !owner.val) {
 		status = NFS4ERR_BADXDR;
 		goto out;
 	}
 
-	/* at the moment, we do nothing other than the minimum:
-	 * return NFS4ERR_LOCKS_HELD or NFS4_OK as specified
-	 */
-	if (cli_locks_held(id, &owner))
+	status = owner_lookup_name(id, &owner, &o);
+	if (status != NFS4_OK)
+		goto out;
+
+	/* we do not support open_owners here */
+	if (o->type != nst_lock) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	/* scan for any remaining locks held */
+	list_for_each_entry(tmp_of, &o->openfiles, owner_node) {
+		if (!list_empty(&tmp_of->u.lock.list))
+			found = true;
+	}
+
+	if (found) {
 		status = NFS4ERR_LOCKS_HELD;
+		goto out;
+	}
+
+	/* trash all attached [lock] openfiles */
+	list_for_each_entry_safe(tmp_of, iter, &o->openfiles, owner_node) {
+		openfile_trash(tmp_of, false);
+	}
+
+	/* release this lockowner */
+	list_del(&o->cli_node);
+	owner_free(o);
 
 out:
 	WR32(status);

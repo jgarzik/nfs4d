@@ -781,16 +781,6 @@ static void client_cancel(const struct blob *key)
 	g_list_free(cci.list);
 }
 
-bool cli_locks_held(clientid4 id, struct nfs_buf *owner)
-{
-	struct nfs_owner *o = NULL;
-
-	if (owner_lookup_name(id, owner, &o) != NFS4_OK)
-		return false;
-
-	return list_empty(&o->openfiles) ? false : true;
-}
-
 void cli_owner_add(struct nfs_owner *owner)
 {
 	struct nfs_clientid *clid;
