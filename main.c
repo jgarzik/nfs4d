@@ -35,6 +35,7 @@ struct nfs_server srv;
 struct refbuf pad_rb = { "\0\0\0\0", 4, 1 };
 
 static char startup_cwd[PATH_MAX];
+char my_hostname[HOST_NAME_MAX + 1];
 static bool opt_foreground;
 static char *pid_fn = "nfs4_ramd.pid";
 static char *stats_fn = "nfs4_ramd.stats";
@@ -1468,6 +1469,13 @@ int main (int argc, char *argv[])
 	}
 	if (startup_cwd[strlen(startup_cwd) - 1] != '/')
 		strcat(startup_cwd, "/");
+
+	/* get our hostname, for fs_locations' use */
+	if (gethostname(my_hostname, sizeof(my_hostname) - 1) < 0) {
+		syslogerr("gethostname(2)");
+		return 1;
+	}
+	my_hostname[sizeof(my_hostname) - 1] = 0;
 
 	if ((!opt_foreground) && (daemon(0, 0) < 0)) {
 		slerror("daemon(2)");

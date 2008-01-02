@@ -41,6 +41,7 @@ nfsstat4 cur_readacl(struct curbuf *cur, fattr4_acl *acl)
 #define INC64(x)	total += 8
 #define INCMAP(x)	total += (4 * 3)
 #define INCBUF(nb)	total += 4 + (XDR_QUADLEN((nb)->len) * 4)
+#define INCSTR(str)	total += 4 + (XDR_QUADLEN(strlen(str)) * 4)
 
 unsigned int fattr_size(const struct nfs_fattr_set *attr)
 {
@@ -125,14 +126,15 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 	if (bitmap & (1ULL << FATTR4_FILES_TOTAL)) {
 		INC64(attr->files_total);
 	}
-
-#if FS_LOCATIONS_CODE_WORKING
 	if (bitmap & (1ULL << FATTR4_FS_LOCATIONS)) {
-		encode_pathname(&attr->fs_locations.fs_root, &buf, &p, &buflen,
-				&alloc_len);
+		INC32(1);
+		INCSTR("/");		/* fs_root */
+		INC32(1);		/* location len */
+		INC32(1);		/* location[0].server len */
+		INCSTR(my_hostname);	/* location[0].server[0] */
+		INC32(1);
+		INCSTR("/");		/* location[0].rootpath */
 	}
-#endif
-
 	if (bitmap & (1ULL << FATTR4_HIDDEN)) {
 		INC32(attr->hidden ? 1 : 0);
 	}
@@ -330,14 +332,23 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 	if (bitmap & (1ULL << FATTR4_FILES_TOTAL)) {
 		attr->files_total = CR64();
 	}
-
-#if FS_LOCATIONS_CODE_WORKING
 	if (bitmap & (1ULL << FATTR4_FS_LOCATIONS)) {
-		encode_pathname(&attr->fs_locations.fs_root, &buf, &p, &buflen,
-				&alloc_len);
-	}
-#endif
+		struct nfs_buf nb = { 0, };
+		uint32_t v1, v2, i, j;
 
+		v1 = CR32();				/* fs_root len */
+		for (i = 0; i < v1; i++)
+			CURBUF(&nb);			/* fs_root */
+		v1 = CR32();				/* locations.len */
+		for (i = 0; i < v1; i++) {
+			v2 = CR32();			/* server.len */
+			for (j = 0; j < v2; j++)
+				CURBUF(&nb);		/* server_val */
+			v2 = CR32();			/* rootpath len */
+			for (j = 0; j < v2; j++)
+				CURBUF(&nb);		/* rootpath */
+		}
+	}
 	if (bitmap & (1ULL << FATTR4_HIDDEN)) {
 		attr->hidden = CR32();
 	}
@@ -589,15 +600,17 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		WR64(attr->files_total);
 		bitmap_out |= (1ULL << FATTR4_FILES_TOTAL);
 	}
-
-#if FS_LOCATIONS_CODE_WORKING
 	if (bitmap & (1ULL << FATTR4_FS_LOCATIONS)) {
-		encode_pathname(&attr->fs_locations.fs_root, &buf, &p, &buflen,
-				&alloc_len);
+		WR32(1);		/* fs_root len */
+		WRSTR("/");		/* fs_root */
+		WR32(1);		/* location len */
+		WR32(1);		/* location[0].server len */
+		WRSTR(my_hostname);	/* location[0].server[0] */
+		WR32(1);		/* location[0].rootpath len */
+		WRSTR("/");		/* location[0].rootpath */
+
 		bitmap_out |= (1ULL << FATTR4_FS_LOCATIONS);
 	}
-#endif
-
 	if (bitmap & (1ULL << FATTR4_HIDDEN)) {
 		WR32(attr->hidden ? 1 : 0);
 		bitmap_out |= (1ULL << FATTR4_HIDDEN);

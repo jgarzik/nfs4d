@@ -144,6 +144,7 @@ enum {
 		1ULL << FATTR4_FILES_AVAIL |
 		1ULL << FATTR4_FILES_FREE |
 		1ULL << FATTR4_FILES_TOTAL |
+		1ULL << FATTR4_FS_LOCATIONS |
 		1ULL << FATTR4_HOMOGENEOUS |
 		1ULL << FATTR4_MAXFILESIZE |
 		1ULL << FATTR4_MAXLINK |
@@ -681,6 +682,7 @@ extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 
 /* main.c */
 extern struct refbuf pad_rb;
+extern char my_hostname[];
 
 extern uint64_t srv_space_used(void);
 extern struct refbuf *refbuf_new(unsigned int size, bool clear);
