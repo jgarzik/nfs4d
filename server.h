@@ -359,9 +359,14 @@ struct cxn_auth {
 	} u;
 };
 
+struct nfs_fh {
+	nfsino_t		ino;
+	uint32_t		generation;
+};
+
 struct nfs_cxn {
-	nfsino_t		current_fh;
-	nfsino_t		save_fh;
+	struct nfs_fh		current_fh;
+	struct nfs_fh		save_fh;
 
 	struct cxn_auth		auth;		/* RPC creds */
 
@@ -666,7 +671,8 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      struct list_head *writes, struct rpc_write **wr,
 			      bool nverify);
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
-extern struct nfs_inode *inode_get(nfsino_t inum);
+extern struct nfs_inode *__inode_get(nfsino_t inum);
+extern struct nfs_inode *inode_get(nfsino_t inum, uint32_t generation);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
@@ -733,7 +739,6 @@ extern char *cxn_getuser(const struct nfs_cxn *cxn);
 extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 
 extern bool valid_utf8string(const struct nfs_buf *str);
-extern int nfs_fh_decode(const struct nfs_buf *fh_in, nfsino_t *fh_out);
 extern int nfsproc_null(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 			 struct curbuf *cur, struct list_head *writes,
 			 struct rpc_write **wr);
@@ -798,6 +803,26 @@ static inline bool nfs_seqid_inc_ok(nfsstat4 status)
 	}
 
 	/* not reached */
+}
+
+static inline struct nfs_inode *inode_fhget(struct nfs_fh fh)
+{
+	return inode_get(fh.ino, fh.generation);
+}
+
+static inline bool valid_fh(struct nfs_fh fh)
+{
+	if (!fh.ino)
+		return false;
+
+	return true;
+}
+
+static inline void fh_set(struct nfs_fh *fh, nfsino_t ino,
+			uint32_t generation)
+{
+	fh->ino = ino;
+	fh->generation = generation;
 }
 
 #endif /* __SERVER_H__ */

@@ -34,7 +34,7 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		       (unsigned long long) offset, count);
 
 	/* obtain and validate inode */
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -126,7 +126,7 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (data.len > SRV_MAX_WRITE)
 		data.len = SRV_MAX_WRITE;
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -276,7 +276,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (count > SRV_MAX_READ)
 		count = SRV_MAX_READ;
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -438,7 +438,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* grab and validate inode */
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -596,7 +596,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -803,7 +803,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* grab and validate inode */
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;

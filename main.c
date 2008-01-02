@@ -1364,9 +1364,12 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 		fprintf(f, "parent%s:",
 			ino->parents->len > 1 ? "s" : "");
 
-		for (i = 0; i < ino->parents->len; i++)
-			fprintf(f, " %u",
-				g_array_index(ino->parents, nfsino_t, i));
+		for (i = 0; i < ino->parents->len; i++) {
+			struct nfs_fh *fh;
+
+			fh = &g_array_index(ino->parents, struct nfs_fh, i);
+			fprintf(f, " %u/%u", fh->ino, fh->generation);
+		}
 
 		fprintf(f, "\n");
 	}

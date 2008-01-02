@@ -36,7 +36,7 @@ nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
 
 	*ino_out = NULL;
 	status = NFS4_OK;
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -128,13 +128,14 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	cxn->current_fh = dirent->ino_n;
+	fh_set(&cxn->current_fh, dirent->ino_n, dirent->generation);
 
 	if (debugging) {
-		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
+		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u/%u",
 		       objname.len,
 		       objname.val,
-		       cxn->current_fh);
+		       cxn->current_fh.ino,
+		       cxn->current_fh.generation);
 		printed = true;
 	}
 
@@ -168,7 +169,7 @@ nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	cxn->current_fh = g_array_index(ino->parents, nfsino_t, 0);
+	cxn->current_fh = g_array_index(ino->parents, struct nfs_fh, 0);
 
 out:
 	WR32(status);
@@ -241,6 +242,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *dir_ino, *src_ino;
 	struct nfs_buf newname;
 	uint64_t before, after;
+	struct nfs_fh fh;
 
 	CURBUF(&newname);
 
@@ -249,7 +251,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		       newname.len,
 		       newname.val);
 
-	if (!cxn->current_fh || !cxn->save_fh) {
+	if (!valid_fh(cxn->current_fh) || !valid_fh(cxn->save_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -258,7 +260,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	dir_ino = inode_get(cxn->current_fh);
+	dir_ino = inode_fhget(cxn->current_fh);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -270,7 +272,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	src_ino = inode_get(cxn->save_fh);
+	src_ino = inode_fhget(cxn->save_fh);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -288,7 +290,8 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	g_array_append_val(src_ino->parents, dir_ino->ino);
+	fh_set(&fh, dir_ino->ino, dir_ino->generation);
+	g_array_append_val(src_ino->parents, fh);
 
 	after = dir_ino->version;
 
@@ -345,8 +348,8 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* reference target inode */
-	target_ino = inode_get(dirent->ino_n);
-	if (!target_ino || (target_ino->generation != dirent->generation)) {
+	target_ino = inode_get(dirent->ino_n, dirent->generation);
+	if (!target_ino) {
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
@@ -428,8 +431,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* reference source, target directories.
 	 * NOTE: src_dir and target_dir may point to the same object
 	 */
-	src_dir = inode_get(cxn->save_fh);
-	target_dir = inode_get(cxn->current_fh);
+	src_dir = inode_fhget(cxn->save_fh);
+	target_dir = inode_fhget(cxn->current_fh);
 	if (!src_dir || !target_dir) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -445,8 +448,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
-	old_file = inode_get(old_dirent->ino_n);
-	if (!old_file || (old_file->generation != old_dirent->generation)) {
+	old_file = inode_get(old_dirent->ino_n, old_dirent->generation);
+	if (!old_file) {
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
@@ -457,8 +460,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
-		new_file = inode_get(new_dirent->ino_n);
-		if (!new_file || (new_file->generation != new_dirent->generation)) {
+		new_file = inode_get(new_dirent->ino_n, new_dirent->generation);
+		if (!new_file) {
 			status = NFS4ERR_NOENT;
 			goto out;
 		}
@@ -577,8 +580,8 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->cookie_found = true;
 	}
 
-	ino = inode_get(de->ino_n);
-	if (!ino || (ino->generation != de->generation)) {
+	ino = inode_get(de->ino_n, de->generation);
+	if (!ino) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;
 		ri->status = NFS4ERR_NOENT;

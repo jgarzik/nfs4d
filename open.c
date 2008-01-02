@@ -170,8 +170,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 
 	case NFS4_OK:
-		ino = inode_get(de->ino_n);
-		if (!ino || (ino->generation != de->generation)) {
+		ino = inode_get(de->ino_n, de->generation);
+		if (!ino) {
 			status = NFS4ERR_NOENT;
 			goto out;
 		}
@@ -364,7 +364,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
 	status = NFS4_OK;
-	cxn->current_fh = ino->ino;
+
+	fh_set(&cxn->current_fh, ino->ino,  ino->generation);
 
 	if (debugging)
 		syslog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",
@@ -417,7 +418,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
 		       seqid, sid.seqid, sid.id);
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -489,7 +490,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		       seqid, sid.seqid, sid.id,
 		       share_access, share_deny);
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -569,7 +570,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
 		       seqid, sid.seqid, sid.id);
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;

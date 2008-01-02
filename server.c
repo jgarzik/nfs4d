@@ -225,7 +225,7 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		syslog(LOG_INFO, "op READLINK");
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;

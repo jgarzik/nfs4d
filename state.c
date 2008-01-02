@@ -421,7 +421,7 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 		openfile_trash_locks(of);
 
 	if (of->ino) {
-		struct nfs_inode *ino = inode_get(of->ino);
+		struct nfs_inode *ino = inode_get(of->ino, of->generation);
 
 		of->ino = 0;
 

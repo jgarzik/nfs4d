@@ -10,7 +10,7 @@
 
 static nfsino_t next_ino;		/* start next free-inode scan here */
 
-struct nfs_inode *inode_get(nfsino_t inum)
+struct nfs_inode *__inode_get(nfsino_t inum)
 {
 	struct nfs_inode *ino;
 
@@ -21,6 +21,16 @@ struct nfs_inode *inode_get(nfsino_t inum)
 	if (!ino || !ino->parents)
 		return NULL;
 
+	return ino;
+}
+
+struct nfs_inode *inode_get(nfsino_t inum, uint32_t generation)
+{
+	struct nfs_inode *ino = __inode_get(inum);
+	if (!ino)
+		return NULL;
+	if (ino->generation != generation)
+		return NULL;
 	return ino;
 }
 
@@ -154,7 +164,7 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	if (!ino)
 		goto out;
 
-	ino->parents = g_array_new(false, false, sizeof(nfsino_t));
+	ino->parents = g_array_new(false, false, sizeof(struct nfs_fh));
 	if (!ino->parents)
 		goto err_out;
 
@@ -342,7 +352,7 @@ bool inode_table_init(void)
 	if (!root->dir)
 		return false;
 
-	root->parents = g_array_new(false, false, sizeof(nfsino_t));
+	root->parents = g_array_new(false, false, sizeof(struct nfs_fh));
 	if (!root->parents)
 		return false;
 
@@ -361,19 +371,22 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 {
 	unsigned int i;
 	bool found = false;
+	struct nfs_fh *fh;
 
 	if (!ino || !ino->parents) {
 		syslog(LOG_ERR, "BUG: null in inode_unlink");
 		return;
 	}
 
-	for (i = 0; i < ino->parents->len; i++)
-		if (g_array_index(ino->parents, nfsino_t, i) == dir_ref) {
+	for (i = 0; i < ino->parents->len; i++) {
+		fh = &g_array_index(ino->parents, struct nfs_fh, i);
+		if (fh->ino == dir_ref) {
 			g_array_remove_index(ino->parents, i);
 			inode_touch(ino);
 			found = true;
 			break;
 		}
+	}
 
 	if (!found)
 		syslog(LOG_ERR, "BUG: dir_ref %u not found in inode_unlink",
@@ -540,6 +553,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		   uint64_t *attrset, change_info4 *cinfo)
 {
 	nfsstat4 status = NFS4_OK;
+	struct nfs_fh fh;
 
 	if (attr)
 		status = inode_apply_attrs(new_ino, attr, attrset, NULL, false);
@@ -558,7 +572,9 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		goto out;
 	}
 
-	g_array_append_val(new_ino->parents, dir_ino->ino);
+	fh_set(&fh, dir_ino->ino, dir_ino->generation);
+	g_array_append_val(new_ino->parents, fh);
+
 	cinfo->after = dir_ino->version;
 
 out:
@@ -640,10 +656,12 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto err_out;
 
-	cxn->current_fh = new_ino->ino;
+	fh_set(&cxn->current_fh, new_ino->ino, new_ino->generation);
 
 	if (debugging)
-		syslog(LOG_INFO, "   CREATE -> %u", cxn->current_fh);
+		syslog(LOG_INFO, "   CREATE -> %u/%u",
+			cxn->current_fh.ino,
+			cxn->current_fh.generation);
 
 err_out:
 	fattr_free(&attr);
@@ -679,7 +697,7 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	attrset.bitmap = CURMAP();
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -746,7 +764,7 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 		print_fattr("   SETATTR", &attr);
 	}
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto err_out;
@@ -833,7 +851,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		syslog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -1013,7 +1031,7 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_free;
 	}
 
-	ino = inode_get(cxn->current_fh);
+	ino = inode_fhget(cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out_free;
