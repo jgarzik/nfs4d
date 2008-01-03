@@ -1,24 +1,54 @@
+
+
 This is an NFSv4 server, that serves data from RAM.
 
-[Minimalist] project home page:
+
+
+[Minimalist] project home page
+------------------------------
 
 	http://linux.yyz.us/projects/nfsv4.html
 
-Official source code repository:
+
+Official source code repository
+-------------------------------
 
 	git://git.kernel.org/pub/scm/daemon/nfs/nfs4-ram.git
 
-Dependencies:
+
+Dependencies
+------------
 	GLib 2.0.0 or later (http://www.gtk.org/)
 	GNet 2.0.5 or later (http://www.gnetlibrary.org/)
 
-Using the server:
+
+Building the server
+-------------------
+
+	./autogen.sh
+	CFLAGS="-O2 -Wall -g" ./configure
+	make
+	make install
+
+Depending on your RPC configuration, the tests may or may not work for
+you:
+
+	make check
+
+Test fixes and other contributions are welcomed!
+
+
+Using the server
+----------------
 
 	./nfs4_ramd
 
 will create an empty RAM-based filesystem, served via NFS v4, on the
 default NFS TCP port (2049).
 
+
+Additional configuration options
+--------------------------------
 Besides the command line options (./nfs4_ramd --help), this is a
 zero-configuration daemon.  No need to set up any configuration files.
 
