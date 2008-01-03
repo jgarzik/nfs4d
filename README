@@ -46,6 +46,9 @@ Using the server
 will create an empty RAM-based filesystem, served via NFS v4, on the
 default NFS TCP port (2049).
 
+All logging, debug output or otherwise, is currently directed to
+syslog's local2 facility.
+
 
 Additional configuration options
 --------------------------------
