@@ -548,7 +548,7 @@ size_done:
 	}
 	if ((attr->bitmap & (1ULL << FATTR4_OWNER_GROUP)) &&
 	    (attr->owner_group.len)) {
-		char *ostr = id_lookup_name(idt_user, attr->owner_group.val,
+		char *ostr = id_lookup_name(idt_group, attr->owner_group.val,
 					    attr->owner_group.len);
 		if (!ostr) {
 			status = NFS4ERR_DENIED;
