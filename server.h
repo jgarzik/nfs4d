@@ -380,7 +380,6 @@ struct cxn_auth {
 
 struct nfs_fh {
 	nfsino_t		ino;
-	uint32_t		generation;
 };
 
 struct nfs_cxn {
@@ -436,7 +435,6 @@ struct nfs_openfile {
 	struct nfs_owner	*owner;
 
 	nfsino_t		ino;
-	uint32_t		generation;
 
 	enum nfs_state_type	type;		/* nst_xxx */
 
@@ -467,7 +465,6 @@ struct nfs_openfile {
 
 struct nfs_inode {
 	nfsino_t		ino;
-	uint32_t		generation;
 
 	enum nfs_ftype4		type;		/* inode type: link, dir, ...*/
 	GArray			*parents;	/* list of parent dirs */
@@ -496,7 +493,6 @@ struct nfs_inode {
 
 struct nfs_dirent {
 	nfsino_t		ino_n;
-	uint32_t		generation;
 
 	struct nfs_buf		name;
 };
@@ -695,7 +691,7 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      bool nverify);
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
 extern struct nfs_inode *__inode_get(nfsino_t inum);
-extern struct nfs_inode *inode_get(nfsino_t inum, uint32_t generation);
+extern struct nfs_inode *inode_get(nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
@@ -830,7 +826,7 @@ static inline bool nfs_seqid_inc_ok(nfsstat4 status)
 
 static inline struct nfs_inode *inode_fhget(struct nfs_fh fh)
 {
-	return inode_get(fh.ino, fh.generation);
+	return inode_get(fh.ino);
 }
 
 static inline bool valid_fh(struct nfs_fh fh)
@@ -841,11 +837,9 @@ static inline bool valid_fh(struct nfs_fh fh)
 	return true;
 }
 
-static inline void fh_set(struct nfs_fh *fh, nfsino_t ino,
-			uint32_t generation)
+static inline void fh_set(struct nfs_fh *fh, nfsino_t ino)
 {
 	fh->ino = ino;
-	fh->generation = generation;
 }
 
 #endif /* __SERVER_H__ */

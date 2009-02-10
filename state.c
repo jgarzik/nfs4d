@@ -213,9 +213,7 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		if (id_in->seqid != of->my_seq)
 			return NFS4ERR_OLD_STATEID;
 
-		if (ino &&
-		    ((ino->ino != of->ino) ||
-		     (ino->generation != of->generation)))
+		if (ino && (ino->ino != of->ino))
 			return NFS4ERR_BAD_STATEID;
 
 		clientid_touch(of->owner->cli);
@@ -440,7 +438,7 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 		openfile_trash_locks(of);
 
 	if (of->ino) {
-		struct nfs_inode *ino = inode_get(of->ino, of->generation);
+		struct nfs_inode *ino = inode_get(of->ino);
 
 		of->ino = 0;
 

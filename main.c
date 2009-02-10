@@ -1341,9 +1341,8 @@ static gboolean dump_dir_iter(gpointer _k, gpointer _v, gpointer _d)
 	struct nfs_dirent *de = _v;
 	FILE *f = _d;
 
-	fprintf(f, "\tDIRENT (%u,%u) == %.*s\n",
+	fprintf(f, "\tDIRENT (%u) == %.*s\n",
 		de->ino_n,
-		de->generation,
 		de->name.len,
 		de->name.val);
 
@@ -1359,12 +1358,10 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 
 	fprintf(f,
 		"INODE: %u\n"
-		"generation: %u\n"
 		"type: %s\n"
 		"version: %Lu\n"
 		,
 		ino->ino,
-		ino->generation,
 		name_nfs_ftype4[ino->type],
 		(unsigned long long) ino->version);
 
@@ -1390,7 +1387,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 			struct nfs_fh *fh;
 
 			fh = &g_array_index(ino->parents, struct nfs_fh, i);
-			fprintf(f, " %u/%u", fh->ino, fh->generation);
+			fprintf(f, " %u", fh->ino);
 		}
 
 		fprintf(f, "\n");

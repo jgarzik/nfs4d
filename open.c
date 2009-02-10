@@ -189,7 +189,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 
 	case NFS4_OK:
-		ino = inode_get(de->ino_n, de->generation);
+		ino = inode_get(de->ino_n);
 		if (!ino) {
 			status = NFS4ERR_NOENT;
 			goto out;
@@ -363,7 +363,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		of->ino = ino->ino;
-		of->generation = ino->generation;
 		of->u.share.access = args->share_access;
 		of->u.share.deny = args->share_deny;
 
@@ -384,7 +383,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	status = NFS4_OK;
 
-	fh_set(&cxn->current_fh, ino->ino,  ino->generation);
+	fh_set(&cxn->current_fh, ino->ino);
 
 	if (debugging)
 		syslog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",

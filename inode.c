@@ -44,12 +44,10 @@ struct nfs_inode *__inode_get(nfsino_t inum)
 	return ino;
 }
 
-struct nfs_inode *inode_get(nfsino_t inum, uint32_t generation)
+struct nfs_inode *inode_get(nfsino_t inum)
 {
 	struct nfs_inode *ino = __inode_get(inum);
 	if (!ino)
-		return NULL;
-	if (ino->generation != generation)
 		return NULL;
 	return ino;
 }
@@ -65,13 +63,11 @@ static void inode_free(struct nfs_inode *ino)
 	GList *tmp;
 	struct nfs_openfile *of, *iter;
 	nfsino_t ino_n;
-	uint32_t igen;
 
 	if (!ino)
 		return;
 
 	ino_n = ino->ino;
-	igen = ino->generation;
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "freeing inode %u", ino_n);
@@ -121,7 +117,6 @@ static void inode_free(struct nfs_inode *ino)
 
 	/* restore the few fields whose values are important across uses */
 	ino->ino = ino_n;
-	ino->generation = igen + 1;
 	INIT_LIST_HEAD(&ino->openfile_list);
 
 	if (ino_n < next_ino)
@@ -168,7 +163,6 @@ static struct nfs_inode *inode_alloc(void)
 		return NULL;
 
 	ino->ino = i;
-	ino->generation = 1;
 	INIT_LIST_HEAD(&ino->openfile_list);
 
 	srv.inode_table[i] = ino;
@@ -355,7 +349,6 @@ bool inode_table_init(void)
 	if (!root)
 		return false;
 	root->ino = INO_ROOT;
-	root->generation = 1;
 
 	INIT_LIST_HEAD(&root->openfile_list);
 
@@ -594,7 +587,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		goto out;
 	}
 
-	fh_set(&fh, dir_ino->ino, dir_ino->generation);
+	fh_set(&fh, dir_ino->ino);
 	g_array_append_val(new_ino->parents, fh);
 
 	cinfo->after = dir_ino->version;
@@ -678,12 +671,11 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto err_out;
 
-	fh_set(&cxn->current_fh, new_ino->ino, new_ino->generation);
+	fh_set(&cxn->current_fh, new_ino->ino);
 
 	if (debugging)
-		syslog(LOG_INFO, "   CREATE -> %u/%u",
-			cxn->current_fh.ino,
-			cxn->current_fh.generation);
+		syslog(LOG_INFO, "   CREATE -> %u",
+			cxn->current_fh.ino);
 
 err_out:
 	fattr_free(&attr);

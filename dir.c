@@ -147,14 +147,13 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	fh_set(&cxn->current_fh, dirent->ino_n, dirent->generation);
+	fh_set(&cxn->current_fh, dirent->ino_n);
 
 	if (debugging) {
-		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u/%u",
+		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
 		       objname.len,
 		       objname.val,
-		       cxn->current_fh.ino,
-		       cxn->current_fh.generation);
+		       cxn->current_fh.ino);
 		printed = true;
 	}
 
@@ -245,7 +244,6 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 	}
 
 	dirent->ino_n = ent_ino->ino;
-	dirent->generation = ent_ino->generation;
 
 	g_tree_replace(dir_ino->dir, &dirent->name, dirent);
 	inode_touch(dir_ino);
@@ -309,7 +307,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	fh_set(&fh, dir_ino->ino, dir_ino->generation);
+	fh_set(&fh, dir_ino->ino);
 	g_array_append_val(src_ino->parents, fh);
 
 	after = dir_ino->version;
@@ -367,7 +365,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* reference target inode */
-	target_ino = inode_get(dirent->ino_n, dirent->generation);
+	target_ino = inode_get(dirent->ino_n);
 	if (!target_ino) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -467,7 +465,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
-	old_file = inode_get(old_dirent->ino_n, old_dirent->generation);
+	old_file = inode_get(old_dirent->ino_n);
 	if (!old_file) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -479,7 +477,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
-		new_file = inode_get(new_dirent->ino_n, new_dirent->generation);
+		new_file = inode_get(new_dirent->ino_n);
 		if (!new_file) {
 			status = NFS4ERR_NOENT;
 			goto out;
@@ -522,7 +520,6 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 	new_dirent->ino_n = old_dirent->ino_n;
-	new_dirent->generation = old_dirent->generation;
 
 	if (!g_tree_remove(src_dir->dir, &oldname))
 		syslog(LOG_ERR, "BUG: tree remove #2 failed in op-rename");
@@ -599,7 +596,7 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->cookie_found = true;
 	}
 
-	ino = inode_get(de->ino_n, de->generation);
+	ino = inode_get(de->ino_n);
 	if (!ino) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;

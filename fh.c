@@ -33,7 +33,6 @@ static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
 	struct nfs_fh fh;
 
 	fh.ino = htonl(fh_in.ino);
-	fh.generation = htonl(fh_in.generation);
 
 	nb.len = sizeof(fh);
 	nb.val = (char *) &fh;
@@ -57,9 +56,6 @@ int nfs_fh_decode(const struct nfs_buf *fh_in, struct nfs_fh *fh_out)
 	fh.ino = ntohl(*p);
 	p++;
 
-	fh.generation = ntohl(*p);
-	p++;
-
 	if (!inode_fhget(fh))
 		return -1;
 
@@ -79,9 +75,8 @@ nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (debugging) {
-		syslog(LOG_INFO, "op GETFH -> %u/%u",
-			cxn->current_fh.ino,
-			cxn->current_fh.generation);
+		syslog(LOG_INFO, "op GETFH -> %u",
+			cxn->current_fh.ino);
 		printed = true;
 	}
 
@@ -116,9 +111,8 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 		cxn->current_fh = fh;
 
 	if (debugging)
-		syslog(LOG_INFO, "op PUTFH (%u/%u)",
-			fh.ino,
-			fh.generation);
+		syslog(LOG_INFO, "op PUTFH (%u)",
+			fh.ino);
 
 	WR32(status);
 	return status;
@@ -129,12 +123,11 @@ nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	struct nfs_inode *ino = __inode_get(INO_ROOT);
 
-	fh_set(&cxn->current_fh, ino->ino, ino->generation);
+	fh_set(&cxn->current_fh, ino->ino);
 
 	if (debugging)
-		syslog(LOG_INFO, "op PUTROOTFH -> %u/%u",
-			cxn->current_fh.ino,
-			cxn->current_fh.generation);
+		syslog(LOG_INFO, "op PUTROOTFH -> %u",
+			cxn->current_fh.ino);
 
 	WR32(NFS4_OK);
 	return NFS4_OK;
@@ -145,12 +138,11 @@ nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	struct nfs_inode *ino = __inode_get(INO_ROOT);
 
-	fh_set(&cxn->current_fh, ino->ino, ino->generation);
+	fh_set(&cxn->current_fh, ino->ino);
 
 	if (debugging)
-		syslog(LOG_INFO, "op PUTPUBFH -> %u/%u",
-			cxn->current_fh.ino,
-			cxn->current_fh.generation);
+		syslog(LOG_INFO, "op PUTPUBFH -> %u",
+			cxn->current_fh.ino);
 
 	WR32(NFS4_OK);
 	return NFS4_OK;
@@ -170,9 +162,8 @@ nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 	cxn->current_fh = cxn->save_fh;
 
 	if (debugging) {
-		syslog(LOG_INFO, "op RESTOREFH -> %u/%u",
-			cxn->current_fh.ino,
-			cxn->current_fh.generation);
+		syslog(LOG_INFO, "op RESTOREFH -> %u",
+			cxn->current_fh.ino);
 		printed = true;
 	}
 
@@ -200,9 +191,8 @@ nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 	cxn->save_fh = cxn->current_fh;
 
 	if (debugging) {
-		syslog(LOG_INFO, "op SAVEFH (SAVE:%u/%u)",
-			cxn->save_fh.ino,
-			cxn->save_fh.generation);
+		syslog(LOG_INFO, "op SAVEFH (SAVE:%u)",
+			cxn->save_fh.ino);
 		printed = true;
 	}
 
