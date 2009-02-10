@@ -32,7 +32,7 @@ struct nfs_timer;
 struct nfs_owner;
 struct nfs_openfile;
 
-typedef uint32_t nfsino_t;
+typedef uint64_t nfsino_t;
 
 #define SRV_MAGIC		"J721"
 

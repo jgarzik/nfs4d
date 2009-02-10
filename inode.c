@@ -70,12 +70,14 @@ static void inode_free(struct nfs_inode *ino)
 	ino_n = ino->ino;
 
 	if (debugging > 1)
-		syslog(LOG_DEBUG, "freeing inode %u", ino_n);
+		syslog(LOG_DEBUG, "freeing inode %llu",
+			(unsigned long long) ino_n);
 
 	if (ino->parents)
 		g_array_free(ino->parents, TRUE);
 	else {
-		syslog(LOG_ERR, "BUG: inode double-free: %u", ino_n);
+		syslog(LOG_ERR, "BUG: inode double-free: %llu",
+			(unsigned long long) ino_n);
 		return;
 	}
 
@@ -404,8 +406,8 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 	}
 
 	if (!found)
-		syslog(LOG_ERR, "BUG: dir_ref %u not found in inode_unlink",
-			dir_ref);
+		syslog(LOG_ERR, "BUG: dir_ref %llu not found in inode_unlink",
+			(unsigned long long) dir_ref);
 
 	if (ino->parents->len == 0)
 		inode_free(ino);
@@ -674,8 +676,8 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, new_ino->ino);
 
 	if (debugging)
-		syslog(LOG_INFO, "   CREATE -> %u",
-			cxn->current_fh.ino);
+		syslog(LOG_INFO, "   CREATE -> %llu",
+			(unsigned long long) cxn->current_fh.ino);
 
 err_out:
 	fattr_free(&attr);

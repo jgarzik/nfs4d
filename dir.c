@@ -150,10 +150,10 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, dirent->ino_n);
 
 	if (debugging) {
-		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %u",
+		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %llu",
 		       objname.len,
 		       objname.val,
-		       cxn->current_fh.ino);
+		       (unsigned long long) cxn->current_fh.ino);
 		printed = true;
 	}
 
