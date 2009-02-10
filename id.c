@@ -29,138 +29,75 @@
 #include "server.h"
 #include "elist.h"
 
-static GHashTable *tbl_users;
-static GHashTable *tbl_groups;
-
-static int tbl_add(GHashTable *tbl, const char *name_in, unsigned int id)
+char *id_lookup(enum id_type type, uint32_t id)
 {
-	char *name = NULL;
-
-	if (asprintf(&name, "%s@localdomain", name_in) < 0) {
-		syslog(LOG_ERR, "OOM in tbl_add");
-		return -ENOMEM;
-	}
-
-	/* to avoid being confused with NULL, we assume
-	 * 0xffffffff is root@localdomain
-	 */
-	if (!id)
-		id = 0xffffffff;
-
-	g_hash_table_insert(tbl, GUINT_TO_POINTER(id), name);
-
-	return 0;
-}
-
-static int read_users(void)
-{
-	int rc = 0;
-
-	setpwent();
-
-	while (1) {
-		struct passwd *pw;
-
-		errno = 0;
-		pw = getpwent();
-		if (errno) {
-			rc = -errno;
-			syslogerr("getpwent");
-			break;
-		}
-		if (!pw)
-			break;
-
-		rc = tbl_add(tbl_users, pw->pw_name, pw->pw_uid);
-		if (rc)
-			break;
-	}
-
-	endpwent();
-
-	return rc;
-}
-
-static int read_groups(void)
-{
-	int rc = 0;
-
-	setgrent();
-
-	while (1) {
-		struct group *gr;
-
-		errno = 0;
-		gr = getgrent();
-		if (errno) {
-			rc = -errno;
-			syslogerr("getgrent");
-			break;
-		}
-		if (!gr)
-			break;
-
-		rc = tbl_add(tbl_groups, gr->gr_name, gr->gr_gid);
-		if (rc)
-			break;
-	}
-
-	endgrent();
-
-	return rc;
-}
-
-int id_init(void)
-{
+	DBT pkey, pval;
+	DB *ug_idx = srv.fsdb.ug_idx;
+	struct fsdb_ugidx_key idxkey;
+	char *s, *rstr;
 	int rc;
 
-	tbl_users = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-					  NULL, free);
-	tbl_groups = g_hash_table_new_full(g_direct_hash, g_direct_equal,
-					   NULL, free);
+	memset(&idxkey, 0, sizeof(idxkey));
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
 
-	if (!tbl_users || !tbl_groups)
-		return -ENOMEM;
+	idxkey.is_user = GUINT32_TO_LE(type == idt_user ? 1 : 0);
+	idxkey.id = GUINT32_TO_LE(id);
 
-	rc = read_users();
-	if (rc)
-		return rc;
+	pkey.data = &idxkey;
+	pkey.size = sizeof(idxkey);
 
-	rc = read_groups();
-	if (rc)
-		return rc;
+	rc = ug_idx->get(ug_idx, NULL, &pkey, &pval, 0);
+	if (rc) {
+		if (rc != DB_NOTFOUND)
+			ug_idx->err(ug_idx, rc, "ug_idx->get");
+		return NULL;
+	}
 
-	return 0;
-}
+	s = strndup(pval.data, pval.size);
+	if (!s);
+		return NULL;
 
-char *id_lookup(enum id_type type, unsigned int id)
-{
-	return g_hash_table_lookup(type == idt_user ? tbl_users : tbl_groups,
-				   GUINT_TO_POINTER(id));
-}
+	rstr = g_strdup_printf("%s@%s", s, srv.localdom);
+	free(s);
 
-struct name_search_info {
-	const char	*name;
-	size_t		name_len;
-	char		*match;
-};
-
-static void name_search_iter(gpointer key, gpointer val, gpointer user_data)
-{
-	char *name = val;
-	struct name_search_info *nsi = user_data;
-
-	if ((strlen(name) == nsi->name_len) &&
-	    !memcmp(name, nsi->name, nsi->name_len))
-		nsi->match = name;
+	return rstr;
 }
 
 char *id_lookup_name(enum id_type type, const char *name, size_t name_len)
 {
-	struct name_search_info nsi = { name, name_len, NULL };
-	g_hash_table_foreach(type == idt_user ? tbl_users : tbl_groups,
-			     name_search_iter, &nsi);
+	DBT pkey, pval;
+	DB *ug = srv.fsdb.usergroup;
+	struct fsdb_ug_key *ugkey;
+	size_t alloc_len;
+	char *s, *rstr;
+	int rc;
 
-	return nsi.match;
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
+
+	alloc_len = sizeof(*ugkey) + name_len;
+	ugkey = alloca(alloc_len);
+	ugkey->is_user = GUINT32_TO_LE(type == idt_user ? 1 : 0);
+	memcpy(ugkey->name, name, name_len);
+
+	pkey.data = ugkey;
+	pkey.size = alloc_len;
+
+	rc = ug->get(ug, NULL, &pkey, &pval, 0);
+	if (rc) {
+		if (rc != DB_NOTFOUND)
+			ug->err(ug, rc, "ug->get");
+		return NULL;
+	}
+
+	s = strndup(name, name_len);
+	if (strchr(s, '@'))
+		return s;
+	
+	rstr = g_strdup_printf("%s@%s", s, srv.localdom);
+	free(s);
+
+	return rstr;
 }
 

@@ -1,4 +1,22 @@
 
+/*
+ * Copyright 2008-2009 Red Hat, Inc.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; see the file COPYING.  If not, write to
+ * the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
+ *
+ */
+
 #define _GNU_SOURCE
 #include "nfs4d-config.h"
 #include <sys/types.h>
@@ -31,6 +49,7 @@ enum {
 
 struct timeval current_time;
 int debugging = 0;
+static char *opt_lcldom = "localdomain";
 struct nfs_server srv;
 struct refbuf pad_rb = { "\0\0\0\0", 4, 1 };
 
@@ -93,6 +112,8 @@ static struct argp_option options[] = {
 	  "Bind to TCP port PORT (def: 2049)" },
 	{ "pid", 'P', "FILE", 0,
 	  "Write daemon process id to FILE (def: nfs4d.pid, in current directory)" },
+	{ "localdomain", 'O', "DOMAIN", 0,
+	  "Local domain" },
 	{ "stats", 'S', "FILE", 0,
 	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4d.stats, in current directory)" },
 	{ "dump", 'D', "FILE", 0,
@@ -1039,8 +1060,6 @@ static void write_pid_file(void)
 	pid_opened = true;
 }
 
-extern int id_init(void);
-
 static GMainLoop *init_server(void)
 {
 	struct timezone tz = { 0, 0 };
@@ -1059,6 +1078,7 @@ static GMainLoop *init_server(void)
 					  NULL, openfile_free);
 	request_cache = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					 NULL, drc_ent_free);
+	srv.localdom = opt_lcldom;
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
@@ -1070,10 +1090,9 @@ static GMainLoop *init_server(void)
 		return NULL;
 	}
 
-	if (id_init()) {
-		syslog(LOG_ERR, "identity map initialization failed");
+	if (fsdb_open(&srv.fsdb, DB_RECOVER | DB_CREATE, DB_CREATE,
+		     "nfs4d", true))
 		return NULL;
-	}
 
 	inode_table_init();
 
@@ -1100,6 +1119,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 				arg);
 			argp_usage(state);
 		}
+		break;
+	case 'O':
+		opt_lcldom = arg;
 		break;
 	case 'f':
 		opt_foreground = true;
@@ -1493,6 +1515,8 @@ int main (int argc, char *argv[])
 	       debugging ? " (DEBUG MODE)" : "");
 
 	g_main_loop_run(loop);
+
+	fsdb_close(&srv.fsdb);
 
 	syslog(LOG_INFO, "server exit");
 	return 0;

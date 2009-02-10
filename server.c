@@ -132,7 +132,7 @@ char *cxn_getuser(const struct nfs_cxn *cxn)
 	}
 
 	if (!s)
-		s = "nobody@localdomain";
+		s = strdup("nobody@localdomain");
 
 	return s;
 }
@@ -151,7 +151,7 @@ char *cxn_getgroup(const struct nfs_cxn *cxn)
 	}
 
 	if (!s)
-		s = "nobody@localdomain";
+		s = strdup("nobody@localdomain");
 
 	return s;
 }

@@ -109,6 +109,8 @@ static void inode_free(struct nfs_inode *ino)
 	}
 
 	free(ino->mimetype);
+	free(ino->user);
+	free(ino->group);
 
 	list_for_each_entry_safe(of, iter, &ino->openfile_list, inode_node) {
 		if (of->type == nst_open)
@@ -378,11 +380,11 @@ bool inode_table_init(void)
 
 	root->user = id_lookup_name(idt_user, "root@localdomain", 4);
 	if (!root->user)
-		root->user = "nobody@localdomain";
+		root->user = strdup("nobody@localdomain");
 
 	root->group = id_lookup_name(idt_group, "root@localdomain", 4);
 	if (!root->group)
-		root->group = "nobody@localdomain";
+		root->group = strdup("nobody@localdomain");
 
 	return true;
 }

@@ -43,6 +43,11 @@ dnl -----------------------------
 dnl Checks for required libraries
 dnl -----------------------------
 dnl AC_CHECK_LIB(gssrpc, gssrpc_svc_register, GSSRPC_LIBS=-lgssrpc, exit 1)
+AC_CHECK_LIB(db-4.7, db_create, DB4_LIBS=-ldb-4.7,
+	AC_CHECK_LIB(db-4.6, db_create, DB4_LIBS=-ldb-4.6,
+	AC_CHECK_LIB(db-4.5, db_create, DB4_LIBS=-ldb-4.5,
+	AC_CHECK_LIB(db-4.4, db_create, DB4_LIBS=-ldb-4.4,
+	AC_CHECK_LIB(db-4.3, db_create, DB4_LIBS=-ldb-4.3, exit 1)))))
 
 dnl -------------------------------------
 dnl Checks for optional library functions
@@ -60,6 +65,7 @@ AM_PATH_GLIB_2_0(2.0.0)
 AM_PATH_GNET_2_0(2.0.5)
 
 dnl AC_SUBST(GSSRPC_LIBS)
+AC_SUBST(DB4_LIBS)
 
 AC_CONFIG_FILES([test/Makefile Makefile])
 AC_OUTPUT
