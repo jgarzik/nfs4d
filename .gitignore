@@ -20,10 +20,10 @@ push
 stamp-h1
 
 # app-specific
-nfs4_ramd
-nfs4-ram*.tar.gz
-nfs4-ram-config.h*
+nfs4d
+nfs4d*.tar.gz
+nfs4d-config.h*
 
-nfs4_ramd.pid
-nfs4_ramd.stats
-nfs4_ramd.dump*
+nfs4d.pid
+nfs4d.stats
+nfs4d.dump*

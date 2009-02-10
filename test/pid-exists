@@ -1,6 +1,6 @@
 #!/bin/sh
 
-if [ ! -f nfs4_ramd.pid ]
+if [ ! -f nfs4d.pid ]
 then
 	echo "pid file not found."
 	exit 1

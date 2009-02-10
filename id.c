@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include "nfs4-ram-config.h"
+#include "nfs4d-config.h"
 #include <sys/types.h>
 #include <string.h>
 #include <errno.h>

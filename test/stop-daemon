@@ -1,14 +1,14 @@
 #!/bin/sh
 
-if [ ! -f nfs4_ramd.pid ]
+if [ ! -f nfs4d.pid ]
 then
 	echo no daemon pid file found.
 	exit 1
 fi
 
-kill `cat nfs4_ramd.pid`
+kill `cat nfs4d.pid`
 
-rm -f nfs4_ramd.pid
+rm -f nfs4d.pid
 
 sync
 sleep 1

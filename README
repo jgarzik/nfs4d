@@ -13,7 +13,7 @@ This is an NFSv4 server, that serves data from RAM.
 Official source code repository
 -------------------------------
 
-	git://git.kernel.org/pub/scm/daemon/nfs/nfs4-ram.git
+	git://git.kernel.org/pub/scm/daemon/nfs/nfs4d.git
 
 
 Dependencies
@@ -41,7 +41,7 @@ Test fixes and other contributions are welcomed!
 Using the server
 ----------------
 
-	./nfs4_ramd
+	./nfs4d
 
 will create an empty RAM-based filesystem, served via NFS v4, on the
 default NFS TCP port (2049).
@@ -52,6 +52,6 @@ syslog's local2 facility.
 
 Additional configuration options
 --------------------------------
-Besides the command line options (./nfs4_ramd --help), this is a
+Besides the command line options (./nfs4d --help), this is a
 zero-configuration daemon.  No need to set up any configuration files.
 

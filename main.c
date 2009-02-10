@@ -1,6 +1,6 @@
 
 #define _GNU_SOURCE
-#include "nfs4-ram-config.h"
+#include "nfs4d-config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -37,9 +37,9 @@ struct refbuf pad_rb = { "\0\0\0\0", 4, 1 };
 static char startup_cwd[PATH_MAX];
 char my_hostname[HOST_NAME_MAX + 1];
 static bool opt_foreground;
-static char *pid_fn = "nfs4_ramd.pid";
-static char *stats_fn = "nfs4_ramd.stats";
-static char *dump_fn = "nfs4_ramd.dump";
+static char *pid_fn = "nfs4d.pid";
+static char *stats_fn = "nfs4d.stats";
+static char *dump_fn = "nfs4d.dump";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GServer *tcpsrv;
@@ -92,11 +92,11 @@ static struct argp_option options[] = {
 	{ "port", 'p', "PORT", 0,
 	  "Bind to TCP port PORT (def: 2049)" },
 	{ "pid", 'P', "FILE", 0,
-	  "Write daemon process id to FILE (def: nfs4_ramd.pid, in current directory)" },
+	  "Write daemon process id to FILE (def: nfs4d.pid, in current directory)" },
 	{ "stats", 'S', "FILE", 0,
-	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4_ramd.stats, in current directory)" },
+	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4d.stats, in current directory)" },
 	{ "dump", 'D', "FILE", 0,
-	  "Diagnostic RAM data dumped to FILE, for each SIGUSR2 (def: nfs4_ramd.dump, in current directory)" },
+	  "Diagnostic RAM data dumped to FILE, for each SIGUSR2 (def: nfs4d.dump, in current directory)" },
 
 	{ }
 };
@@ -1464,7 +1464,7 @@ int main (int argc, char *argv[])
 	signal(SIGUSR1, stats_signal);
 	signal(SIGUSR2, dump_signal);
 
-	openlog("nfs4_ramd", LOG_PID, LOG_LOCAL2);
+	openlog("nfs4d", LOG_PID, LOG_LOCAL2);
 
 	if (getcwd(startup_cwd, sizeof(startup_cwd) - 2) < 0) {
 		syslogerr("getcwd(2)");

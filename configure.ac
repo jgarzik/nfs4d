@@ -17,11 +17,11 @@ dnl You should have received a copy of the GNU General Public License
 dnl along with this program; if not, write to the Free Software
 dnl Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-AC_INIT(nfs4-ram, 0.1, [Jeff Garzik <jgarzik@pobox.com>])
+AC_INIT(nfs4d, 0.1, [Jeff Garzik <jgarzik@pobox.com>])
 AC_PREREQ(2.52)
 AC_CONFIG_SRCDIR([server.c])
 AM_INIT_AUTOMAKE([gnu])
-AC_CONFIG_HEADERS([nfs4-ram-config.h])
+AC_CONFIG_HEADERS([nfs4d-config.h])
 
 dnl Make sure anyone changing configure.ac/Makefile.am has a clue
 AM_MAINTAINER_MODE
