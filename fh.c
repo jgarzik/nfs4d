@@ -123,7 +123,7 @@ nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	struct nfs_inode *ino = __inode_get(INO_ROOT);
 
-	fh_set(&cxn->current_fh, ino->ino);
+	fh_set(&cxn->current_fh, ino->inum);
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTROOTFH -> %llu",
@@ -138,7 +138,7 @@ nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	struct nfs_inode *ino = __inode_get(INO_ROOT);
 
-	fh_set(&cxn->current_fh, ino->ino);
+	fh_set(&cxn->current_fh, ino->inum);
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTPUBFH -> %llu",

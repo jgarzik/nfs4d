@@ -464,7 +464,7 @@ struct nfs_openfile {
 };
 
 struct nfs_inode {
-	nfsino_t		ino;
+	nfsino_t		inum;
 
 	enum nfs_ftype4		type;		/* inode type: link, dir, ...*/
 	GArray			*parents;	/* list of parent dirs */
@@ -492,7 +492,7 @@ struct nfs_inode {
 };
 
 struct nfs_dirent {
-	nfsino_t		ino_n;
+	nfsino_t		inum;
 
 	struct nfs_buf		name;
 };

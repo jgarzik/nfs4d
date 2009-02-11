@@ -142,12 +142,12 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (!dirent->ino_n) {
+	if (!dirent->inum) {
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
 
-	fh_set(&cxn->current_fh, dirent->ino_n);
+	fh_set(&cxn->current_fh, dirent->inum);
 
 	if (debugging) {
 		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %llu",
@@ -243,7 +243,7 @@ enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		goto out;
 	}
 
-	dirent->ino_n = ent_ino->ino;
+	dirent->inum = ent_ino->inum;
 
 	g_tree_replace(dir_ino->dir, &dirent->name, dirent);
 	inode_touch(dir_ino);
@@ -307,7 +307,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	fh_set(&fh, dir_ino->ino);
+	fh_set(&fh, dir_ino->inum);
 	g_array_append_val(src_ino->parents, fh);
 
 	after = dir_ino->version;
@@ -365,13 +365,13 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* reference target inode */
-	target_ino = inode_get(dirent->ino_n);
+	target_ino = inode_get(dirent->inum);
 	if (!target_ino) {
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
 
-	if (target_ino->ino == INO_ROOT) {	/* should never happen */
+	if (target_ino->inum == INO_ROOT) {	/* should never happen */
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
@@ -384,7 +384,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* prevent root dir deletion */
-	if (target_ino->ino == INO_ROOT) {
+	if (target_ino->inum == INO_ROOT) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
@@ -401,7 +401,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	cinfo.after = dir_ino->version;
 
 	/* remove link, possibly deleting inode */
-	inode_unlink(target_ino, dir_ino->ino);
+	inode_unlink(target_ino, dir_ino->inum);
 
 out:
 	WR32(status);
@@ -465,7 +465,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
-	old_file = inode_get(old_dirent->ino_n);
+	old_file = inode_get(old_dirent->inum);
 	if (!old_file) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -477,14 +477,14 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
-		new_file = inode_get(new_dirent->ino_n);
+		new_file = inode_get(new_dirent->inum);
 		if (!new_file) {
 			status = NFS4ERR_NOENT;
 			goto out;
 		}
 
 		/* do oldname and newname refer to same file? */
-		if (old_file->ino == new_file->ino) {
+		if (old_file->inum == new_file->inum) {
 			src.after =
 			src.before = src_dir->version;
 			target.after =
@@ -507,7 +507,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 			dirent_free(new_dirent);
 
 			/* remove link, possibly deleting inode */
-			inode_unlink(new_file, target_dir->ino);
+			inode_unlink(new_file, target_dir->inum);
 		} else {
 			status = NFS4ERR_EXIST;
 			goto out;
@@ -519,7 +519,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_RESOURCE;
 		goto out;
 	}
-	new_dirent->ino_n = old_dirent->ino_n;
+	new_dirent->inum = old_dirent->inum;
 
 	if (!g_tree_remove(src_dir->dir, &oldname))
 		syslog(LOG_ERR, "BUG: tree remove #2 failed in op-rename");
@@ -596,7 +596,7 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->cookie_found = true;
 	}
 
-	ino = inode_get(de->ino_n);
+	ino = inode_get(de->inum);
 	if (!ino) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;

@@ -62,22 +62,22 @@ static void inode_free(struct nfs_inode *ino)
 {
 	GList *tmp;
 	struct nfs_openfile *of, *iter;
-	nfsino_t ino_n;
+	nfsino_t inum;
 
 	if (!ino)
 		return;
 
-	ino_n = ino->ino;
+	inum = ino->inum;
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "freeing inode %llu",
-			(unsigned long long) ino_n);
+			(unsigned long long) inum);
 
 	if (ino->parents)
 		g_array_free(ino->parents, TRUE);
 	else {
 		syslog(LOG_ERR, "BUG: inode double-free: %llu",
-			(unsigned long long) ino_n);
+			(unsigned long long) inum);
 		return;
 	}
 
@@ -118,11 +118,11 @@ static void inode_free(struct nfs_inode *ino)
 	memset(ino, 0, sizeof(*ino));
 
 	/* restore the few fields whose values are important across uses */
-	ino->ino = ino_n;
+	ino->inum = inum;
 	INIT_LIST_HEAD(&ino->openfile_list);
 
-	if (ino_n < next_ino)
-		next_ino = ino_n;
+	if (inum < next_ino)
+		next_ino = inum;
 }
 
 static struct nfs_inode *inode_alloc(void)
@@ -164,12 +164,12 @@ static struct nfs_inode *inode_alloc(void)
 	if (!ino)
 		return NULL;
 
-	ino->ino = i;
+	ino->inum = i;
 	INIT_LIST_HEAD(&ino->openfile_list);
 
 	srv.inode_table[i] = ino;
 
-	next_ino = ino->ino + 1;
+	next_ino = ino->inum + 1;
 
 	return ino;
 }
@@ -350,7 +350,7 @@ bool inode_table_init(void)
 	root = calloc(1, sizeof(struct nfs_inode));
 	if (!root)
 		return false;
-	root->ino = INO_ROOT;
+	root->inum = INO_ROOT;
 
 	INIT_LIST_HEAD(&root->openfile_list);
 
@@ -589,7 +589,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 		goto out;
 	}
 
-	fh_set(&fh, dir_ino->ino);
+	fh_set(&fh, dir_ino->inum);
 	g_array_append_val(new_ino->parents, fh);
 
 	cinfo->after = dir_ino->version;
@@ -673,7 +673,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto err_out;
 
-	fh_set(&cxn->current_fh, new_ino->ino);
+	fh_set(&cxn->current_fh, new_ino->inum);
 
 	if (debugging)
 		syslog(LOG_INFO, "   CREATE -> %llu",
@@ -985,10 +985,10 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 		if ((attr->fsid.major != 1) || (attr->fsid.minor != 0))
 			return false;
         if (bitmap & (1ULL << FATTR4_FILEHANDLE))
-		if (attr->filehandle != ino->ino)
+		if (attr->filehandle != ino->inum)
 			return false;
         if (bitmap & (1ULL << FATTR4_FILEID))
-		if (attr->fileid != ino->ino)
+		if (attr->fileid != ino->inum)
 			return false;
         if (bitmap & (1ULL << FATTR4_NUMLINKS))
 		if (attr->numlinks != ino->parents->len)
@@ -1010,7 +1010,7 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 		    (attr->time_modify.nseconds != 0))
 			return false;
         if (bitmap & (1ULL << FATTR4_MOUNTED_ON_FILEID))
-		if (attr->mounted_on_fileid != ino->ino)
+		if (attr->mounted_on_fileid != ino->inum)
 			return false;
 
 	return true;

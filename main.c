@@ -1342,7 +1342,7 @@ static gboolean dump_dir_iter(gpointer _k, gpointer _v, gpointer _d)
 	FILE *f = _d;
 
 	fprintf(f, "\tDIRENT (%llu) == %.*s\n",
-		(unsigned long long) de->ino_n,
+		(unsigned long long) de->inum,
 		de->name.len,
 		de->name.val);
 
@@ -1361,7 +1361,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 		"type: %s\n"
 		"version: %Lu\n"
 		,
-		(unsigned long long) ino->ino,
+		(unsigned long long) ino->inum,
 		name_nfs_ftype4[ino->type],
 		(unsigned long long) ino->version);
 

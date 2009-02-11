@@ -213,7 +213,7 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		if (id_in->seqid != of->my_seq)
 			return NFS4ERR_OLD_STATEID;
 
-		if (ino && (ino->ino != of->ino))
+		if (ino && (ino->inum != of->ino))
 			return NFS4ERR_BAD_STATEID;
 
 		clientid_touch(of->owner->cli);

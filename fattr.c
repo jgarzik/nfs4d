@@ -817,8 +817,8 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->fsid.major = 1;
 	attr->fsid.minor = 0;
 	attr->rdattr_error = NFS4_OK;
-	attr->filehandle = ino->ino;
-	attr->fileid = ino->ino;
+	attr->filehandle = ino->inum;
+	attr->fileid = ino->inum;
 	attr->mode = ino->mode;
 	if (ino->parents && ino->parents->len)
 		attr->numlinks = ino->parents->len;
@@ -842,7 +842,7 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->owner_group.val = ino->group;
 	attr->owner_group.len = strlen(ino->group);
 
-	attr->mounted_on_fileid = ino->ino;
+	attr->mounted_on_fileid = ino->inum;
 }
 
 void fattr_fill(const struct nfs_inode *ino, struct nfs_fattr_set *attr)
