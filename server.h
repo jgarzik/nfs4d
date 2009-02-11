@@ -379,7 +379,7 @@ struct cxn_auth {
 };
 
 struct nfs_fh {
-	nfsino_t		ino;
+	nfsino_t		inum;
 };
 
 struct nfs_cxn {
@@ -826,20 +826,20 @@ static inline bool nfs_seqid_inc_ok(nfsstat4 status)
 
 static inline struct nfs_inode *inode_fhget(struct nfs_fh fh)
 {
-	return inode_get(fh.ino);
+	return inode_get(fh.inum);
 }
 
 static inline bool valid_fh(struct nfs_fh fh)
 {
-	if (!fh.ino)
+	if (!fh.inum)
 		return false;
 
 	return true;
 }
 
-static inline void fh_set(struct nfs_fh *fh, nfsino_t ino)
+static inline void fh_set(struct nfs_fh *fh, nfsino_t inum)
 {
-	fh->ino = ino;
+	fh->inum = inum;
 }
 
 #endif /* __SERVER_H__ */

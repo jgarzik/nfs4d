@@ -1387,7 +1387,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 			struct nfs_fh *fh;
 
 			fh = &g_array_index(ino->parents, struct nfs_fh, i);
-			fprintf(f, " %llu", (unsigned long long) fh->ino);
+			fprintf(f, " %llu", (unsigned long long) fh->inum);
 		}
 
 		fprintf(f, "\n");

@@ -147,7 +147,7 @@ static struct nfs_inode *inode_alloc(void)
 	if (i == srv.inode_table_len) {
 		unsigned int old_size = srv.inode_table_len;
 		unsigned int new_size = old_size * 2;
-		void *mem = realloc(srv.inode_table, 
+		void *mem = realloc(srv.inode_table,
 				    new_size * sizeof(struct nfs_inode *));
 		if (!mem)
 			return NULL;
@@ -397,7 +397,7 @@ void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref)
 
 	for (i = 0; i < ino->parents->len; i++) {
 		fh = &g_array_index(ino->parents, struct nfs_fh, i);
-		if (fh->ino == dir_ref) {
+		if (fh->inum == dir_ref) {
 			g_array_remove_index(ino->parents, i);
 			inode_touch(ino);
 			found = true;
@@ -677,7 +677,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging)
 		syslog(LOG_INFO, "   CREATE -> %llu",
-			(unsigned long long) cxn->current_fh.ino);
+			(unsigned long long) cxn->current_fh.inum);
 
 err_out:
 	fattr_free(&attr);

@@ -94,7 +94,7 @@ char *id_lookup_name(enum id_type type, const char *name, size_t name_len)
 	s = strndup(name, name_len);
 	if (strchr(s, '@'))
 		return s;
-	
+
 	rstr = g_strdup_printf("%s@%s", s, srv.localdom);
 	free(s);
 

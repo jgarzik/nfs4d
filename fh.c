@@ -32,7 +32,7 @@ static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
 	struct nfs_buf nb;
 	struct nfs_fh fh;
 
-	fh.ino = GUINT64_TO_LE(fh_in.ino);
+	fh.inum = GUINT64_TO_LE(fh_in.inum);
 
 	nb.len = sizeof(fh);
 	nb.val = (char *) &fh;
@@ -40,7 +40,8 @@ static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
 	return wr_buf(writes, wr_io, &nb);
 }
 
-int nfs_fh_decode(const struct nfs_buf *fh_in, struct nfs_fh *fh_out)
+static int nfs_fh_decode(const struct nfs_buf *fh_in,
+			 struct nfs_fh *fh_out)
 {
 	uint64_t *p;
 	struct nfs_fh fh;
@@ -53,7 +54,7 @@ int nfs_fh_decode(const struct nfs_buf *fh_in, struct nfs_fh *fh_out)
 		return 0;
 	p = (void *) fh_in->val;
 
-	fh.ino = GUINT64_FROM_LE(*p);
+	fh.inum = GUINT64_FROM_LE(*p);
 	p++;
 
 	if (!inode_fhget(fh))
@@ -76,7 +77,7 @@ nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging) {
 		syslog(LOG_INFO, "op GETFH -> %llu",
-		       (unsigned long long) cxn->current_fh.ino);
+		       (unsigned long long) cxn->current_fh.inum);
 		printed = true;
 	}
 
@@ -112,7 +113,7 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTFH (%llu)",
-		       (unsigned long long) fh.ino);
+		       (unsigned long long) fh.inum);
 
 	WR32(status);
 	return status;
@@ -121,13 +122,11 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
 		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_inode *ino = __inode_get(INO_ROOT);
-
-	fh_set(&cxn->current_fh, ino->inum);
+	fh_set(&cxn->current_fh, INO_ROOT);
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTROOTFH -> %llu",
-		       (unsigned long long) cxn->current_fh.ino);
+		       (unsigned long long) cxn->current_fh.inum);
 
 	WR32(NFS4_OK);
 	return NFS4_OK;
@@ -136,13 +135,11 @@ nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
 nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
 		      struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_inode *ino = __inode_get(INO_ROOT);
-
-	fh_set(&cxn->current_fh, ino->inum);
+	fh_set(&cxn->current_fh, INO_ROOT);
 
 	if (debugging)
 		syslog(LOG_INFO, "op PUTPUBFH -> %llu",
-			(unsigned long long) cxn->current_fh.ino);
+			(unsigned long long) cxn->current_fh.inum);
 
 	WR32(NFS4_OK);
 	return NFS4_OK;
@@ -163,7 +160,7 @@ nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging) {
 		syslog(LOG_INFO, "op RESTOREFH -> %llu",
-			(unsigned long long) cxn->current_fh.ino);
+			(unsigned long long) cxn->current_fh.inum);
 		printed = true;
 	}
 
@@ -192,7 +189,7 @@ nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging) {
 		syslog(LOG_INFO, "op SAVEFH (SAVE:%llu)",
-			(unsigned long long) cxn->save_fh.ino);
+			(unsigned long long) cxn->save_fh.inum);
 		printed = true;
 	}
 

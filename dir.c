@@ -153,7 +153,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %llu",
 		       objname.len,
 		       objname.val,
-		       (unsigned long long) cxn->current_fh.ino);
+		       (unsigned long long) cxn->current_fh.inum);
 		printed = true;
 	}
 
