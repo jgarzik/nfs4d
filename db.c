@@ -43,13 +43,15 @@ static int dirent_cmp(DB *db, const DBT *dbt1, const DBT *dbt2)
 {
 	const struct fsdb_de_key *a = dbt1->data;
 	const struct fsdb_de_key *b = dbt2->data;
+	nfsino_t a_inum = GUINT64_FROM_LE(a->inum);
+	nfsino_t b_inum = GUINT64_FROM_LE(b->inum);
 	int a_len = dbt1->size - sizeof(*a);
 	int b_len = dbt2->size - sizeof(*b);
 	int rc;
 
-	if (a->inum < b->inum)
+	if (a_inum < b_inum)
 		return -1;
-	if (a->inum > b->inum)
+	if (a_inum > b_inum)
 		return 1;
 
 	rc = memcmp(a->name, b->name, MIN(a_len, b_len));
@@ -265,7 +267,7 @@ int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 
 	alloc_len = sizeof(*key) + str->len;
 	key = alloca(alloc_len);
-	key->inum = inum;
+	key->inum = GUINT64_TO_LE(inum);
 	memcpy(key->name, str->val, str->len);
 
 	pkey.data = key;
@@ -293,20 +295,21 @@ int fsdb_dirent_put(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 	int rc;
 	size_t alloc_len;
 	struct fsdb_de_key *key;
+	nfsino_t de_inum_le = GUINT64_TO_LE(de_inum);
 
 	memset(&pkey, 0, sizeof(pkey));
 	memset(&pval, 0, sizeof(pval));
 
 	alloc_len = sizeof(*key) + str->len;
 	key = alloca(alloc_len);
-	key->inum = dir_inum;
+	key->inum = GUINT64_TO_LE(dir_inum);
 	memcpy(key->name, str->val, str->len);
 
 	pkey.data = key;
 	pkey.size = alloc_len;
 
-	pval.data = &de_inum;
-	pval.size = sizeof(de_inum);
+	pval.data = &de_inum_le;
+	pval.size = sizeof(de_inum_le);
 
 	rc = dirent->put(dirent, txn, &pkey, &pval, flags);
 	if (rc) {
@@ -330,7 +333,7 @@ int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 
 	alloc_len = sizeof(*key) + str->len;
 	key = alloca(alloc_len);
-	key->inum = dir_inum;
+	key->inum = GUINT64_TO_LE(dir_inum);
 	memcpy(key->name, str->val, str->len);
 
 	pkey.data = key;
@@ -350,11 +353,12 @@ int fsdb_inode_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags)
 	DB *inodes = srv.fsdb.inodes;
 	DBT pkey;
 	int rc;
+	nfsino_t inum_le = GUINT64_TO_LE(inum);
 
 	memset(&pkey, 0, sizeof(pkey));
 
-	pkey.data = &inum;
-	pkey.size = sizeof(inum);
+	pkey.data = &inum_le;
+	pkey.size = sizeof(inum_le);
 
 	rc = inodes->del(inodes, txn, &pkey, flags);
 	if (rc) {
@@ -365,18 +369,19 @@ int fsdb_inode_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags)
 	return 0;
 }
 
-int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino, int flags,
+int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 			struct fsdb_inode **dbino_out)
 {
 	DB *inodes = srv.fsdb.inodes;
 	DBT pkey, pval;
 	int rc;
+	nfsino_t inum_le = GUINT64_TO_LE(inum);
 
 	memset(&pkey, 0, sizeof(pkey));
 	memset(&pval, 0, sizeof(pval));
 
-	pkey.data = &ino;
-	pkey.size = sizeof(ino);
+	pkey.data = &inum_le;
+	pkey.size = sizeof(inum_le);
 
 	rc = inodes->get(inodes, txn, &pkey, &pval, flags);
 	if (rc) {
@@ -395,12 +400,13 @@ int fsdb_inode_put(struct fsdb *fsdb, DB_TXN *txn,
 	DB *inodes = srv.fsdb.inodes;
 	DBT pkey, pval;
 	int rc;
+	nfsino_t inum_le = GUINT64_TO_LE(ino->inum);
 
 	memset(&pkey, 0, sizeof(pkey));
 	memset(&pval, 0, sizeof(pval));
 
-	pkey.data = &ino->inum;
-	pkey.size = sizeof(ino->inum);
+	pkey.data = &inum_le;
+	pkey.size = sizeof(inum_le);
 
 	pval.data = ino;
 	pval.size = ino_size;
