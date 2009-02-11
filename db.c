@@ -17,6 +17,7 @@
  *
  */
 
+#define _GNU_SOURCE
 #include "nfs4d-config.h"
 #include <sys/stat.h>
 #include <stdlib.h>
@@ -24,7 +25,7 @@
 #include <string.h>
 #include <syslog.h>
 #include <glib.h>
-#include "fsdb.h"
+#include "server.h"
 
 enum {
 	FSDB_PGSZ_INODES		= 1024,	/* inodes db4 page size */
@@ -212,4 +213,80 @@ void fsdb_close(struct fsdb *fsdb)
 	fsdb->usergroup = NULL;
 	fsdb->ug_idx = NULL;
 }
+
+int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino, int flags,
+			struct fsdb_inode **dbino_out)
+{
+	DB *inodes = srv.fsdb.inodes;
+	DBT pkey, pval;
+	int rc;
+
+	pkey.data = &ino;
+	pkey.size = sizeof(ino);
+
+	rc = inodes->get(inodes, txn, &pkey, &pval, flags);
+	if (rc) {
+		 inodes->err(inodes, rc, "inodes->get");
+		 return rc;
+	}
+
+	*dbino_out = pval.data;
+
+	return 0;
+}
+
+int fsdb_inode_decode(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)
+{
+	struct nfs_inode *ino = *ino_io;
+	const void *p;
+	uint16_t tmp;
+
+	if (!ino) {
+		 ino = calloc(1, sizeof(struct nfs_inode));
+		 if (!ino)
+			return -ENOMEM;
+	}
+
+	ino->inum = GUINT64_FROM_LE(dbino->inum);
+	ino->type = GUINT32_FROM_LE(dbino->ftype);
+	ino->version = GUINT64_FROM_LE(dbino->version);
+	memcpy(ino->create_verf, dbino->create_verf, sizeof(ino->create_verf));
+	ino->size = GUINT64_FROM_LE(dbino->size);
+	ino->ctime = GUINT64_FROM_LE(dbino->ctime);
+	ino->atime = GUINT64_FROM_LE(dbino->atime);
+	ino->mtime = GUINT64_FROM_LE(dbino->mtime);
+	ino->mode = GUINT32_FROM_LE(dbino->mode);
+	ino->devdata[0] = GUINT32_FROM_LE(dbino->devdata[0]);
+	ino->devdata[1] = GUINT32_FROM_LE(dbino->devdata[1]);
+
+	p = dbino;
+	p += sizeof(*dbino);
+
+	tmp = GUINT16_FROM_LE(dbino->user_len);
+	if (tmp) {
+		 ino->user = strndup(p, tmp);
+		 p += tmp;
+	}
+
+	tmp = GUINT16_FROM_LE(dbino->group_len);
+	if (tmp) {
+		 ino->group = strndup(p, tmp);
+		 p += tmp;
+	}
+
+	tmp = GUINT16_FROM_LE(dbino->type_len);
+	if (tmp) {
+		 ino->mimetype = strndup(p, tmp);
+		 p += tmp;
+	}
+
+	tmp = GUINT16_FROM_LE(dbino->link_len);
+	if (tmp) {
+		 ino->linktext = strndup(p, tmp);
+		 p += tmp;
+	}
+
+	return 0;
+}
+
 

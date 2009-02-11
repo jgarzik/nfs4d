@@ -392,6 +392,27 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	switch (op) {
+	/* db4 conversion complete */
+	case OP_GETFH:
+		srv.stats.op_getfh++;
+		return nfs_op_getfh(cxn, cur, writes, wr);
+	case OP_PUTFH:
+		srv.stats.op_putfh++;
+		return nfs_op_putfh(cxn, cur, writes, wr);
+	case OP_PUTPUBFH:
+		srv.stats.op_putpubfh++;
+		return nfs_op_putpubfh(cxn, cur, writes, wr);
+	case OP_PUTROOTFH:
+		srv.stats.op_putrootfh++;
+		return nfs_op_putrootfh(cxn, cur, writes, wr);
+	case OP_RESTOREFH:
+		srv.stats.op_restorefh++;
+		return nfs_op_restorefh(cxn, cur, writes, wr);
+	case OP_SAVEFH:
+		srv.stats.op_savefh++;
+		return nfs_op_savefh(cxn, cur, writes, wr);
+
+	/* needs work for db4 */
 	case OP_ACCESS:
 		srv.stats.op_access++;
 		return nfs_op_access(cxn, cur, writes, wr);
@@ -407,9 +428,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_GETATTR:
 		srv.stats.op_getattr++;
 		return nfs_op_getattr(cxn, cur, writes, wr);
-	case OP_GETFH:
-		srv.stats.op_getfh++;
-		return nfs_op_getfh(cxn, cur, writes, wr);
 	case OP_LINK:
 		srv.stats.op_link++;
 		return nfs_op_link(cxn, cur, writes, wr);
@@ -440,15 +458,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_OPEN_DOWNGRADE:
 		srv.stats.op_open_downgrade++;
 		return nfs_op_open_downgrade(cxn, cur, writes, wr);
-	case OP_PUTFH:
-		srv.stats.op_putfh++;
-		return nfs_op_putfh(cxn, cur, writes, wr);
-	case OP_PUTPUBFH:
-		srv.stats.op_putpubfh++;
-		return nfs_op_putpubfh(cxn, cur, writes, wr);
-	case OP_PUTROOTFH:
-		srv.stats.op_putrootfh++;
-		return nfs_op_putrootfh(cxn, cur, writes, wr);
 	case OP_READ:
 		srv.stats.op_read++;
 		return nfs_op_read(cxn, cur, writes, wr);
@@ -470,12 +479,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_RENEW:
 		srv.stats.op_renew++;
 		return nfs_op_renew(cxn, cur, writes, wr);
-	case OP_RESTOREFH:
-		srv.stats.op_restorefh++;
-		return nfs_op_restorefh(cxn, cur, writes, wr);
-	case OP_SAVEFH:
-		srv.stats.op_savefh++;
-		return nfs_op_savefh(cxn, cur, writes, wr);
 	case OP_SECINFO:
 		srv.stats.op_secinfo++;
 		return nfs_op_secinfo(cxn, cur, writes, wr);

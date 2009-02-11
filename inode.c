@@ -30,6 +30,16 @@
 
 static nfsino_t next_ino;		/* start next free-inode scan here */
 
+bool inode_check(DB_TXN *txn, nfsino_t inum)
+{
+	struct fsdb_inode *dbino = NULL;
+
+	if (fsdb_inode_get(&srv.fsdb, txn, inum, 0, &dbino))
+		return false;
+	
+	return true;
+}
+
 struct nfs_inode *__inode_get(nfsino_t inum)
 {
 	struct nfs_inode *ino;

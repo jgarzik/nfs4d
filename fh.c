@@ -40,7 +40,7 @@ static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
 	return wr_buf(writes, wr_io, &nb);
 }
 
-static int nfs_fh_decode(const struct nfs_buf *fh_in,
+static int nfs_fh_decode(DB_TXN *txn, const struct nfs_buf *fh_in,
 			 struct nfs_fh *fh_out)
 {
 	uint64_t *p;
@@ -57,7 +57,7 @@ static int nfs_fh_decode(const struct nfs_buf *fh_in,
 	fh.inum = GUINT64_FROM_LE(*p);
 	p++;
 
-	if (!inode_fhget(fh))
+	if (!inode_fhcheck(txn, fh))
 		return -1;
 
 	*fh_out = fh;
@@ -70,7 +70,7 @@ nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
 
-	if (!inode_fhget(cxn->current_fh)) {
+	if (!inode_fhcheck(NULL, cxn->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}
@@ -103,7 +103,7 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	CURBUF(&nb);			/* opaque filehandle */
 
-	rc = nfs_fh_decode(&nb, &fh);
+	rc = nfs_fh_decode(NULL, &nb, &fh);
 	if (rc == 0)
 		status = NFS4ERR_BADHANDLE;
 	else if (rc < 0)
@@ -151,7 +151,7 @@ nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
 
-	if (!inode_fhget(cxn->save_fh)) {
+	if (!inode_fhcheck(NULL, cxn->save_fh)) {
 		status = NFS4ERR_RESTOREFH;
 		goto out;
 	}
@@ -180,7 +180,7 @@ nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	bool printed = false;
 
-	if (!inode_fhget(cxn->current_fh)) {
+	if (!inode_fhcheck(NULL, cxn->current_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
 	}

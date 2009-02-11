@@ -32,8 +32,6 @@ struct nfs_timer;
 struct nfs_owner;
 struct nfs_openfile;
 
-typedef uint64_t nfsino_t;
-
 #define SRV_MAGIC		"J721"
 
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
@@ -692,6 +690,7 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
 extern struct nfs_inode *__inode_get(nfsino_t inum);
 extern struct nfs_inode *inode_get(nfsino_t inum);
+extern bool inode_check(DB_TXN *txn, nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
@@ -827,6 +826,11 @@ static inline bool nfs_seqid_inc_ok(nfsstat4 status)
 static inline struct nfs_inode *inode_fhget(struct nfs_fh fh)
 {
 	return inode_get(fh.inum);
+}
+
+static inline bool inode_fhcheck(DB_TXN *txn, struct nfs_fh fh)
+{
+	return inode_check(txn, fh.inum);
 }
 
 static inline bool valid_fh(struct nfs_fh fh)
