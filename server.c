@@ -420,6 +420,12 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_READLINK:
 		srv.stats.op_readlink++;
 		return nfs_op_readlink(cxn, cur, writes, wr);
+	case OP_REMOVE:
+		srv.stats.op_remove++;
+		return nfs_op_remove(cxn, cur, writes, wr);
+	case OP_RENAME:
+		srv.stats.op_rename++;
+		return nfs_op_rename(cxn, cur, writes, wr);
 	case OP_RESTOREFH:
 		srv.stats.op_restorefh++;
 		return nfs_op_restorefh(cxn, cur, writes, wr);
@@ -476,12 +482,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_RELEASE_LOCKOWNER:
 		srv.stats.op_release_lockowner++;
 		return nfs_op_release_lockowner(cxn, cur, writes, wr);
-	case OP_REMOVE:
-		srv.stats.op_remove++;
-		return nfs_op_remove(cxn, cur, writes, wr);
-	case OP_RENAME:
-		srv.stats.op_rename++;
-		return nfs_op_rename(cxn, cur, writes, wr);
 	case OP_RENEW:
 		srv.stats.op_renew++;
 		return nfs_op_renew(cxn, cur, writes, wr);

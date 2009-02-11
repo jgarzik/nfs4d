@@ -230,7 +230,10 @@ enum nfsstat4 dir_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 	rc = fsdb_dirent_put(&srv.fsdb, txn, dir_ino->inum, name_in,
 			     DB_NOOVERWRITE, ent_ino->inum);
 	if (rc) {
-		status = NFS4ERR_IO;
+		if (rc == DB_KEYEXIST)
+			status = NFS4ERR_EXIST;
+		else
+			status = NFS4ERR_IO;
 		goto out;
 	}
 
@@ -316,9 +319,49 @@ out:
 	return status;
 }
 
-static bool dir_is_empty(struct nfs_inode *ino)
+static bool dir_is_empty(DB_TXN *txn, struct nfs_inode *ino)
 {
-	return false;		/* FIXME */
+	int rc;
+	DBC *cur = NULL;
+	DB *dirent = srv.fsdb.dirent;
+	DBT pkey, pval;
+	struct fsdb_de_key key;
+	nfsino_t rnum = 0;
+	bool have_rnum = false;
+
+	rc = dirent->cursor(dirent, txn, &cur, 0);
+	if (rc) {
+		dirent->err(dirent, rc, "dirent->cursor");
+		return false;
+	}
+
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
+
+	key.inum = GUINT64_TO_LE(ino->inum);
+
+	pkey.data = &key;
+	pkey.size = sizeof(key);
+
+	rc = cur->get(cur, &pkey, &pval, DB_SET_RANGE);
+	if (rc == 0) {
+		struct fsdb_de_key *rkey = pkey.data;
+
+		rnum = GUINT64_FROM_LE(rkey->inum);
+		have_rnum = true;
+	} else if (rc != DB_NOTFOUND)
+		dirent->err(dirent, rc, "dir_is_empty cur->get");
+
+	rc = cur->close(cur);
+	if (rc) {
+		dirent->err(dirent, rc, "dirent->cursor close");
+		return false;
+	}
+
+	if (have_rnum && (rnum != ino->inum))
+		return true;
+	
+	return false;
 }
 
 nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -378,20 +421,15 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
-	if (target_ino->inum == INO_ROOT) {	/* should never happen */
+	/* prevent root dir deletion */
+	if (target_ino->inum == INO_ROOT) {
 		status = NFS4ERR_INVAL;
 		goto out_abort;
 	}
 
 	/* prevent removal of non-empty dirs */
-	if ((target_ino->type == NF4DIR) && !dir_is_empty(target_ino)) {
+	if ((target_ino->type == NF4DIR) && !dir_is_empty(txn, target_ino)) {
 		status = NFS4ERR_NOTEMPTY;
-		goto out_abort;
-	}
-
-	/* prevent root dir deletion */
-	if (target_ino->inum == INO_ROOT) {
-		status = NFS4ERR_INVAL;
 		goto out_abort;
 	}
 
@@ -521,6 +559,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status == NFS4_OK) {
 		bool ok_to_remove = false;
 
+		/* read to-be-deleted inode */
 		new_file = inode_getdec(txn, new_dirent, DB_RMW);
 		if (!new_file) {
 			status = NFS4ERR_NOENT;
@@ -558,6 +597,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	new_dirent = old_dirent;
 
+	/* delete entry from source directory; add to target directory */
 	rc = fsdb_dirent_del(&srv.fsdb, txn, src_dir->inum, &oldname, 0);
 	if (rc == 0)
 		rc = fsdb_dirent_put(&srv.fsdb, txn, target_dir->inum, 
@@ -571,6 +611,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	src.before = src_dir->version;
 	target.before = target_dir->version;
 
+	/* update last-modified stamps of directory inodes */
 	rc = inode_touch(txn, src_dir);
 	if (rc == 0 && src_dir != target_dir)
 		rc = inode_touch(txn, target_dir);
@@ -579,6 +620,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
+	/* close the transaction */
 	rc = txn->commit(txn, 0);
 	if (rc) {
 		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
