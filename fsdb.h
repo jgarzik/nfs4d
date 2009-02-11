@@ -55,6 +55,7 @@ struct fsdb_inode {
 
 	uint32_t		ftype;
 	uint32_t		mode;
+	uint32_t		n_link;
 	uint32_t		devdata[2];
 
 	verifier4		create_verf;
@@ -87,13 +88,27 @@ struct fsdb {
 extern int fsdb_open(struct fsdb *fsdb, unsigned int env_flags,
 	unsigned int flags, const char *errpfx, bool do_syslog);
 extern void fsdb_close(struct fsdb *fsdb);
+
 extern int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino,
 			  int flags, struct fsdb_inode **dbino_out);
 extern int fsdb_inode_copydec(struct nfs_inode **ino_io,
 				const struct fsdb_inode *dbino);
 extern int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino,
 			int flags, struct nfs_inode **ino_o);
+extern int fsdb_inode_putenc(struct fsdb *fsdb, DB_TXN *txn,
+		      const struct nfs_inode *ino, int flags);
+extern int fsdb_inode_copyenc(struct fsdb_inode **dbino_o, size_t *dbino_len,
+		       const struct nfs_inode *ino);
+extern int fsdb_inode_put(struct fsdb *fsdb, DB_TXN *txn,
+		   struct fsdb_inode *ino, size_t ino_size, int flags);
+extern int fsdb_inode_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
+			int flags);
+
 extern int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 		    const struct nfs_buf *str, int flags, nfsino_t *inum_out);
+extern int fsdb_dirent_put(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
+		    const struct nfs_buf *str, int flags, nfsino_t de_inum);
+extern int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
+		    const struct nfs_buf *str, int flags);
 
 #endif /* __FSDB_H__ */

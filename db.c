@@ -260,6 +260,9 @@ int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 	struct fsdb_de_key *key;
 	nfsino_t *v;
 
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
+
 	alloc_len = sizeof(*key) + str->len;
 	key = alloca(alloc_len);
 	key->inum = inum;
@@ -282,12 +285,95 @@ int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 	return 0;
 }
 
+int fsdb_dirent_put(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
+		    const struct nfs_buf *str, int flags, nfsino_t de_inum)
+{
+	DB *dirent = srv.fsdb.dirent;
+	DBT pkey, pval;
+	int rc;
+	size_t alloc_len;
+	struct fsdb_de_key *key;
+
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
+
+	alloc_len = sizeof(*key) + str->len;
+	key = alloca(alloc_len);
+	key->inum = dir_inum;
+	memcpy(key->name, str->val, str->len);
+
+	pkey.data = key;
+	pkey.size = alloc_len;
+
+	pval.data = &de_inum;
+	pval.size = sizeof(de_inum);
+
+	rc = dirent->put(dirent, txn, &pkey, &pval, flags);
+	if (rc) {
+	 	dirent->err(dirent, rc, "dirent->put");
+		return rc;
+	}
+
+	return 0;
+}
+
+int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
+		    const struct nfs_buf *str, int flags)
+{
+	DB *dirent = srv.fsdb.dirent;
+	DBT pkey;
+	int rc;
+	size_t alloc_len;
+	struct fsdb_de_key *key;
+
+	memset(&pkey, 0, sizeof(pkey));
+
+	alloc_len = sizeof(*key) + str->len;
+	key = alloca(alloc_len);
+	key->inum = dir_inum;
+	memcpy(key->name, str->val, str->len);
+
+	pkey.data = key;
+	pkey.size = alloc_len;
+
+	rc = dirent->del(dirent, txn, &pkey, flags);
+	if (rc) {
+ 		dirent->err(dirent, rc, "dirent->del");
+		return rc;
+	}
+
+	return 0;
+}
+
+int fsdb_inode_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags)
+{
+	DB *inodes = srv.fsdb.inodes;
+	DBT pkey;
+	int rc;
+
+	memset(&pkey, 0, sizeof(pkey));
+
+	pkey.data = &inum;
+	pkey.size = sizeof(inum);
+
+	rc = inodes->del(inodes, txn, &pkey, flags);
+	if (rc) {
+ 		inodes->err(inodes, rc, "inodes->del");
+		return rc;
+	}
+
+	return 0;
+}
+
 int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino, int flags,
 			struct fsdb_inode **dbino_out)
 {
 	DB *inodes = srv.fsdb.inodes;
 	DBT pkey, pval;
 	int rc;
+
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
 
 	pkey.data = &ino;
 	pkey.size = sizeof(ino);
@@ -303,6 +389,117 @@ int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino, int flags,
 	return 0;
 }
 
+int fsdb_inode_put(struct fsdb *fsdb, DB_TXN *txn,
+		   struct fsdb_inode *ino, size_t ino_size, int flags)
+{
+	DB *inodes = srv.fsdb.inodes;
+	DBT pkey, pval;
+	int rc;
+
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
+
+	pkey.data = &ino->inum;
+	pkey.size = sizeof(ino->inum);
+
+	pval.data = ino;
+	pval.size = ino_size;
+
+	rc = inodes->put(inodes, txn, &pkey, &pval, flags);
+	if (rc) {
+	 	inodes->err(inodes, rc, "inodes->put");
+		return rc;
+	}
+
+	return 0;
+}
+
+int fsdb_inode_copyenc(struct fsdb_inode **dbino_o, size_t *dbino_len,
+		       const struct nfs_inode *ino)
+{
+	size_t alloc_len = sizeof(struct fsdb_inode);
+	struct fsdb_inode *dbino;
+	void *p;
+	uint16_t user_len = 0, group_len = 0, type_len = 0, link_len = 0;
+
+	if (ino->user)
+		user_len = strlen(ino->user);
+	if (ino->group)
+		group_len = strlen(ino->group);
+	if (ino->mimetype)
+		type_len = strlen(ino->mimetype);
+	if (ino->linktext)
+		link_len = strlen(ino->linktext);
+
+	alloc_len += user_len + group_len + type_len + link_len;
+
+	dbino = calloc(1, alloc_len);
+	if (!dbino) {
+		*dbino_o = NULL;
+		return -ENOMEM;
+	}
+
+	dbino->inum = GUINT64_TO_LE(ino->inum);
+	dbino->parent = GUINT64_TO_LE(ino->parent);
+	dbino->version = GUINT64_TO_LE(ino->version);
+	dbino->size = GUINT64_TO_LE(ino->size);
+	dbino->ctime = GUINT64_TO_LE(ino->ctime);
+	dbino->atime = GUINT64_TO_LE(ino->atime);
+	dbino->mtime = GUINT64_TO_LE(ino->mtime);
+	dbino->ftype = GUINT32_TO_LE(ino->type);
+	dbino->mode = GUINT32_TO_LE(ino->mode);
+	dbino->n_link = GUINT32_TO_LE(ino->n_link);
+	dbino->devdata[0] = GUINT32_TO_LE(ino->devdata[0]);
+	dbino->devdata[1] = GUINT32_TO_LE(ino->devdata[1]);
+	memcpy(dbino->create_verf, ino->create_verf, sizeof(dbino->create_verf));
+	dbino->user_len = GUINT16_TO_LE(user_len);
+	dbino->group_len = GUINT16_TO_LE(group_len);
+	dbino->type_len = GUINT16_TO_LE(type_len);
+	dbino->link_len = GUINT16_TO_LE(link_len);
+
+	p = dbino;
+	p += sizeof(*dbino);
+
+	if (user_len) {
+		memcpy(p, ino->user, user_len);
+		p += user_len;
+	}
+	if (group_len) {
+		memcpy(p, ino->group, group_len);
+		p += group_len;
+	}
+	if (type_len) {
+		memcpy(p, ino->mimetype, type_len);
+		p += type_len;
+	}
+	if (link_len) {
+		memcpy(p, ino->linktext, link_len);
+		p += link_len;
+	}
+
+	*dbino_o = dbino;
+	*dbino_len = alloc_len;
+	return 0;
+}
+
+int fsdb_inode_putenc(struct fsdb *fsdb, DB_TXN *txn,
+		      const struct nfs_inode *ino, int flags)
+{
+	size_t alloc_len;
+	struct fsdb_inode *dbino = NULL;
+	int rc;
+
+	rc = fsdb_inode_copyenc(&dbino, &alloc_len, ino);
+	if (rc)
+		return rc;
+	
+	rc = fsdb_inode_put(fsdb, txn, dbino, alloc_len, flags);
+
+	free(dbino);
+
+	return rc;
+}
+
 int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)
 {
 	struct nfs_inode *ino = *ino_io;
@@ -316,6 +513,7 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 	}
 
 	ino->inum = GUINT64_FROM_LE(dbino->inum);
+	ino->parent = GUINT64_FROM_LE(dbino->parent);
 	ino->type = GUINT32_FROM_LE(dbino->ftype);
 	ino->version = GUINT64_FROM_LE(dbino->version);
 	memcpy(ino->create_verf, dbino->create_verf, sizeof(ino->create_verf));
@@ -324,6 +522,7 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 	ino->atime = GUINT64_FROM_LE(dbino->atime);
 	ino->mtime = GUINT64_FROM_LE(dbino->mtime);
 	ino->mode = GUINT32_FROM_LE(dbino->mode);
+	ino->n_link = GUINT32_FROM_LE(dbino->n_link);
 	ino->devdata[0] = GUINT32_FROM_LE(dbino->devdata[0]);
 	ino->devdata[1] = GUINT32_FROM_LE(dbino->devdata[1]);
 

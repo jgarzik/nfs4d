@@ -476,23 +476,17 @@ struct nfs_inode {
 	uint64_t		atime;		/* last-accessed time */
 	uint64_t		mtime;		/* last-modified time */
 	uint32_t		mode;
+	uint32_t		n_link;
 
 	char			*user;
 	char			*group;
 	char			*mimetype;
 
-	GTree			*dir;		/* state for a directory */
 	char			*linktext;	/* state for a symlink */
 	uint32_t		devdata[2];	/* "" blk/chrdev */
 	GList			*buf_list;	/* "" regular file */
 
 	struct list_head	openfile_list;
-};
-
-struct nfs_dirent {
-	nfsino_t		inum;
-
-	struct nfs_buf		name;
 };
 
 struct nfs_server_stats {
@@ -642,7 +636,8 @@ extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 extern enum nfsstat4 dir_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		      const struct nfs_buf *name_in,
 		      struct nfs_inode *ent_ino);
-nfsstat4 dir_curfh(DB_TXN *txn, const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
+nfsstat4 dir_curfh(DB_TXN *txn, const struct nfs_cxn *cxn,
+	struct nfs_inode **ino_out, int flags);
 extern nfsstat4 dir_lookup(DB_TXN *txn, const struct nfs_inode *dir_ino,
 		    const struct nfs_buf *str, int flags,
 		    nfsino_t *inum_out);
@@ -691,11 +686,11 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      bool nverify);
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
 extern void inode_free(struct nfs_inode *ino);
-extern struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum);
+extern struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum, int flags);
 extern bool inode_check(DB_TXN *txn, nfsino_t inum);
-extern void inode_touch(struct nfs_inode *ino);
+extern int inode_touch(DB_TXN *txn, struct nfs_inode *ino);
 extern bool inode_table_init(void);
-extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
+extern int inode_unlink(DB_TXN *txn, struct nfs_inode *ino);
 extern nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		   struct nfs_inode *new_ino, const struct nfs_fattr_set *attr,
 		   const struct nfs_buf *name, uint64_t *attrset,
@@ -826,9 +821,10 @@ static inline bool nfs_seqid_inc_ok(nfsstat4 status)
 	/* not reached */
 }
 
-static inline struct nfs_inode *inode_fhdec(DB_TXN *txn, struct nfs_fh fh)
+static inline struct nfs_inode *inode_fhdec(DB_TXN *txn, struct nfs_fh fh,
+					    int flags)
 {
-	return inode_getdec(txn, fh.inum);
+	return inode_getdec(txn, fh.inum, flags);
 }
 
 static inline bool inode_fhcheck(DB_TXN *txn, struct nfs_fh fh)
@@ -842,6 +838,11 @@ static inline bool valid_fh(struct nfs_fh fh)
 		return false;
 
 	return true;
+}
+
+static inline bool fh_equal(struct nfs_fh a, struct nfs_fh b)
+{
+	return (a.inum == b.inum);
 }
 
 static inline void fh_set(struct nfs_fh *fh, nfsino_t inum)

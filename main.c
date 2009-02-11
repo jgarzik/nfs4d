@@ -1336,19 +1336,6 @@ static void stats_signal(int signal)
 	g_idle_add(stats_dump, NULL);
 }
 
-static gboolean dump_dir_iter(gpointer _k, gpointer _v, gpointer _d)
-{
-	struct nfs_dirent *de = _v;
-	FILE *f = _d;
-
-	fprintf(f, "\tDIRENT (%llu) == %.*s\n",
-		(unsigned long long) de->inum,
-		de->name.len,
-		de->name.val);
-
-	return FALSE;
-}
-
 static void dump_inode(FILE *f, const struct nfs_inode *ino)
 {
 	if (!ino)
@@ -1381,8 +1368,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 
 	switch (ino->type) {
 	case NF4DIR:
-		fprintf(f, "dir-length: %u\n", g_tree_nnodes(ino->dir));
-		g_tree_foreach(ino->dir, dump_dir_iter, f);
+		fprintf(f, "directory: TODO\n");	/* FIXME */
 		break;
 	case NF4LNK:
 		fprintf(f, "linktext: %s\n", ino->linktext);

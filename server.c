@@ -239,7 +239,7 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		syslog(LOG_INFO, "op READLINK");
 
-	ino = inode_fhdec(NULL, cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -279,7 +279,7 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = dir_curfh(NULL, cxn, &ino);
+	status = dir_curfh(NULL, cxn, &ino, 0);
 	if (status != NFS4_OK)
 		goto out;
 

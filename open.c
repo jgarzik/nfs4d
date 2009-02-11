@@ -178,7 +178,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* get directory handle */
-	status = dir_curfh(NULL, cxn, &dir_ino);
+	status = dir_curfh(NULL, cxn, &dir_ino, 0);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -189,7 +189,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 
 	case NFS4_OK:
-		ino = inode_getdec(NULL, de_inum);
+		ino = inode_getdec(NULL, de_inum, 0);
 		if (!ino) {
 			status = NFS4ERR_NOENT;
 			goto out;
@@ -436,7 +436,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
 		       seqid, sid.seqid, sid.id);
 
-	ino = inode_fhdec(NULL, cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -508,7 +508,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		       seqid, sid.seqid, sid.id,
 		       share_access, share_deny);
 
-	ino = inode_fhdec(NULL, cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -588,7 +588,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
 		       seqid, sid.seqid, sid.id);
 
-	ino = inode_fhdec(NULL, cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
