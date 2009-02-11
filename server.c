@@ -233,8 +233,8 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
-	char *linktext;
+	struct nfs_inode *ino = NULL;
+	char *linktext = NULL;
 
 	if (debugging)
 		syslog(LOG_INFO, "op READLINK");
@@ -258,6 +258,7 @@ out:
 	WR32(status);
 	if (status == NFS4_OK)
 		WRSTR(linktext);
+	inode_free(ino);
 	return status;
 }
 
@@ -281,6 +282,8 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = dir_curfh(NULL, cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
+
+	inode_free(ino);
 
 out:
 	WR32(status);
@@ -399,6 +402,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_GETFH:
 		srv.stats.op_getfh++;
 		return nfs_op_getfh(cxn, cur, writes, wr);
+	case OP_LOOKUPP:
+		srv.stats.op_lookupp++;
+		return nfs_op_lookupp(cxn, cur, writes, wr);
 	case OP_PUTFH:
 		srv.stats.op_putfh++;
 		return nfs_op_putfh(cxn, cur, writes, wr);
@@ -408,6 +414,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_PUTROOTFH:
 		srv.stats.op_putrootfh++;
 		return nfs_op_putrootfh(cxn, cur, writes, wr);
+	case OP_READLINK:
+		srv.stats.op_readlink++;
+		return nfs_op_readlink(cxn, cur, writes, wr);
 	case OP_RESTOREFH:
 		srv.stats.op_restorefh++;
 		return nfs_op_restorefh(cxn, cur, writes, wr);
@@ -446,9 +455,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_LOOKUP:
 		srv.stats.op_lookup++;
 		return nfs_op_lookup(cxn, cur, writes, wr);
-	case OP_LOOKUPP:
-		srv.stats.op_lookupp++;
-		return nfs_op_lookupp(cxn, cur, writes, wr);
 	case OP_NVERIFY:
 		srv.stats.op_nverify++;
 		return nfs_op_verify(cxn, cur, writes, wr, true);
@@ -467,9 +473,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_READDIR:
 		srv.stats.op_readdir++;
 		return nfs_op_readdir(cxn, cur, writes, wr);
-	case OP_READLINK:
-		srv.stats.op_readlink++;
-		return nfs_op_readlink(cxn, cur, writes, wr);
 	case OP_RELEASE_LOCKOWNER:
 		srv.stats.op_release_lockowner++;
 		return nfs_op_release_lockowner(cxn, cur, writes, wr);

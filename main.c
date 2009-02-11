@@ -678,7 +678,7 @@ uint64_t srv_space_used(void)
 
 	for (i = 0; i < srv.inode_table_len; i++) {
 		ino = srv.inode_table[i];
-		if (!ino || !ino->parents)
+		if (!ino || (ino->inum == INO_ROOT))
 			continue;
 
 		space_used_iter(ino, &total);
@@ -1351,17 +1351,17 @@ static gboolean dump_dir_iter(gpointer _k, gpointer _v, gpointer _d)
 
 static void dump_inode(FILE *f, const struct nfs_inode *ino)
 {
-	unsigned int i;
-
 	if (!ino)
 		return;
 
 	fprintf(f,
 		"INODE: %llu\n"
+		"parent: %llu\n"
 		"type: %s\n"
 		"version: %Lu\n"
 		,
 		(unsigned long long) ino->inum,
+		(unsigned long long) ino->parent,
 		name_nfs_ftype4[ino->type],
 		(unsigned long long) ino->version);
 
@@ -1378,20 +1378,6 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 		fprintf(f, "group: %s\n", ino->group);
 	if (ino->mimetype)
 		fprintf(f, "mime-type: %s\n", ino->mimetype);
-
-	if (ino->parents) {
-		fprintf(f, "parent%s:",
-			ino->parents->len > 1 ? "s" : "");
-
-		for (i = 0; i < ino->parents->len; i++) {
-			struct nfs_fh *fh;
-
-			fh = &g_array_index(ino->parents, struct nfs_fh, i);
-			fprintf(f, " %llu", (unsigned long long) fh->inum);
-		}
-
-		fprintf(f, "\n");
-	}
 
 	switch (ino->type) {
 	case NF4DIR:

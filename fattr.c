@@ -820,10 +820,7 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->filehandle = ino->inum;
 	attr->fileid = ino->inum;
 	attr->mode = ino->mode;
-	if (ino->parents && ino->parents->len)
-		attr->numlinks = ino->parents->len;
-	else
-		attr->numlinks = 1;
+	attr->numlinks = 1;		/* FIXME */
 
 	if (ino->type == NF4BLK || ino->type == NF4CHR)
 		memcpy(&attr->rawdev, &ino->devdata, sizeof(specdata4));

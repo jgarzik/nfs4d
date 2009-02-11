@@ -39,12 +39,13 @@ struct fsdb_ugidx_key {
 
 struct fsdb_inode {
 	nfsino_t		inum;
+	nfsino_t		parent;		/* only for directories */
 	uint64_t		version;
 	uint64_t		size;
 
-	uint64_t		ctime;	/* creation time */
-	uint64_t		atime;	/* last-accessed time */
-	uint64_t		mtime;	/* last-modified time */
+	uint64_t		ctime;		/* creation time */
+	uint64_t		atime;		/* last-accessed time */
+	uint64_t		mtime;		/* last-modified time */
 
 	uint32_t		ftype;
 	uint32_t		mode;

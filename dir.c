@@ -174,7 +174,7 @@ nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 
 	if (debugging)
 		syslog(LOG_INFO, "op LOOKUPP");
@@ -183,15 +183,16 @@ nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	if (ino->parents->len == 0) {	/* root inode, no parents */
+	if (ino->inum == INO_ROOT) {	/* root inode, no parents */
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
 
-	cxn->current_fh = g_array_index(ino->parents, struct nfs_fh, 0);
+	fh_set(&cxn->current_fh, ino->parent);
 
 out:
 	WR32(status);
+	inode_free(ino);
 	return status;
 }
 
@@ -296,9 +297,12 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	/* make sure source is -not- a directory */
-	if (src_ino->type == NF4DIR) {
-		status = NFS4ERR_ISDIR;
+	/* make sure source is a regular file */
+	if (src_ino->type == NF4REG) {
+		if (src_ino->type == NF4DIR)
+			status = NFS4ERR_ISDIR;
+		else
+			status = NFS4ERR_INVAL;
 		goto out;
 	}
 
@@ -309,7 +313,6 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 
 	fh_set(&fh, dir_ino->inum);
-	g_array_append_val(src_ino->parents, fh);
 
 	after = dir_ino->version;
 

@@ -463,9 +463,9 @@ struct nfs_openfile {
 
 struct nfs_inode {
 	nfsino_t		inum;
+	nfsino_t		parent;		/* only for directories */
 
 	enum nfs_ftype4		type;		/* inode type: link, dir, ...*/
-	GArray			*parents;	/* list of parent dirs */
 	uint64_t		version;
 
 	verifier4		create_verf;
@@ -688,6 +688,7 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      struct list_head *writes, struct rpc_write **wr,
 			      bool nverify);
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
+extern void inode_free(struct nfs_inode *ino);
 extern struct nfs_inode *__inode_get(nfsino_t inum);
 extern struct nfs_inode *inode_get(nfsino_t inum);
 extern struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum);
