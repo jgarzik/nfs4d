@@ -81,7 +81,9 @@ extern int fsdb_open(struct fsdb *fsdb, unsigned int env_flags,
 extern void fsdb_close(struct fsdb *fsdb);
 extern int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino,
 			  int flags, struct fsdb_inode **dbino_out);
-extern int fsdb_inode_decode(struct nfs_inode **ino_io,
+extern int fsdb_inode_copydec(struct nfs_inode **ino_io,
 				const struct fsdb_inode *dbino);
+extern int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino,
+			int flags, struct nfs_inode **ino_o);
 
 #endif /* __FSDB_H__ */

@@ -40,6 +40,16 @@ bool inode_check(DB_TXN *txn, nfsino_t inum)
 	return true;
 }
 
+struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum)
+{
+	struct nfs_inode *ino = NULL;
+
+	if (fsdb_inode_getdec(&srv.fsdb, txn, inum, 0, &ino))
+		return NULL;
+	
+	return ino;
+}
+
 struct nfs_inode *__inode_get(nfsino_t inum)
 {
 	struct nfs_inode *ino;
@@ -125,14 +135,7 @@ static void inode_free(struct nfs_inode *ino)
 			openfile_trash(of, false);
 	}
 
-	memset(ino, 0, sizeof(*ino));
-
-	/* restore the few fields whose values are important across uses */
-	ino->inum = inum;
-	INIT_LIST_HEAD(&ino->openfile_list);
-
-	if (inum < next_ino)
-		next_ino = inum;
+	free(ino);
 }
 
 static struct nfs_inode *inode_alloc(void)
@@ -665,7 +668,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 		print_create_args(objtype, &objname, &linkdata,
 				  specdata, &attr);
 
-	status = dir_curfh(cxn, &dir_ino);
+	status = dir_curfh(NULL, cxn, &dir_ino);
 	if (status != NFS4_OK)
 		goto err_out;
 
@@ -723,7 +726,7 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	attrset.bitmap = CURMAP();
 
-	ino = inode_fhget(cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -790,7 +793,7 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 		print_fattr("   SETATTR", &attr);
 	}
 
-	ino = inode_fhget(cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto err_out;
@@ -877,7 +880,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		syslog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
 
-	ino = inode_fhget(cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -893,6 +896,8 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 		ACCESS4_EXECUTE;
 
 	resok.supported &= resok.access;
+
+	inode_free(ino);
 
 	if (debugging)
 		syslog(LOG_INFO, "   ACCESS -> (ACC:%x SUP:%x)",
@@ -1057,7 +1062,7 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_free;
 	}
 
-	ino = inode_fhget(cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out_free;

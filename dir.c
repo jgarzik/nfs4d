@@ -48,14 +48,15 @@ static bool has_dots(const struct nfs_buf *str)
 	return false;
 }
 
-nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out)
+nfsstat4 dir_curfh(DB_TXN *txn, const struct nfs_cxn *cxn,
+		   struct nfs_inode **ino_out)
 {
 	nfsstat4 status;
 	struct nfs_inode *ino;
 
 	*ino_out = NULL;
 	status = NFS4_OK;
-	ino = inode_fhget(cxn->current_fh);
+	ino = inode_fhdec(txn, cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -130,7 +131,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = dir_curfh(cxn, &ino);
+	status = dir_curfh(NULL, cxn, &ino);
 	if (status != NFS4_OK) {
 		if ((status == NFS4ERR_NOTDIR) &&
 		    (ino->type == NF4LNK))
@@ -178,7 +179,7 @@ nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		syslog(LOG_INFO, "op LOOKUPP");
 
-	status = dir_curfh(cxn, &ino);
+	status = dir_curfh(NULL, cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -277,7 +278,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	dir_ino = inode_fhget(cxn->current_fh);
+	dir_ino = inode_fhdec(NULL, cxn->current_fh);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -289,7 +290,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	src_ino = inode_fhget(cxn->save_fh);
+	src_ino = inode_fhdec(NULL, cxn->save_fh);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -353,7 +354,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* reference container directory */
-	status = dir_curfh(cxn, &dir_ino);
+	status = dir_curfh(NULL, cxn, &dir_ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -448,8 +449,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* reference source, target directories.
 	 * NOTE: src_dir and target_dir may point to the same object
 	 */
-	src_dir = inode_fhget(cxn->save_fh);
-	target_dir = inode_fhget(cxn->current_fh);
+	src_dir = inode_fhdec(NULL, cxn->save_fh);
+	target_dir = inode_fhdec(NULL, cxn->current_fh);
 	if (!src_dir || !target_dir) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -710,7 +711,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = dir_curfh(cxn, &ino);
+	status = dir_curfh(NULL, cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 	if (ino->mode == 0) {

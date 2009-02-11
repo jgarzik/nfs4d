@@ -641,7 +641,7 @@ extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
 enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
 		      struct nfs_inode *ent_ino);
-nfsstat4 dir_curfh(const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
+nfsstat4 dir_curfh(DB_TXN *txn, const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
 nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 		    struct nfs_dirent **dirent_out);
 void nfs_readdir_free(READDIR4res *res);
@@ -690,6 +690,7 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
 extern struct nfs_inode *__inode_get(nfsino_t inum);
 extern struct nfs_inode *inode_get(nfsino_t inum);
+extern struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum);
 extern bool inode_check(DB_TXN *txn, nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
@@ -823,9 +824,9 @@ static inline bool nfs_seqid_inc_ok(nfsstat4 status)
 	/* not reached */
 }
 
-static inline struct nfs_inode *inode_fhget(struct nfs_fh fh)
+static inline struct nfs_inode *inode_fhdec(DB_TXN *txn, struct nfs_fh fh)
 {
-	return inode_get(fh.inum);
+	return inode_getdec(txn, fh.inum);
 }
 
 static inline bool inode_fhcheck(DB_TXN *txn, struct nfs_fh fh)

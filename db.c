@@ -235,7 +235,7 @@ int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino, int flags,
 	return 0;
 }
 
-int fsdb_inode_decode(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)
+int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)
 {
 	struct nfs_inode *ino = *ino_io;
 	const void *p;
@@ -289,4 +289,22 @@ int fsdb_inode_decode(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)
 	return 0;
 }
 
+int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
+		      struct nfs_inode **ino_o)
+{
+	struct fsdb_inode *dbino = NULL;
+	struct nfs_inode *ino = NULL;
+	int rc;
+
+	rc = fsdb_inode_get(fsdb, txn, inum, flags, &dbino);
+	if (rc)
+		return rc;
+
+	rc = fsdb_inode_copydec(&ino, dbino);
+	if (rc)
+		return rc;
+	
+	*ino_o = ino;
+	return 0;
+}
 

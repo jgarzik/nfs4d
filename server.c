@@ -239,7 +239,7 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		syslog(LOG_INFO, "op READLINK");
 
-	ino = inode_fhget(cxn->current_fh);
+	ino = inode_fhdec(NULL, cxn->current_fh);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -278,7 +278,7 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = dir_curfh(cxn, &ino);
+	status = dir_curfh(NULL, cxn, &ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -393,6 +393,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	switch (op) {
 	/* db4 conversion complete */
+	case OP_ACCESS:
+		srv.stats.op_access++;
+		return nfs_op_access(cxn, cur, writes, wr);
 	case OP_GETFH:
 		srv.stats.op_getfh++;
 		return nfs_op_getfh(cxn, cur, writes, wr);
@@ -411,11 +414,11 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_SAVEFH:
 		srv.stats.op_savefh++;
 		return nfs_op_savefh(cxn, cur, writes, wr);
+	case OP_SECINFO:
+		srv.stats.op_secinfo++;
+		return nfs_op_secinfo(cxn, cur, writes, wr);
 
 	/* needs work for db4 */
-	case OP_ACCESS:
-		srv.stats.op_access++;
-		return nfs_op_access(cxn, cur, writes, wr);
 	case OP_CLOSE:
 		srv.stats.op_close++;
 		return nfs_op_close(cxn, cur, writes, wr);
@@ -479,9 +482,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_RENEW:
 		srv.stats.op_renew++;
 		return nfs_op_renew(cxn, cur, writes, wr);
-	case OP_SECINFO:
-		srv.stats.op_secinfo++;
-		return nfs_op_secinfo(cxn, cur, writes, wr);
 	case OP_SETATTR:
 		srv.stats.op_setattr++;
 		return nfs_op_setattr(cxn, cur, writes, wr);
