@@ -72,13 +72,11 @@ out:
 	return status;
 }
 
-nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
-		    struct nfs_dirent **dirent_out)
+nfsstat4 dir_lookup(DB_TXN *txn, const struct nfs_inode *dir_ino,
+		    const struct nfs_buf *str, int flags,
+		    nfsino_t *inum_out)
 {
-	struct nfs_dirent *dirent;
-
-	if (dirent_out)
-		*dirent_out = NULL;
+	int rc;
 
 	if (!dir_ino->mode)
 		return NFS4ERR_ACCESS;
@@ -96,13 +94,14 @@ nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
 	if (str->len > SRV_MAX_NAME)
 		return NFS4ERR_NAMETOOLONG;
 
-	dirent = g_tree_lookup(dir_ino->dir, str);
+	rc = fsdb_dirent_get(&srv.fsdb, txn, dir_ino->inum, str,
+			     flags, inum_out);
 
-	if (!dirent)
+	if (rc == DB_NOTFOUND)
 		return NFS4ERR_NOENT;
+	if (rc)
+		return NFS4ERR_IO;
 
-	if (dirent_out)
-		*dirent_out = dirent;
 	return NFS4_OK;
 }
 
@@ -110,10 +109,13 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
-	struct nfs_dirent *dirent;
+	struct nfs_inode *ino = NULL;
 	bool printed = false;
 	struct nfs_buf objname;
+	nfsino_t inum;
+	DB_TXN *txn = NULL;
+	DB_ENV *dbenv = srv.fsdb.env;
+	int rc;
 
 	CURBUF(&objname);
 
@@ -131,24 +133,31 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = dir_curfh(NULL, cxn, &ino);
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	status = dir_curfh(txn, cxn, &ino);
 	if (status != NFS4_OK) {
 		if ((status == NFS4ERR_NOTDIR) &&
 		    (ino->type == NF4LNK))
 			status = NFS4ERR_SYMLINK;
-		goto out;
+		goto out_abort;
 	}
 
-	status = dir_lookup(ino, &objname, &dirent);
+	status = dir_lookup(txn, ino, &objname, 0, &inum);
 	if (status != NFS4_OK)
-		goto out;
+		goto out_abort;
 
-	if (!dirent->inum) {
-		status = NFS4ERR_NOENT;
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
 		goto out;
 	}
 
-	fh_set(&cxn->current_fh, dirent->inum);
+	fh_set(&cxn->current_fh, inum);
 
 	if (debugging) {
 		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %llu",
@@ -167,7 +176,13 @@ out:
 	}
 
 	WR32(status);
+	free(ino);
 	return status;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
 }
 
 nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -224,13 +239,14 @@ static void dirent_free(struct nfs_dirent *dirent)
 	free(dirent);
 }
 
-enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
+enum nfsstat4 dir_add(DB_TXN *txn, struct nfs_inode *dir_ino,
+		      const struct nfs_buf *name_in,
 		      struct nfs_inode *ent_ino)
 {
 	struct nfs_dirent *dirent;
 	enum nfsstat4 status = NFS4_OK, lu_stat;
 
-	lu_stat = dir_lookup(dir_ino, name_in, NULL);
+	lu_stat = dir_lookup(txn, dir_ino, name_in, 0, NULL);
 	if (lu_stat != NFS4ERR_NOENT) {
 		if (lu_stat == NFS4_OK)
 			status = NFS4ERR_EXIST;
@@ -308,7 +324,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	before = dir_ino->version;
 
-	status = dir_add(dir_ino, &newname, src_ino);
+	status = dir_add(NULL, dir_ino, &newname, src_ino);
 	if (status != NFS4_OK)
 		goto out;
 
@@ -369,7 +385,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* reference target inode */
-	target_ino = inode_get(dirent->inum);
+	target_ino = inode_getdec(NULL, dirent->inum);
 	if (!target_ino) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -469,7 +485,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		status = NFS4ERR_NOENT;
 		goto out;
 	}
-	old_file = inode_get(old_dirent->inum);
+	old_file = inode_getdec(NULL, old_dirent->inum);
 	if (!old_file) {
 		status = NFS4ERR_NOENT;
 		goto out;
@@ -481,7 +497,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		bool ok_to_remove = false;
 		struct nfs_inode *new_file;
 
-		new_file = inode_get(new_dirent->inum);
+		new_file = inode_getdec(NULL, new_dirent->inum);
 		if (!new_file) {
 			status = NFS4ERR_NOENT;
 			goto out;
@@ -600,7 +616,7 @@ static gboolean readdir_iter(gpointer key, gpointer value, gpointer user_data)
 		ri->cookie_found = true;
 	}
 
-	ino = inode_get(de->inum);
+	ino = inode_getdec(NULL, de->inum);
 	if (!ino) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;

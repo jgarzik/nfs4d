@@ -133,7 +133,6 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status, lu_stat;
 	struct nfs_inode *dir_ino, *ino = NULL;
-	struct nfs_dirent *de;
 	struct nfs_stateid sid;
 	bool creating, recreating = false;
 	struct nfs_open_args _args;
@@ -144,6 +143,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_owner *open_owner = NULL;
 	struct nfs_openfile *of = NULL;
 	bool new_owner = false, exclusive = false;
+	nfsino_t de_inum;
 
 	cxn->drc_mask |= drc_open;
 
@@ -183,13 +183,13 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 
 	/* lookup component name; get inode if exists */
-	lu_stat = dir_lookup(dir_ino, &args->u.file, &de);
+	lu_stat = dir_lookup(NULL, dir_ino, &args->u.file, 0, &de_inum);
 	switch (lu_stat) {
 	case NFS4ERR_NOENT:
 		break;
 
 	case NFS4_OK:
-		ino = inode_get(de->inum);
+		ino = inode_getdec(NULL, de_inum);
 		if (!ino) {
 			status = NFS4ERR_NOENT;
 			goto out;
@@ -290,7 +290,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 
-		status = inode_add(dir_ino, ino,
+		status = inode_add(NULL, dir_ino, ino,
 				   exclusive ? NULL : &args->attr,
 				   &args->u.file, &bitmap_set, &cinfo);
 		if (status != NFS4_OK)

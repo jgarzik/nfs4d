@@ -24,8 +24,14 @@
 #include <db.h>
 
 struct nfs_inode;
+struct nfs_buf;
 
 typedef uint64_t nfsino_t;
+
+struct fsdb_de_key {
+	nfsino_t		inum;
+	char			name[0];
+};
 
 struct fsdb_ug_key {
 	uint32_t		is_user;
@@ -74,6 +80,7 @@ struct fsdb {
 	DB		*inodes;		/* inodes */
 	DB		*usergroup;		/* users/groups */
 	DB		*ug_idx;		/* u/g index */
+	DB		*dirent;		/* dir entries */
 };
 
 
@@ -86,5 +93,7 @@ extern int fsdb_inode_copydec(struct nfs_inode **ino_io,
 				const struct fsdb_inode *dbino);
 extern int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino,
 			int flags, struct nfs_inode **ino_o);
+extern int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
+		    const struct nfs_buf *str, int flags, nfsino_t *inum_out);
 
 #endif /* __FSDB_H__ */

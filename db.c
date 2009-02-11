@@ -31,11 +31,32 @@ enum {
 	FSDB_PGSZ_INODES		= 1024,	/* inodes db4 page size */
 	FSDB_PGSZ_USERGROUP		= 1024,	/* user/group db4 page size */
 	FSDB_PGSZ_UG_IDX		= 1024,	/* u/g idx db4 page size */
+	FSDB_PGSZ_DIRENT		= 1024,	/* dir entry db4 page size */
 };
 
 static void db4syslog(const DB_ENV *dbenv, const char *errpfx, const char *msg)
 {
 	syslog(LOG_WARNING, "%s: %s", errpfx, msg);
+}
+
+static int dirent_cmp(DB *db, const DBT *dbt1, const DBT *dbt2)
+{
+	const struct fsdb_de_key *a = dbt1->data;
+	const struct fsdb_de_key *b = dbt2->data;
+	int a_len = dbt1->size - sizeof(*a);
+	int b_len = dbt2->size - sizeof(*b);
+	int rc;
+
+	if (a->inum < b->inum)
+		return -1;
+	if (a->inum > b->inum)
+		return 1;
+
+	rc = memcmp(a->name, b->name, MIN(a_len, b_len));
+	if (rc)
+		return rc;
+	
+	return a_len - b_len;
 }
 
 static int usergroup_idx_key(DB *secondary, const DBT *pkey, const DBT *pdata,
@@ -190,8 +211,21 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 		goto err_out_ug;
 	}
 
+	rc = open_db(dbenv, &fsdb->dirent, "dirent", FSDB_PGSZ_DIRENT,
+		     DB_BTREE, flags);
+	if (rc)
+		goto err_out_ug_idx;
+
+	rc = fsdb->dirent->set_bt_compare(fsdb->dirent, dirent_cmp);
+	if (rc)
+		goto err_out_de;
+
 	return 0;
 
+err_out_de:
+	fsdb->dirent->close(fsdb->dirent, 0);
+err_out_ug_idx:
+	fsdb->ug_idx->close(fsdb->ug_idx, 0);
 err_out_ug:
 	fsdb->usergroup->close(fsdb->usergroup, 0);
 err_out_inodes:
@@ -203,6 +237,7 @@ err_out:
 
 void fsdb_close(struct fsdb *fsdb)
 {
+	fsdb->dirent->close(fsdb->dirent, 0);
 	fsdb->ug_idx->close(fsdb->ug_idx, 0);
 	fsdb->usergroup->close(fsdb->usergroup, 0);
 	fsdb->inodes->close(fsdb->inodes, 0);
@@ -212,6 +247,39 @@ void fsdb_close(struct fsdb *fsdb)
 	fsdb->inodes = NULL;
 	fsdb->usergroup = NULL;
 	fsdb->ug_idx = NULL;
+	fsdb->dirent = NULL;
+}
+
+int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
+		    const struct nfs_buf *str, int flags, nfsino_t *inum_out)
+{
+	DB *dirent = srv.fsdb.dirent;
+	DBT pkey, pval;
+	int rc;
+	size_t alloc_len;
+	struct fsdb_de_key *key;
+	nfsino_t *v;
+
+	alloc_len = sizeof(*key) + str->len;
+	key = alloca(alloc_len);
+	key->inum = inum;
+	memcpy(key->name, str->val, str->len);
+
+	pkey.data = key;
+	pkey.size = alloc_len;
+
+	rc = dirent->get(dirent, txn, &pkey, &pval, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	dirent->err(dirent, rc, "dirent->get");
+		 return rc;
+	}
+
+	v = pval.data;
+	if (inum_out)
+		*inum_out = GUINT64_FROM_LE(*v);
+
+	return 0;
 }
 
 int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t ino, int flags,

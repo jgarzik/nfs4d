@@ -50,22 +50,6 @@ struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum)
 	return ino;
 }
 
-struct nfs_inode *__inode_get(nfsino_t inum)
-{
-	if (!srv.inode_table || !inum || (inum >= srv.inode_table_len))
-		return NULL;
-
-	return srv.inode_table[inum];
-}
-
-struct nfs_inode *inode_get(nfsino_t inum)
-{
-	struct nfs_inode *ino = __inode_get(inum);
-	if (!ino)
-		return NULL;
-	return ino;
-}
-
 void inode_touch(struct nfs_inode *ino)
 {
 	ino->version++;
@@ -555,9 +539,10 @@ out:
 	return status;
 }
 
-nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
-		   const struct nfs_fattr_set *attr, const struct nfs_buf *name,
-		   uint64_t *attrset, change_info4 *cinfo)
+nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
+		   struct nfs_inode *new_ino, const struct nfs_fattr_set *attr,
+		   const struct nfs_buf *name, uint64_t *attrset,
+		   change_info4 *cinfo)
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_fh fh;
@@ -573,7 +558,7 @@ nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
 	cinfo->before =
 	cinfo->after = dir_ino->version;
 
-	status = dir_add(dir_ino, name, new_ino);
+	status = dir_add(txn, dir_ino, name, new_ino);
 	if (status != NFS4_OK) {
 		inode_free(new_ino);
 		goto out;
@@ -657,7 +642,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto err_out;
 
-	status = inode_add(dir_ino, new_ino, &attr,
+	status = inode_add(NULL, dir_ino, new_ino, &attr,
 			   &objname, &attrset, &cinfo);
 	if (status != NFS4_OK)
 		goto err_out;

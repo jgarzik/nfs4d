@@ -639,11 +639,13 @@ extern nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr);
-enum nfsstat4 dir_add(struct nfs_inode *dir_ino, const struct nfs_buf *name_in,
+extern enum nfsstat4 dir_add(DB_TXN *txn, struct nfs_inode *dir_ino,
+		      const struct nfs_buf *name_in,
 		      struct nfs_inode *ent_ino);
 nfsstat4 dir_curfh(DB_TXN *txn, const struct nfs_cxn *cxn, struct nfs_inode **ino_out);
-nfsstat4 dir_lookup(struct nfs_inode *dir_ino, const struct nfs_buf *str,
-		    struct nfs_dirent **dirent_out);
+extern nfsstat4 dir_lookup(DB_TXN *txn, const struct nfs_inode *dir_ino,
+		    const struct nfs_buf *str, int flags,
+		    nfsino_t *inum_out);
 void nfs_readdir_free(READDIR4res *res);
 
 /* fattr.c */
@@ -689,16 +691,15 @@ extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 			      bool nverify);
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
 extern void inode_free(struct nfs_inode *ino);
-extern struct nfs_inode *__inode_get(nfsino_t inum);
-extern struct nfs_inode *inode_get(nfsino_t inum);
 extern struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum);
 extern bool inode_check(DB_TXN *txn, nfsino_t inum);
 extern void inode_touch(struct nfs_inode *ino);
 extern bool inode_table_init(void);
 extern void inode_unlink(struct nfs_inode *ino, nfsino_t dir_ref);
-extern nfsstat4 inode_add(struct nfs_inode *dir_ino, struct nfs_inode *new_ino,
-		   const struct nfs_fattr_set *attr, const struct nfs_buf *name,
-		   uint64_t *attrset, change_info4 *cinfo);
+extern nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
+		   struct nfs_inode *new_ino, const struct nfs_fattr_set *attr,
+		   const struct nfs_buf *name, uint64_t *attrset,
+		   change_info4 *cinfo);
 extern struct nfs_inode *inode_new_file(struct nfs_cxn *cxn);
 extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
 				const struct nfs_fattr_set *attr,
