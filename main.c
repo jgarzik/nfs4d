@@ -67,6 +67,7 @@ static char startup_cwd[PATH_MAX];
 char my_hostname[HOST_NAME_MAX + 1];
 static bool server_running = true;
 static bool dump_stats = false;
+static bool dump_data = false;
 static bool opt_foreground;
 static char *opt_data_path = "/tmp/data/";
 static char *opt_metadata = "/tmp/metadata/";
@@ -76,6 +77,7 @@ static char *dump_fn = "nfs4d.dump";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GHashTable *request_cache;
+static struct timer garbage_timer;
 
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
@@ -162,6 +164,7 @@ static struct argp_option options[] = {
 };
 
 static void stats_dump(void);
+static void diag_dump(void);
 static error_t parse_opt (int key, char *arg, struct argp_state *state);
 static const struct argp argp = { options, parse_opt, NULL, doc };
 
@@ -635,7 +638,7 @@ uint64_t srv_space_used(void)
 	return total;
 }
 
-static gboolean garbage_collect(gpointer dummy)
+static void garbage_collect(struct timer *timer)
 {
 	if (debugging)
 		syslog(LOG_DEBUG, "Garbage collection");
@@ -643,13 +646,12 @@ static gboolean garbage_collect(gpointer dummy)
 	drc_gc();
 	state_gc();
 
-	return FALSE;
+	garbage_timer.timeout = current_time.tv_sec + SRV_GARBAGE_TIME;
+	timer_add(&garbage_timer);
 }
 
 static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 {
-	static uint64_t garbage_time;
-
 	struct timezone tz = { 0, 0 };
 	struct curbuf _cur = { msg, msg, msg_len, msg_len };
 	struct curbuf *cur = &_cur;
@@ -673,11 +675,6 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	INIT_LIST_HEAD(writes);
 
 	gettimeofday(&current_time, &tz);
-
-	if (current_time.tv_sec > garbage_time) {
-		garbage_time = current_time.tv_sec + SRV_GARBAGE_TIME;
-		g_idle_add(garbage_collect, NULL);
-	}
 
 	hash = blob_hash(BLOB_HASH_INIT, msg, MIN(msg_len, 128));
 
@@ -1296,10 +1293,14 @@ static void main_loop(void)
 			stats_dump();
 			dump_stats = false;
 		}
+		if (dump_data) {
+			diag_dump();
+			dump_data = false;
+		}
 	}
 }
 
-int init_server(void)
+static int init_server(void)
 {
 	struct timezone tz = { 0, 0 };
 	int rc;
@@ -1339,6 +1340,10 @@ int init_server(void)
 
 	init_rng();
 	rand_verifier(&srv.instance_verf);
+
+	timer_init(&garbage_timer, garbage_collect, NULL);
+	garbage_timer.timeout = current_time.tv_sec + SRV_GARBAGE_TIME;
+	timer_add(&garbage_timer);
 
 	rc = net_open();
 
@@ -1449,6 +1454,11 @@ static void term_signal(int signal)
 static void stats_signal(int signal)
 {
 	dump_stats = true;
+}
+
+static void dump_signal(int signal)
+{
+	dump_data = true;
 }
 
 static void stats_dump(void)
@@ -1673,7 +1683,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 }
 #endif
 
-static gboolean diag_dump(gpointer dummy)
+static void diag_dump(void)
 {
 	FILE *f;
 
@@ -1695,14 +1705,7 @@ static gboolean diag_dump(gpointer dummy)
 	/* FIXME: iterate through inodes, dumping each one */
 
 out:
-	return FALSE;
-}
-
-static void dump_signal(int signal)
-{
-	syslog(LOG_INFO, "Got SIGUSR2, initiating bg diag dump");
-
-	g_idle_add(diag_dump, NULL);
+	return;
 }
 
 static void srv_exit_cleanup(void)
