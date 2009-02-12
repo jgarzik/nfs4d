@@ -189,7 +189,7 @@ srand_time:
 	srand(getpid() ^ time(NULL));
 }
 
-struct refbuf *refbuf_new(unsigned int size, bool clear)
+static struct refbuf *refbuf_new(unsigned int size, bool clear)
 {
 	struct refbuf *rb;
 
@@ -212,7 +212,7 @@ struct refbuf *refbuf_new(unsigned int size, bool clear)
 	return rb;
 }
 
-void refbuf_unref(struct refbuf *rb)
+static void refbuf_unref(struct refbuf *rb)
 {
 	if (G_UNLIKELY(!rb || !rb->len || !rb->refcnt)) {
 		syslog(LOG_ERR, "BUG: invalid refbuf");

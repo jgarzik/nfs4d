@@ -712,8 +712,6 @@ extern struct refbuf pad_rb;
 extern char my_hostname[];
 
 extern uint64_t srv_space_used(void);
-extern struct refbuf *refbuf_new(unsigned int size, bool clear);
-extern void refbuf_unref(struct refbuf *rb);
 extern void timer_renew(struct nfs_timer *, unsigned int);
 extern void timer_init(struct nfs_timer *, nfs_timer_cb_t, void *);
 extern void timer_del(struct nfs_timer *);
