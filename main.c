@@ -21,6 +21,7 @@
 #include "nfs4d-config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -28,12 +29,14 @@
 #include <argp.h>
 #include <mcheck.h>
 #include <locale.h>
+#include <netdb.h>
 #include <syslog.h>
-#include <gnet.h>
 #include <rpc/auth.h>
 #include <rpc/rpc_msg.h>
 #include "server.h"
 
+struct rpc_cxn;
+struct rpc_cxn_write;
 
 enum {
 	LISTEN_SIZE		= 100,
@@ -45,6 +48,13 @@ enum {
 	MAX_MSG_SZ		= MAX_FRAG_SZ,
 
 	HDR_FRAG_END		= (1U << 31),
+
+	NFSD_EPOLL_INIT_SIZE	= 200,		/* passed to epoll_create(2) */
+	NFSD_EPOLL_MAX_EVT	= 100,		/* max events per poll */
+
+	CLI_MAX_WR_IOV		= 32,		/* max iov per writev(2) */
+
+	HOST_ADDR_MAX_LEN	= 256,
 };
 
 struct timeval current_time;
@@ -55,6 +65,8 @@ struct refbuf pad_rb = { "\0\0\0\0", 4, 1 };
 
 static char startup_cwd[PATH_MAX];
 char my_hostname[HOST_NAME_MAX + 1];
+static bool server_running = true;
+static bool dump_stats = false;
 static bool opt_foreground;
 static char *opt_data_path = "/tmp/data/";
 static char *opt_metadata = "/tmp/metadata/";
@@ -63,7 +75,6 @@ static char *stats_fn = "nfs4d.stats";
 static char *dump_fn = "nfs4d.dump";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
-static GServer *tcpsrv;
 static GHashTable *request_cache;
 
 static LIST_HEAD(timer_list);
@@ -73,17 +84,33 @@ static uint64_t timer_expire;
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
 
+typedef bool (*cxn_evt_func)(struct rpc_cxn *, unsigned int);
+typedef bool (*cxn_write_func)(struct rpc_cxn *, struct rpc_cxn_write *, bool);
+
+/* internal client socket state */
 enum rpc_cxn_state {
-	get_hdr,
-	get_data
+	evt_get_hdr,
+	evt_get_data,
+	evt_dispose,				/* dispose of client */
+};
+
+struct rpc_cxn_write {
+	const void		*buf;		/* write buffer */
+	int			len;		/* write buffer length */
+	cxn_write_func		cb;		/* callback */
+	void			*cb_data;	/* data passed to cb */
+
+	struct list_head	node;
 };
 
 struct rpc_cxn {
-	struct nfs_server	*server;
+	int			fd;
 
-	GConn			*conn;
+	struct sockaddr_in6	addr;
+	struct epoll_event	evt;		/* epoll info */
+
 	char			*host;
-	char			host_addr[GNET_INETADDR_MAX_LEN];
+	char			host_addr[HOST_ADDR_MAX_LEN];
 
 	enum rpc_cxn_state	state;
 
@@ -91,13 +118,18 @@ struct rpc_cxn {
 	unsigned int		msg_len;
 	unsigned int		next_frag;
 	bool			last_frag;
+
+	char			hdr[4];
+	unsigned int		hdr_used;
+
+	struct list_head	write_q;	/* list of async writes */
 };
 
 struct drc_ent {
 	unsigned long		hash;
 
 	uint32_t		xid;
-	char			host_addr[GNET_INETADDR_MAX_LEN];
+	char			host_addr[HOST_ADDR_MAX_LEN];
 
 	uint64_t		expire;
 
@@ -133,6 +165,7 @@ static struct argp_option options[] = {
 	{ }
 };
 
+static void stats_dump(void);
 static error_t parse_opt (int key, char *arg, struct argp_state *state);
 static const struct argp argp = { options, parse_opt, NULL, doc };
 
@@ -528,7 +561,7 @@ static struct drc_ent *drc_lookup(unsigned long hash, uint32_t xid,
 		return NULL;
 
 	if ((ent->xid != xid) ||
-	    memcmp(ent->host_addr, host_addr, GNET_INETADDR_MAX_LEN))
+	    memcmp(ent->host_addr, host_addr, HOST_ADDR_MAX_LEN))
 		return NULL;
 
 	return ent;
@@ -553,7 +586,7 @@ static void drc_store(unsigned long hash, void *cache, unsigned int cache_len,
 	drc->val = cache;
 	drc->len = cache_len;
 	drc->xid = xid;
-	memcpy(drc->host_addr, host_addr, GNET_INETADDR_MAX_LEN);
+	memcpy(drc->host_addr, host_addr, HOST_ADDR_MAX_LEN);
 
 	g_hash_table_replace(request_cache, (void *) hash, drc);
 }
@@ -747,7 +780,9 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	if (drc) {
 		srv.stats.drc_hits++;
 		drc->expire = current_time.tv_sec + SRV_DRC_TIME;
+#if 0 /* FIXME */
 		gnet_conn_write(rc->conn, drc->val, drc->len);
+#endif
 		if (debugging > 1)
 			syslog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",
 			       drc->len);
@@ -843,7 +878,9 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
 		if (_wr->len) {
+#if 0 /* FIXME */
 			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
+#endif
 
 			if (cache) {
 				memcpy(cache + cache_used, _wr->buf,
@@ -880,7 +917,8 @@ err_out:
 
 static void rpc_cxn_free(struct rpc_cxn *cxn)
 {
-	gnet_conn_unref(cxn->conn);
+	if (cxn->fd >= 0)
+		close(cxn->fd);
 	free(cxn->msg);
 	g_free(cxn->host);
 
@@ -888,191 +926,480 @@ static void rpc_cxn_free(struct rpc_cxn *cxn)
 	free(cxn);
 }
 
-static void rpc_cxn_event(GConn *conn, GConnEvent *evt, gpointer user_data)
+static bool cxn_write_free(struct rpc_cxn *cxn, struct rpc_cxn_write *tmp,
+			   bool done)
 {
-	struct rpc_cxn *rc = user_data;
-	uint32_t tmp;
-	void *mem;
+	bool rcb = false;
 
-	switch (evt->type) {
-	case GNET_CONN_ERROR:
-	case GNET_CONN_CLOSE:
-	case GNET_CONN_TIMEOUT:
-		goto err_out;
+	if (tmp->cb)
+		rcb = tmp->cb(cxn, tmp, done);
+	list_del(&tmp->node);
+	free(tmp);
 
-	case GNET_CONN_WRITE:
-		/* do nothing */
-		if (debugging > 1)
-			syslog(LOG_DEBUG, "async write complete");
-		break;
-
-	case GNET_CONN_READ:
-		switch (rc->state) {
-		case get_hdr:
-			srv.stats.sock_rx_bytes += 4;
-
-			tmp = ntohl(*(uint32_t *)evt->buffer);
-			if (tmp & HDR_FRAG_END) {
-				rc->last_frag = true;
-				tmp &= ~HDR_FRAG_END;
-			}
-			if (tmp > MAX_FRAG_SZ)
-				goto err_out;
-
-			if (debugging > 1)
-				syslog(LOG_DEBUG, "RPC frag (%u bytes%s)",
-				       tmp,
-				       rc->last_frag ? ", LAST" : "");
-
-			rc->state = get_data;
-			gnet_conn_readn(conn, tmp);
-			gnet_conn_timeout(conn, TMOUT_READ);
-			break;
-
-		case get_data:
-			srv.stats.sock_rx_bytes += evt->length;
-
-			/* avoiding alloc+copy, in a common case */
-			if (rc->last_frag && !rc->msg) {
-				rpc_msg(rc, evt->buffer, evt->length);
-				rc->msg_len = 0;
-				rc->next_frag = 0;
-				rc->last_frag = false;
-			} else {
-				mem = realloc(rc->msg, rc->msg_len + evt->length);
-				if (!mem) {
-					syslog(LOG_ERR, "OOM in RPC get-data");
-					goto err_out;
-				}
-
-				rc->msg = mem;
-				memcpy(rc->msg + rc->msg_len, evt->buffer, evt->length);
-				rc->msg_len += evt->length;
-
-				if (rc->last_frag) {
-					rpc_msg(rc, rc->msg, rc->msg_len);
-
-					free(rc->msg);
-					rc->msg = NULL;
-					rc->msg_len = 0;
-					rc->next_frag = 0;
-					rc->last_frag = false;
-				}
-			}
-
-			rc->state = get_hdr;
-			gnet_conn_readn(conn, 4);
-			gnet_conn_timeout(conn, TMOUT_READ_HDR);
-			break;
-		}
-		break;
-
-	default:
-		syslog(LOG_ERR, "unhandled GConnEvent %d", evt->type);
-		break;
-	}
-
-	return;
-
-err_out:
-	rpc_cxn_free(rc);
+	return rcb;
 }
 
-static void server_event(GServer *gsrv, GConn *conn, gpointer user_data)
+static void cxn_writable(struct rpc_cxn *cxn)
 {
-	struct nfs_server *server = user_data;
-	struct rpc_cxn *rc;
-	char *host;
+	unsigned int n_iov = 0;
+	struct rpc_cxn_write *tmp;
+	ssize_t rc;
+	struct iovec iov[CLI_MAX_WR_IOV];
+	bool more_work;
 
-	if (!conn) {
-		syslog(LOG_ERR, "GServer exiting");
+restart:
+	more_work = false;
+
+	/* accumulate pending writes into iovec */
+	list_for_each_entry(tmp, &cxn->write_q, node) {
+		/* bleh, struct iovec should declare iov_base const */
+		iov[n_iov].iov_base = (void *) tmp->buf;
+		iov[n_iov].iov_len = tmp->len;
+		n_iov++;
+		if (n_iov == CLI_MAX_WR_IOV)
+			break;
+	}
+
+	/* execute non-blocking write */
+do_write:
+	rc = writev(cxn->fd, iov, n_iov);
+	if (rc < 0) {
+		if (errno == EINTR)
+			goto do_write;
+		if (errno != EAGAIN)
+			cxn->state = evt_dispose;
 		return;
 	}
 
-	host = gnet_inetaddr_get_canonical_name(conn->inetaddr);
-	if (!host)
+	/* iterate through write queue, issuing completions based on
+	 * amount of data written
+	 */
+	while (rc > 0) {
+		int sz;
+
+		/* get pointer to first record on list */
+		tmp = list_entry(cxn->write_q.next, struct rpc_cxn_write, node);
+
+		/* mark data consumed by decreasing tmp->len */
+		sz = (tmp->len < rc) ? tmp->len : rc;
+		tmp->len -= sz;
+		rc -= sz;
+
+		/* if tmp->len reaches zero, write is complete,
+		 * call callback and clean up
+		 */
+		if (tmp->len == 0)
+			if (cxn_write_free(cxn, tmp, true))
+				more_work = true;
+	}
+
+	if (more_work)
+		goto restart;
+
+	/* if we emptied the queue, clear write notification */
+	if (list_empty(&cxn->write_q)) {
+		cxn->evt.events &= ~EPOLLOUT;
+		int rrc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_MOD,
+				    cxn->fd, &cxn->evt);
+		if (rrc < 0) {
+			syslogerr("cxn_writable epoll_ctl(EPOLL_CTL_MOD)");
+			cxn->state = evt_dispose;
+		}
+	}
+}
+
+bool cxn_write_start(struct rpc_cxn *cxn)
+{
+	int rc;
+
+	if (list_empty(&cxn->write_q))
+		return true;		/* loop, not epoll */
+
+	/* if EPOLLOUT already active, nothing further to do */
+	if (cxn->evt.events & EPOLLOUT)
+		return false;		/* epoll wait */
+
+	/* attempt optimistic write, in hopes of avoiding epoll,
+	 * or at least refill the write buffers so as to not
+	 * get -immediately- called again by the kernel
+	 */
+	cxn_writable(cxn);
+	if (list_empty(&cxn->write_q)) {
+		srv.stats.opt_write++;
+		return true;		/* loop, not epoll */
+	}
+
+	cxn->evt.events |= EPOLLOUT;
+
+	rc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_MOD, cxn->fd, &cxn->evt);
+	if (rc < 0) {
+		syslogerr("cxn_write epoll_ctl(EPOLL_CTL_MOD)");
+		return true;		/* loop, not epoll */
+	}
+
+	return false;			/* epoll wait */
+}
+
+int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
+		     cxn_write_func cb, void *cb_data)
+{
+	struct rpc_cxn_write *wr;
+
+	if (!buf || !buflen)
+		return -EINVAL;
+
+	wr = malloc(sizeof(struct rpc_cxn_write));
+	if (!wr)
+		return -ENOMEM;
+
+	wr->buf = buf;
+	wr->len = buflen;
+	wr->cb = cb;
+	wr->cb_data = cb_data;
+	list_add_tail(&wr->node, &cxn->write_q);
+
+	return 0;
+}
+
+static bool cxn_evt_dispose(struct rpc_cxn *cxn, unsigned int events)
+{
+	/* if write queue is not empty, we should continue to get
+	 * epoll callbacks here until it is
+	 */
+	if (list_empty(&cxn->write_q))
+		rpc_cxn_free(cxn);
+
+	return false;
+}
+
+static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, unsigned int events)
+{
+	uint32_t next_frag;
+	ssize_t rrc;
+	void *mem;
+
+	rrc = read(cxn->fd, cxn->hdr + cxn->hdr_used,
+		   sizeof(cxn->hdr) - cxn->hdr_used);
+	if (rrc < 0) {
+		syslogerr(cxn->host_addr);
+		goto err_out;
+	}
+	if (rrc == 0)
+		return false;		/* read more data */
+
+	srv.stats.sock_rx_bytes += rrc;
+
+	if (cxn->hdr_used < sizeof(cxn->hdr))
+		return false;		/* read more data */
+
+	next_frag = ntohl(*(uint32_t *)cxn->hdr);
+	if (next_frag & HDR_FRAG_END) {
+		cxn->last_frag = true;
+		next_frag &= ~HDR_FRAG_END;
+	}
+	if ((next_frag > MAX_FRAG_SZ) ||
+	    ((next_frag + cxn->msg_len) > MAX_MSG_SZ))
 		goto err_out;
 
-	syslog(LOG_INFO, "TCP connection from %s", host);
-
-	rc = calloc(1, sizeof(*rc));
-	if (!rc)
+	mem = realloc(cxn->msg, next_frag + cxn->msg_len);
+	if (!mem)
 		goto err_out;
 
-	rc->server = server;
-	rc->conn = conn;
-	rc->state = get_hdr;
-	rc->host = host;
-	gnet_inetaddr_get_bytes(conn->inetaddr, rc->host_addr);
+	if (debugging > 1)
+		syslog(LOG_DEBUG, "RPC frag (%u bytes%s)",
+		       next_frag,
+		       cxn->last_frag ? ", LAST" : "");
 
-	gnet_conn_set_callback(conn, rpc_cxn_event, rc);
+	cxn->hdr_used = 0;
+	cxn->next_frag = next_frag;
+	cxn->state = evt_get_data;
 
-	gnet_conn_readn(conn, 4);
-	gnet_conn_timeout(conn, TMOUT_READ_HDR);
+	return true;			/* loop to cxn->state */
+
+err_out:
+	cxn->state = evt_dispose;
+	return true;			/* loop to cxn->state */
+}
+
+static bool cxn_evt_get_data(struct rpc_cxn *cxn, unsigned int events)
+{
+	ssize_t rrc;
+
+	rrc = read(cxn->fd, cxn->msg + cxn->msg_len, cxn->next_frag);
+	if (rrc < 0) {
+		syslogerr(cxn->host_addr);
+		goto err_out;
+	}
+
+	srv.stats.sock_rx_bytes += rrc;
+	cxn->next_frag -= rrc;
+	cxn->msg_len += rrc;
+
+	if (cxn->next_frag)
+		return false;		/* read more data */
+	if (!cxn->last_frag) {
+		cxn->state = evt_get_hdr;
+		return false;		/* read more data */
+	}
+
+	rpc_msg(cxn, cxn->msg, cxn->msg_len);
+
+	free(cxn->msg);
+	cxn->msg = NULL;
+	cxn->msg_len = 0;
+	cxn->next_frag = 0;
+	cxn->last_frag = false;
+
+	cxn->state = evt_get_hdr;
+
+	return true;			/* loop to cxn->state */
+
+err_out:
+	cxn->state = evt_dispose;
+	return true;			/* loop to cxn->state */
+}
+
+static cxn_evt_func state_funcs[] = {
+	[evt_get_hdr]		= cxn_evt_get_hdr,
+	[evt_get_data]		= cxn_evt_get_data,
+	[evt_dispose]		= cxn_evt_dispose,
+};
+
+static void tcp_cli_event(unsigned int events, struct rpc_cxn *cxn)
+{
+	bool loop;
+
+	if (events & EPOLLOUT) {
+		events &= ~EPOLLOUT;
+		cxn_writable(cxn);
+	}
+
+	do {
+		loop = state_funcs[cxn->state](cxn, events);
+	} while (loop);
+}
+
+static void tcp_srv_event(unsigned int events, struct server_socket *sock)
+{
+	socklen_t addrlen = sizeof(struct sockaddr_in6);
+	struct rpc_cxn *cxn;
+	char host[64];
+	int rc;
+
+	/* alloc and init client info */
+	cxn = calloc(1, sizeof(*cxn));
+	if (!cxn) {
+		struct sockaddr_in6 a;
+		int fd = accept(sock->fd, (struct sockaddr *) &a, &addrlen);
+		close(fd);
+		return;
+	}
+
+	cxn->state = evt_get_hdr;
+	cxn->host = host;
+	INIT_LIST_HEAD(&cxn->write_q);
+
+	/* receive TCP connection from kernel */
+	cxn->fd = accept(sock->fd, (struct sockaddr *) &cxn->addr, &addrlen);
+	if (cxn->fd < 0) {
+		syslogerr("tcp accept");
+		goto err_out;
+	}
+
+	srv.stats.tcp_accept++;
+
+	/* mark non-blocking, for upcoming epoll use */
+	if (fsetflags("tcp client", cxn->fd, O_NONBLOCK) < 0)
+		goto err_out_fd;
+
+	/* add to epoll watchlist */
+	rc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_ADD, cxn->fd, &cxn->evt);
+	if (rc < 0) {
+		syslogerr("tcp client epoll_ctl");
+		goto err_out_fd;
+	}
+
+	/* pretty-print incoming cxn info */
+	getnameinfo((struct sockaddr *) &cxn->addr, sizeof(struct sockaddr_in6),
+		    host, sizeof(host), NULL, 0, NI_NUMERICHOST);
+	host[sizeof(host) - 1] = 0;
+	syslog(LOG_INFO, "client %s connected", host);
+
+	strcpy(cxn->host_addr, host);
 
 	return;
 
+err_out_fd:
+	close(cxn->fd);
 err_out:
-	gnet_conn_unref(conn);
-	syslog(LOG_ERR, "OOM in server_event");
+	free(cxn);
 }
 
-void syslogerr(const char *prefix)
+static int net_open(void)
 {
-	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
-}
+	int ipv6_found;
+	int rc;
+	struct addrinfo hints, *res, *res0;
+	char port_str[32];
 
-static void write_pid_file(void)
-{
-	char str[32], *s;
-	size_t bytes;
+	sprintf(port_str, "%u", opt_nfs_port);
 
-	if (pid_fn[0] != '/') {
-		char *fn;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = PF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
 
-		if (asprintf(&fn, "%s%s", startup_cwd, pid_fn) < 0)
-			exit(1);
-
-		pid_fn = fn;		/* NOTE: never freed */
+	rc = getaddrinfo(NULL, port_str, &hints, &res0);
+	if (rc) {
+		syslog(LOG_ERR, "getaddrinfo(*:%s) failed: %s",
+		       port_str, gai_strerror(rc));
+		rc = -EINVAL;
+		goto err_addr;
 	}
 
-	sprintf(str, "%u\n", getpid());
-	s = str;
-	bytes = strlen(s);
-
-	int fd = open(pid_fn, O_WRONLY | O_CREAT | O_EXCL, 0666);
-	if (fd < 0) {
-		syslogerr("open pid");
-		exit(1);
+	/*
+	 * We rely on getaddrinfo to discover if the box supports IPv6.
+	 * Much easier to sanitize its output than to try to figure what
+	 * to put into ai_family.
+	 *
+	 * These acrobatics are required on Linux because we should bind
+	 * to ::0 if we want to listen to both ::0 and 0.0.0.0. Else, we
+	 * may bind to 0.0.0.0 by accident (depending on order getaddrinfo
+	 * returns them), then bind(::0) fails and we only listen to IPv4.
+	 */
+	ipv6_found = 0;
+	for (res = res0; res; res = res->ai_next) {
+		if (res->ai_family == PF_INET6)
+			ipv6_found = 1;
 	}
 
-	while (bytes > 0) {
-		ssize_t rc = write(fd, s, bytes);
-		if (rc < 0) {
-			syslogerr("write pid");
-			exit(1);
+	for (res = res0; res; res = res->ai_next) {
+		struct server_socket *sock;
+		int fd, on;
+
+		if (ipv6_found && res->ai_family == PF_INET)
+			continue;
+
+		fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+		if (fd < 0) {
+			syslogerr("tcp socket");
+			return -errno;
 		}
 
-		bytes -= rc;
-		s += rc;
+		on = 1;
+		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on,
+			       sizeof(on)) < 0) {
+			syslogerr("setsockopt(SO_REUSEADDR)");
+			rc = -errno;
+			goto err_out;
+		}
+
+		if (bind(fd, res->ai_addr, res->ai_addrlen) < 0) {
+			syslogerr("tcp bind");
+			rc = -errno;
+			goto err_out;
+		}
+
+		if (listen(fd, LISTEN_SIZE) < 0) {
+			syslogerr("tcp listen");
+			rc = -errno;
+			goto err_out;
+		}
+
+		rc = fsetflags("tcp server", fd, O_NONBLOCK);
+		if (rc)
+			goto err_out;
+
+		sock = calloc(1, sizeof(*sock));
+		if (!sock) {
+			rc = -ENOMEM;
+			goto err_out;
+		}
+
+		sock->fd = fd;
+		sock->poll.poll_type = spt_tcp_srv;
+		sock->poll.u.sock = sock;
+		sock->evt.events = EPOLLIN;
+		sock->evt.data.ptr = &sock->poll;
+
+		rc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_ADD, fd,
+			       &sock->evt);
+		if (rc < 0) {
+			syslogerr("tcp socket epoll_ctl");
+			rc = -errno;
+			goto err_out;
+		}
+
+		srv.sockets =
+			g_list_append(srv.sockets, sock);
 	}
 
-	if (close(fd) < 0) {
-		syslogerr("close pid");
-		exit(1);
-	}
+	freeaddrinfo(res0);
 
-	pid_opened = true;
+	return 0;
+
+err_out:
+	freeaddrinfo(res0);
+err_addr:
+	return rc;
 }
 
-static GMainLoop *init_server(void)
+static void handle_event(unsigned int events, void *event_data)
+{
+	struct server_poll *sp = event_data;
+
+	srv.stats.event++;
+
+	switch (sp->poll_type) {
+	case spt_tcp_srv:
+		tcp_srv_event(events, sp->u.sock);
+		break;
+	case spt_tcp_cli:
+		tcp_cli_event(events, sp->u.cxn);
+		break;
+	}
+}
+
+static void main_loop(void)
+{
+	struct epoll_event evt[NFSD_EPOLL_MAX_EVT];
+	int rc, i;
+
+	while (server_running) {
+		rc = epoll_wait(srv.epoll_fd, evt, NFSD_EPOLL_MAX_EVT,
+				timer_next());
+		if (rc < 0) {
+			if (errno == EINTR)
+				continue;
+
+			syslogerr("epoll_wait");
+			return;
+		}
+
+		if (rc == NFSD_EPOLL_MAX_EVT)
+			srv.stats.max_evt++;
+		srv.stats.poll++;
+
+		for (i = 0; i < rc; i++)
+			handle_event(evt[i].events, evt[i].data.ptr);
+
+		timers_run();
+
+		if (dump_stats) {
+			stats_dump();
+			dump_stats = false;
+		}
+	}
+}
+
+int init_server(void)
 {
 	struct timezone tz = { 0, 0 };
-	GMainLoop *loop;
+	int rc;
 
-	write_pid_file();
-
-	loop = g_main_loop_new(NULL, FALSE);
+	rc = write_pid_file(pid_fn);
+	if (rc)
+		return rc;
 
 	memset(&srv, 0, sizeof(srv));
 	INIT_LIST_HEAD(&srv.dead);
@@ -1090,28 +1417,25 @@ static GMainLoop *init_server(void)
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
-		return NULL;
+		return -errno;
 	}
 
 	if (!srv.clid_idx || !srv.openfiles || !request_cache) {
 		syslog(LOG_ERR, "OOM in init_server()");
-		return NULL;
+		return -ENOMEM;
 	}
 
-	if (fsdb_open(&srv.fsdb, DB_RECOVER | DB_CREATE, DB_CREATE,
-		     "nfs4d", true))
-		return NULL;
+	rc = fsdb_open(&srv.fsdb, DB_RECOVER | DB_CREATE, DB_CREATE,
+		       "nfs4d", true);
+	if (rc)
+		return rc;
 
 	init_rng();
 	rand_verifier(&srv.instance_verf);
 
-	tcpsrv = gnet_server_new(NULL, opt_nfs_port, server_event, &srv);
-	if (!tcpsrv) {
-		syslog(LOG_ERR, "GServer init failed");
-		return NULL;
-	}
+	rc = net_open();
 
-	return loop;
+	return rc;
 }
 
 static bool is_dir(const char *arg, char **dirname)
@@ -1212,20 +1536,23 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 
 static void term_signal(int signal)
 {
-	syslog(LOG_INFO, "got termination signal");
-	exit(1);
+	server_running = false;
 }
 
-static char stats_buf[4096 * 2];
+static void stats_signal(int signal)
+{
+	dump_stats = true;
+}
 
-static gboolean stats_dump(gpointer dummy)
+static void stats_dump(void)
 {
 	struct timezone tz = { 0, 0 };
 	int fd;
+	char *stats_str;
 
 	gettimeofday(&current_time, &tz);
 
-	snprintf(stats_buf, sizeof(stats_buf),
+	asprintf(&stats_str,
 		"========== %Lu.%Lu\n"
 		"sock_rx_bytes: %Lu\n"
 		"sock_tx_bytes: %Lu\n"
@@ -1283,6 +1610,11 @@ static gboolean stats_dump(gpointer dummy)
 		"drc_store_bytes: %Lu\n"
 		"drc_hits: %lu\n"
 		"drc_misses: %lu\n"
+		"tcp_accept: %lu\n"
+		"event: %lu\n"
+		"max_evt: %lu\n"
+		"poll: %lu\n"
+		"opt_write: %lu\n"
 		"========== %Lu.%Lu\n",
 
 		(unsigned long long) current_time.tv_sec,
@@ -1343,6 +1675,11 @@ static gboolean stats_dump(gpointer dummy)
 		srv.stats.drc_store_bytes,
 		srv.stats.drc_hits,
 		srv.stats.drc_misses,
+		srv.stats.tcp_accept,
+		srv.stats.event,
+		srv.stats.max_evt,
+		srv.stats.poll,
+		srv.stats.opt_write,
 		(unsigned long long) current_time.tv_sec,
 		(unsigned long long) current_time.tv_usec);
 
@@ -1358,29 +1695,20 @@ static gboolean stats_dump(gpointer dummy)
 	fd = open(stats_fn, O_WRONLY | O_APPEND | O_CREAT, 0644);
 	if (fd < 0) {
 		syslog(LOG_ERR, "open(%s): %s", stats_fn, strerror(errno));
-		return FALSE;
+		return;
 	}
 
-	if (write(fd, stats_buf, strlen(stats_buf)) < 0) {
+	if (write(fd, stats_str, strlen(stats_str)) < 0) {
 		syslog(LOG_ERR, "write(%s, %lu): %s",
 		       stats_fn,
-		       (unsigned long) strlen(stats_buf),
+		       (unsigned long) strlen(stats_str),
 		       strerror(errno));
 		close(fd);
-		return FALSE;
+		return;
 	}
 
 	if (close(fd) < 0)
 		syslog(LOG_ERR, "close(%s): %s", stats_fn, strerror(errno));
-
-	return FALSE;
-}
-
-static void stats_signal(int signal)
-{
-	syslog(LOG_INFO, "Got SIGUSR1, initiating bg stat dump");
-
-	g_idle_add(stats_dump, NULL);
 }
 
 #if 0 /* will be used again soon */
@@ -1478,18 +1806,15 @@ static void srv_exit_cleanup(void)
 
 int main (int argc, char *argv[])
 {
-	GMainLoop *loop;
-	error_t rc;
+	error_t aprc;
 
 	mcheck(NULL);
 
 	setlocale(LC_ALL, "");
 
-	gnet_init();
-
-	rc = argp_parse(&argp, argc, argv, 0, NULL, NULL);
-	if (rc) {
-		fprintf(stderr, "argp_parse failed: %s\n", strerror(rc));
+	aprc = argp_parse(&argp, argc, argv, 0, NULL, NULL);
+	if (aprc) {
+		fprintf(stderr, "argp_parse failed: %s\n", strerror(aprc));
 		return 1;
 	}
 
@@ -1521,14 +1846,13 @@ int main (int argc, char *argv[])
 		return 1;
 	}
 
-	loop = init_server();
-	if (!loop)
+	if (init_server())
 		return 1;
 
 	syslog(LOG_INFO, PACKAGE_STRING " initialized%s",
 	       debugging ? " (DEBUG MODE)" : "");
 
-	g_main_loop_run(loop);
+	main_loop();
 
 	fsdb_close(&srv.fsdb);
 

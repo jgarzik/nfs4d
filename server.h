@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/epoll.h>
 #include <sys/time.h>
 #include <glib.h>
 #include <rpc/auth.h>
@@ -31,6 +32,8 @@
 struct nfs_timer;
 struct nfs_owner;
 struct nfs_openfile;
+struct server_socket;
+struct timer;
 
 #define SRV_MAGIC		"J721"
 
@@ -233,6 +236,15 @@ struct rpc_write {
 	struct refbuf		*rbuf;
 
 	struct list_head	node;
+};
+
+typedef void (*timer_cb_t)(struct timer *);
+
+struct timer {
+	time_t			timeout;
+	bool			fired;
+	timer_cb_t		cb;
+	void			*cb_data;
 };
 
 typedef void (*nfs_timer_cb_t)(struct nfs_timer *timer, void *private);
@@ -554,6 +566,32 @@ struct nfs_server_stats {
 	unsigned long		drc_store;
 	unsigned long		drc_hits;
 	unsigned long		drc_misses;
+
+	unsigned long		tcp_accept;
+
+	unsigned long		event;
+	unsigned long		max_evt;
+	unsigned long		poll;
+	unsigned long		opt_write;
+};
+
+enum server_poll_type {
+	spt_tcp_srv,				/* TCP server */
+	spt_tcp_cli,				/* TCP client */
+};
+
+struct server_poll {
+	enum server_poll_type	poll_type;	/* spt_xxx above */
+	union {
+		struct server_socket	*sock;
+		struct rpc_cxn		*cxn;
+	} u;
+};
+
+struct server_socket {
+	int			fd;
+	struct server_poll	poll;
+	struct epoll_event	evt;
 };
 
 struct nfs_server {
@@ -573,6 +611,12 @@ struct nfs_server {
 
 	char			*data_dir;
 	char			*metadata_dir;
+
+	int			epoll_fd;	/* epoll descriptor */
+
+	GList			*sockets;
+
+	GQueue			*timers;
 
 	struct fsdb		fsdb;
 
@@ -798,6 +842,14 @@ extern nfsstat4 openfile_lookup(struct nfs_stateid *,
 				enum nfs_state_type type,
 				struct nfs_openfile **);
 extern void openfile_trash(struct nfs_openfile *, bool);
+
+/* util.c */
+extern int write_pid_file(const char *pid_fn);
+extern void syslogerr(const char *prefix);
+extern int fsetflags(const char *prefix, int fd, int or_flags);
+extern void timer_add(struct timer *timer);
+extern int timer_next(void);
+extern void timers_run(void);
 
 static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 {
