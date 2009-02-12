@@ -46,7 +46,7 @@ struct nfs_clientid {
 
 	struct list_head	owner_list;
 
-	struct nfs_timer	timer;
+	struct timer		timer;
 };
 
 static LIST_HEAD(cli_unconfirmed);
@@ -652,9 +652,9 @@ static void clientid_free(struct nfs_clientid *clid)
 	free(clid);
 }
 
-static void clientid_timer(struct nfs_timer *timer, void *priv)
+static void clientid_timer(struct timer *timer)
 {
-	struct nfs_clientid *clid = priv;
+	struct nfs_clientid *clid = timer->cb_data;
 	const char *msg;
 	unsigned long long id_short;
 

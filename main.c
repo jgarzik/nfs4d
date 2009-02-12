@@ -77,10 +77,6 @@ static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GHashTable *request_cache;
 
-static LIST_HEAD(timer_list);
-static unsigned int timer_source;
-static uint64_t timer_expire;
-
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
 
@@ -589,95 +585,6 @@ static void drc_store(unsigned long hash, void *cache, unsigned int cache_len,
 	memcpy(drc->host_addr, host_addr, HOST_ADDR_MAX_LEN);
 
 	g_hash_table_replace(request_cache, (void *) hash, drc);
-}
-
-void timer_del(struct nfs_timer *timer)
-{
-	if (timer->queued) {
-		list_del_init(&timer->node);
-		timer->queued = false;
-	}
-}
-
-static gboolean timer_cb(gpointer dummy)
-{
-	struct timezone tz = { 0, 0 };
-	struct nfs_timer *timer, *iter;
-	uint64_t next_expire = 0;
-
-	if (debugging > 1)
-		syslog(LOG_INFO, "TIMER callback");
-
-	gettimeofday(&current_time, &tz);
-
-	list_for_each_entry_safe(timer, iter, &timer_list, node) {
-		if (!next_expire)
-			next_expire = timer->expire;
-		else if (timer->expire < next_expire)
-			next_expire = timer->expire;
-
-		if (timer->expire > current_time.tv_sec)
-			continue;
-
-		timer_del(timer);
-
-		timer->cb(timer, timer->private);
-	}
-
-	if (list_empty(&timer_list)) {
-		timer_source = 0;
-		timer_expire = 0;
-	} else {
-		unsigned int interval;
-
-		if (next_expire > current_time.tv_sec) {
-			interval = (next_expire - current_time.tv_sec) * 1000;
-			timer_expire = next_expire;
-		} else {
-			interval = 1;
-			timer_expire = current_time.tv_sec + 1;
-		}
-
-		timer_source = g_timeout_add(interval, timer_cb, NULL);
-	}
-
-	return FALSE;
-}
-
-void timer_renew(struct nfs_timer *timer, unsigned int seconds)
-{
-	uint64_t interval = 1;
-
-	if (debugging > 1)
-		syslog(LOG_INFO, "TIMER renew (%u secs)", seconds);
-
-	timer->expire = current_time.tv_sec + seconds;
-	if (!timer_expire || (timer->expire < timer_expire))
-		timer_expire = timer->expire;
-
-	if (!timer->queued) {
-		timer->queued = true;
-		list_add_tail(&timer->node, &timer_list);
-	}
-
-	if (timer_expire > current_time.tv_sec)
-		interval = timer_expire - current_time.tv_sec;
-
-	/* FIXME: if we reduce timer_expire, we should update
-	 * the existing timer
-	 */
-
-	if (!timer_source)
-		timer_source = g_timeout_add(interval * 1000, timer_cb, NULL);
-}
-
-void timer_init(struct nfs_timer *timer, nfs_timer_cb_t cb, void *priv)
-{
-	timer->cb = cb;
-	timer->private = priv;
-	timer->expire = 0;
-	INIT_LIST_HEAD(&timer->node);
-	timer->queued = false;
 }
 
 #if 0 /* needed someday? see FIXME in srv_space_used() */

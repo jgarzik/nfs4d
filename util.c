@@ -92,10 +92,31 @@ static gint timer_cmp(gconstpointer _a, gconstpointer _b, gpointer user_data)
 	return (at - bt);
 }
 
+void timer_init(struct timer *timer, timer_cb_t cb, void *cb_data)
+{
+	timer->timeout = 0;
+	timer->fired = false;
+	timer->cb = cb;
+	timer->cb_data = cb_data;
+}
+
 void timer_add(struct timer *timer)
 {
 	timer->fired = false;
 	g_queue_insert_sorted(srv.timers, timer, timer_cmp, NULL);
+}
+
+void timer_del(struct timer *timer)
+{
+	g_queue_remove(srv.timers, timer);
+}
+
+void timer_renew(struct timer *timer, time_t timeout)
+{
+	timer_del(timer);
+
+	timer->timeout = current_time.tv_sec + timeout;
+	timer_add(timer);
 }
 
 int timer_next(void)

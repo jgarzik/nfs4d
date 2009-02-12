@@ -29,7 +29,6 @@
 #include "elist.h"
 #include "fsdb.h"
 
-struct nfs_timer;
 struct nfs_owner;
 struct nfs_openfile;
 struct server_socket;
@@ -245,19 +244,6 @@ struct timer {
 	bool			fired;
 	timer_cb_t		cb;
 	void			*cb_data;
-};
-
-typedef void (*nfs_timer_cb_t)(struct nfs_timer *timer, void *private);
-
-struct nfs_timer {
-	nfs_timer_cb_t		cb;
-	void			*private;
-
-	uint64_t		expire;		/* in seconds, absolute time */
-
-	struct list_head	node;
-
-	bool			queued;
 };
 
 struct nfs_buf {
@@ -756,9 +742,6 @@ extern struct refbuf pad_rb;
 extern char my_hostname[];
 
 extern uint64_t srv_space_used(void);
-extern void timer_renew(struct nfs_timer *, unsigned int);
-extern void timer_init(struct nfs_timer *, nfs_timer_cb_t, void *);
-extern void timer_del(struct nfs_timer *);
 extern void syslogerr(const char *prefix);
 extern void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
@@ -850,6 +833,9 @@ extern int fsetflags(const char *prefix, int fd, int or_flags);
 extern void timer_add(struct timer *timer);
 extern int timer_next(void);
 extern void timers_run(void);
+extern void timer_init(struct timer *timer, timer_cb_t cb, void *cb_data);
+extern void timer_renew(struct timer *timer, time_t timeout);
+extern void timer_del(struct timer *timer);
 
 static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 {
