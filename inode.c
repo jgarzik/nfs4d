@@ -102,60 +102,16 @@ void inode_free(struct nfs_inode *ino)
 	free(ino);
 }
 
-static struct nfs_inode *inode_alloc(void)
+static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 {
-	unsigned int i;
 	struct nfs_inode *ino;
 
 	if (next_ino <= INO_RESERVED_LAST)
 		next_ino = INO_RESERVED_LAST + 1;
 
-	for (i = MIN(next_ino, srv.inode_table_len);
-	     i < srv.inode_table_len; i++) {
-		ino = srv.inode_table[i];
-		if (!ino)
-			break;
-
-		return ino;
-	}
-
-	if (i == srv.inode_table_len) {
-		unsigned int old_size = srv.inode_table_len;
-		unsigned int new_size = old_size * 2;
-		void *mem = realloc(srv.inode_table,
-				    new_size * sizeof(struct nfs_inode *));
-		if (!mem)
-			return NULL;
-
-		srv.inode_table = mem;
-		srv.inode_table_len = new_size;
-
-		old_size *= sizeof(struct nfs_inode *);
-		new_size *= sizeof(struct nfs_inode *);
-		memset(mem + old_size, 0, new_size - old_size);
-	}
-
 	ino = calloc(1, sizeof(struct nfs_inode));
 	if (!ino)
 		return NULL;
-
-	ino->inum = i;
-	INIT_LIST_HEAD(&ino->openfile_list);
-
-	srv.inode_table[i] = ino;
-
-	next_ino = ino->inum + 1;
-
-	return ino;
-}
-
-static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
-{
-	struct nfs_inode *ino;
-
-	ino = inode_alloc();
-	if (!ino)
-		goto out;
 
 	ino->version = 1ULL;
 	ino->ctime =
@@ -163,24 +119,12 @@ static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
 
-	/* connected users (cxn==NULL is internal allocation, e.g. root inode)*/
-	if (cxn) {
-		ino->user = cxn_getuser(cxn);
-		ino->group = cxn_getgroup(cxn);
-	}
+	ino->inum = next_ino++;
+	INIT_LIST_HEAD(&ino->openfile_list);
 
-out:
-	return ino;
-}
-
-struct nfs_inode *inode_new_file(struct nfs_cxn *cxn)
-{
-	struct nfs_inode *ino = inode_new(cxn);
-	if (!ino)
-		return NULL;
-
-	ino->type = NF4REG;
-	ino->buf_list = NULL;
+	/* connected user */
+	ino->user = cxn_getuser(cxn);
+	ino->group = cxn_getgroup(cxn);
 
 	return ino;
 }
@@ -205,60 +149,34 @@ static gint nfstr_compare(gconstpointer _a, gconstpointer _b)
 }
 #endif
 
-static struct nfs_inode *inode_new_dir(struct nfs_cxn *cxn)
-{
-	struct nfs_inode *ino = inode_new(cxn);
-	if (!ino)
-		return NULL;
-
-	ino->type = NF4DIR;
-	ino->size = 4096;
-
-	return ino;
-}
-
-static struct nfs_inode *inode_new_dev(struct nfs_cxn *cxn,
-				enum nfs_ftype4 type, const uint32_t *devdata)
-{
-	struct nfs_inode *ino = inode_new(cxn);
-	if (!ino)
-		return NULL;
-
-	ino->type = type;
-	memcpy(&ino->devdata[0], devdata, sizeof(uint32_t) * 2);
-
-	return ino;
-}
-
-static struct nfs_inode *inode_new_symlink(struct nfs_cxn *cxn, char *linktext)
-{
-	struct nfs_inode *ino = inode_new(cxn);
-	if (!ino)
-		return NULL;
-
-	ino->type = NF4LNK;
-	ino->linktext = linktext;
-
-	return ino;
-}
-
-static nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
-			       const struct nfs_buf *linkdata,
-			       const uint32_t *specdata,
-			       struct nfs_inode **ino_out)
+nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
+			const struct nfs_buf *linkdata,
+			const uint32_t *specdata,
+			struct nfs_inode **ino_out)
 {
 	struct nfs_inode *new_ino;
 	nfsstat4 status;
 
 	*ino_out = NULL;
 
+	new_ino = inode_new(cxn);
+	if (!new_ino) {
+		status = NFS4ERR_RESOURCE;
+		goto out;
+	}
+
+	new_ino->type = objtype;
+
 	switch(objtype) {
+	case NF4REG:
+		new_ino->buf_list = NULL;
+		break;
 	case NF4DIR:
-		new_ino = inode_new_dir(cxn);
+		new_ino->size = 4096;
 		break;
 	case NF4BLK:
 	case NF4CHR:
-		new_ino = inode_new_dev(cxn, objtype, specdata);
+		memcpy(&new_ino->devdata[0], specdata, sizeof(uint32_t) * 2);
 		break;
 	case NF4LNK: {
 		char *linktext = strndup(linkdata->val, linkdata->len);
@@ -266,14 +184,11 @@ static nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 			status = NFS4ERR_RESOURCE;
 			goto out;
 		}
-		new_ino = inode_new_symlink(cxn, linktext);
-		if (!new_ino)
-			free(linktext);
+		new_ino->linktext = linktext;
 		break;
 	}
 	case NF4SOCK:
 	case NF4FIFO:
-		new_ino = inode_new(cxn);
 		break;
 	default:
 		status = NFS4ERR_BADTYPE;
@@ -281,11 +196,6 @@ static nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 	}
 
 	new_ino->type = objtype;
-
-	if (!new_ino) {
-		status = NFS4ERR_RESOURCE;
-		goto out;
-	}
 
 	*ino_out = new_ino;
 	status = NFS4_OK;
@@ -297,45 +207,6 @@ out:
 void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 {
 	list_add(&of->inode_node, &ino->openfile_list);
-}
-
-bool inode_table_init(void)
-{
-	struct nfs_inode *root;
-
-	srv.inode_table = calloc(SRV_INIT_INO, sizeof(struct nfs_inode *));
-	if (!srv.inode_table)
-		return false;
-
-	srv.inode_table_len = SRV_INIT_INO;
-
-	root = calloc(1, sizeof(struct nfs_inode));
-	if (!root)
-		return false;
-	root->inum = INO_ROOT;
-
-	INIT_LIST_HEAD(&root->openfile_list);
-
-	srv.inode_table[INO_ROOT] = root;
-
-	root->mode = 0755;
-
-	root->type = NF4DIR;
-	root->version = 1ULL;
-	root->size = 4096ULL;
-	root->ctime =
-	root->atime =
-	root->mtime = current_time.tv_sec;
-
-	root->user = id_lookup_name(idt_user, "root@localdomain", 4);
-	if (!root->user)
-		root->user = strdup("nobody@localdomain");
-
-	root->group = id_lookup_name(idt_group, "root@localdomain", 4);
-	if (!root->group)
-		root->group = strdup("nobody@localdomain");
-
-	return true;
 }
 
 int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
@@ -363,7 +234,7 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 	return rc;
 }
 
-enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
+enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 				const struct nfs_fattr_set *attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,
@@ -508,8 +379,10 @@ size_done:
 	}
 
 out:
-	if (in_setattr && bitmap_set)
-		inode_touch(NULL, ino);
+	if (in_setattr && bitmap_set) {
+		if (inode_touch(txn, ino))
+			status = NFS4ERR_IO;
+	}
 
 	*bitmap_set_out = bitmap_set;
 	return status;
@@ -521,26 +394,27 @@ nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		   change_info4 *cinfo)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_fh fh;
+	int rc;
 
 	if (attr)
-		status = inode_apply_attrs(new_ino, attr, attrset, NULL, false);
-	if (status != NFS4_OK) {
-		inode_free(new_ino);
+		status = inode_apply_attrs(txn, new_ino, attr, attrset,
+					   NULL, false);
+	if (status != NFS4_OK)
 		goto out;
-	}
 
 	cinfo->atomic = true;
 	cinfo->before =
 	cinfo->after = dir_ino->version;
 
 	status = dir_add(txn, dir_ino, name, new_ino);
-	if (status != NFS4_OK) {
-		inode_free(new_ino);
+	if (status != NFS4_OK)
+		goto out;
+
+	rc = fsdb_inode_putenc(&srv.fsdb, txn, new_ino, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
 		goto out;
 	}
-
-	fh_set(&fh, dir_ino->inum);
 
 	cinfo->after = dir_ino->version;
 
@@ -582,12 +456,15 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status;
-	struct nfs_inode *dir_ino, *new_ino;
+	struct nfs_inode *dir_ino = NULL, *new_ino = NULL;
 	uint32_t objtype, specdata[2] = { 0, };
 	struct nfs_buf objname, linkdata = { 0, NULL };
 	struct nfs_fattr_set attr;
 	uint64_t attrset = 0;
 	change_info4 cinfo;
+	int rc;
+	DB_ENV *dbenv = srv.fsdb.env;
+	DB_TXN *txn;
 
 	objtype = CR32();				/* type */
 	if (objtype == NF4BLK || objtype == NF4CHR) {
@@ -599,29 +476,47 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	status = cur_readattr(cur, &attr);		/* createattrs */
 	if (status != NFS4_OK)
-		goto out;
+		goto out_noattr;
 
 	if (debugging)
 		print_create_args(objtype, &objname, &linkdata,
 				  specdata, &attr);
 
-	status = dir_curfh(NULL, cxn, &dir_ino, 0);
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	status = dir_curfh(txn, cxn, &dir_ino, 0);
 	if (status != NFS4_OK)
-		goto err_out;
+		goto out_abort;
 
 	if (dir_ino->type != NF4DIR) {
 		status = NFS4ERR_NOTDIR;
-		goto err_out;
+		goto out_abort;
+	}
+	if (objtype == NF4REG) {
+		status = NFS4ERR_INVAL;
+		goto out_abort;
 	}
 
 	status = inode_new_type(cxn, objtype, &linkdata, specdata, &new_ino);
 	if (status != NFS4_OK)
-		goto err_out;
+		goto out_abort;
 
-	status = inode_add(NULL, dir_ino, new_ino, &attr,
+	status = inode_add(txn, dir_ino, new_ino, &attr,
 			   &objname, &attrset, &cinfo);
 	if (status != NFS4_OK)
-		goto err_out;
+		goto out_abort;
+
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto out;
+	}
 
 	fh_set(&cxn->current_fh, new_ino->inum);
 
@@ -629,9 +524,9 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 		syslog(LOG_INFO, "   CREATE -> %llu",
 			(unsigned long long) cxn->current_fh.inum);
 
-err_out:
-	fattr_free(&attr);
 out:
+	fattr_free(&attr);
+out_noattr:
 	WR32(status);
 	if (status == NFS4_OK) {
 		WR32(cinfo.atomic ? 1 : 0);
@@ -639,14 +534,21 @@ out:
 		WR64(cinfo.after);
 		WRMAP(attrset);
 	}
+	inode_free(dir_ino);
+	inode_free(new_ino);
 	return status;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
 }
 
 nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 		        struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	struct nfs_fattr_set attrset;
 	bool printed = false;
 	uint32_t *status_p;
@@ -699,17 +601,21 @@ out:
 		syslog(LOG_INFO, "op GETATTR");
 
 	*status_p = htonl(status);
+	inode_free(ino);
 	return status;
 }
 
 nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 		        struct list_head *writes, struct rpc_write **wr)
 {
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	nfsstat4 status = NFS4_OK;
 	uint64_t bitmap_out = 0;
 	struct nfs_stateid sid;
 	struct nfs_fattr_set attr;
+	DB_ENV *dbenv = srv.fsdb.env;
+	DB_TXN *txn;
+	int rc;
 
 	if (cur->len < 20) {
 		status = NFS4ERR_BADXDR;
@@ -722,7 +628,7 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK) {
 		if (attr.bitmap & fattr_read_only_mask)
 			status = NFS4ERR_INVAL;
-		goto out;
+		goto out_noattr;
 	}
 
 	if (debugging) {
@@ -730,25 +636,45 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 		print_fattr("   SETATTR", &attr);
 	}
 
-	ino = inode_fhdec(NULL, cxn->current_fh, 0);
-	if (!ino) {
-		status = NFS4ERR_NOFILEHANDLE;
-		goto err_out;
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
 	}
 
-	status = inode_apply_attrs(ino, &attr, &bitmap_out, &sid, true);
+	ino = inode_fhdec(txn, cxn->current_fh, DB_RMW);
+	if (!ino) {
+		status = NFS4ERR_NOFILEHANDLE;
+		goto out_abort;
+	}
+
+	status = inode_apply_attrs(txn, ino, &attr, &bitmap_out, &sid, true);
 	if (status != NFS4_OK)
-		goto err_out;
+		goto out_abort;
+
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto out;
+	}
 
 	if (debugging)
 		print_fattr_bitmap("   SETATTR result", bitmap_out);
 
-err_out:
-	fattr_free(&attr);
 out:
+	fattr_free(&attr);
+out_noattr:
 	WR32(status);
 	WRMAP(bitmap_out);
+	inode_free(ino);
 	return status;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
 }
 
 unsigned int inode_access(const struct nfs_cxn *cxn,
@@ -803,7 +729,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t arg_access;
 	ACCESS4resok resok;
 
@@ -834,8 +760,6 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	resok.supported &= resok.access;
 
-	inode_free(ino);
-
 	if (debugging)
 		syslog(LOG_INFO, "   ACCESS -> (ACC:%x SUP:%x)",
 		       resok.access,
@@ -847,6 +771,7 @@ out:
 		WR32(resok.supported);
 		WR32(resok.access);
 	}
+	inode_free(ino);
 	return status;
 }
 
@@ -889,9 +814,12 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
         if (bitmap & (1ULL << FATTR4_CASE_PRESERVING))
 		if (attr->case_preserving != true)
 			return false;
-        if (bitmap & (1ULL << FATTR4_FILES_TOTAL))
+        if (bitmap & (1ULL << FATTR4_FILES_TOTAL)) {
+#if 0 /* FIXME */
 		if (attr->files_total != srv.inode_table_len)
 			return false;
+#endif
+	}
         if (bitmap & (1ULL << FATTR4_HOMOGENEOUS))
 		if (attr->homogeneous != true)
 			return false;

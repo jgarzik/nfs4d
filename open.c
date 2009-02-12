@@ -284,11 +284,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 * create file, if necessary
 	 */
 	if (creating) {
-		ino = inode_new_file(cxn);
-		if (!ino) {
-			status = NFS4ERR_RESOURCE;
+		status = inode_new_type(cxn, NF4REG, NULL, NULL, &ino);
+		if (status != NFS4_OK)
 			goto out;
-		}
 
 		status = inode_add(NULL, dir_ino, ino,
 				   exclusive ? NULL : &args->attr,
@@ -334,7 +332,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (recreating && !exclusive) {
 		_args.attr.supported_attrs &= (1ULL << FATTR4_SIZE);
 
-		status = inode_apply_attrs(ino, &args->attr, &bitmap_set,
+		status = inode_apply_attrs(NULL, ino, &args->attr, &bitmap_set,
 					   NULL, false);
 		if (status != NFS4_OK)
 			goto out;

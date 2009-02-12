@@ -135,6 +135,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
 	if (rc) {
+		status = NFS4ERR_IO;
 		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
 		goto out;
 	}

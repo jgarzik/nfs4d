@@ -399,6 +399,12 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_ACCESS:
 		srv.stats.op_access++;
 		return nfs_op_access(cxn, cur, writes, wr);
+	case OP_CREATE:
+		srv.stats.op_create++;
+		return nfs_op_create(cxn, cur, writes, wr);
+	case OP_GETATTR:
+		srv.stats.op_getattr++;
+		return nfs_op_getattr(cxn, cur, writes, wr);
 	case OP_GETFH:
 		srv.stats.op_getfh++;
 		return nfs_op_getfh(cxn, cur, writes, wr);
@@ -438,6 +444,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_SECINFO:
 		srv.stats.op_secinfo++;
 		return nfs_op_secinfo(cxn, cur, writes, wr);
+	case OP_SETATTR:
+		srv.stats.op_setattr++;
+		return nfs_op_setattr(cxn, cur, writes, wr);
 
 	/* needs work for db4 */
 	case OP_CLOSE:
@@ -446,12 +455,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_COMMIT:
 		srv.stats.op_commit++;
 		return nfs_op_commit(cxn, cur, writes, wr);
-	case OP_CREATE:
-		srv.stats.op_create++;
-		return nfs_op_create(cxn, cur, writes, wr);
-	case OP_GETATTR:
-		srv.stats.op_getattr++;
-		return nfs_op_getattr(cxn, cur, writes, wr);
 	case OP_LOCK:
 		srv.stats.op_lock++;
 		return nfs_op_lock(cxn, cur, writes, wr);
@@ -485,9 +488,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_RENEW:
 		srv.stats.op_renew++;
 		return nfs_op_renew(cxn, cur, writes, wr);
-	case OP_SETATTR:
-		srv.stats.op_setattr++;
-		return nfs_op_setattr(cxn, cur, writes, wr);
 	case OP_SETCLIENTID:
 		srv.stats.op_setclientid++;
 		return nfs_op_setclientid(cxn, cur, writes, wr);

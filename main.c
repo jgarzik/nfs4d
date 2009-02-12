@@ -636,6 +636,7 @@ void timer_init(struct nfs_timer *timer, nfs_timer_cb_t cb, void *priv)
 	timer->queued = false;
 }
 
+#if 0 /* needed someday? see FIXME in srv_space_used() */
 static void space_used_iter(struct nfs_inode *ino, uint64_t *total)
 {
 	*total += sizeof(struct nfs_inode);
@@ -664,25 +665,18 @@ static void space_used_iter(struct nfs_inode *ino, uint64_t *total)
 		break;
 	}
 }
+#endif
 
 uint64_t srv_space_used(void)
 {
 	static uint64_t cached_total;
 	static uint64_t ttl;
 	uint64_t total = 0;
-	unsigned int i;
-	struct nfs_inode *ino;
 
 	if (ttl && cached_total && (current_time.tv_sec < ttl))
 		return cached_total;
 
-	for (i = 0; i < srv.inode_table_len; i++) {
-		ino = srv.inode_table[i];
-		if (!ino || (ino->inum == INO_ROOT))
-			continue;
-
-		space_used_iter(ino, &total);
-	}
+	/* FIXME: iterate through inodes, calc space used */
 
 	cached_total = total;
 	ttl = current_time.tv_sec + SRV_SPACE_USED_TTL;
@@ -1094,8 +1088,6 @@ static GMainLoop *init_server(void)
 		     "nfs4d", true))
 		return NULL;
 
-	inode_table_init();
-
 	init_rng();
 	rand_verifier(&srv.instance_verf);
 
@@ -1234,7 +1226,6 @@ static gboolean stats_dump(gpointer dummy)
 		"drc_store_bytes: %Lu\n"
 		"drc_hits: %lu\n"
 		"drc_misses: %lu\n"
-		"inode_objs: %u\n"
 		"========== %Lu.%Lu\n",
 
 		(unsigned long long) current_time.tv_sec,
@@ -1295,7 +1286,6 @@ static gboolean stats_dump(gpointer dummy)
 		srv.stats.drc_store_bytes,
 		srv.stats.drc_hits,
 		srv.stats.drc_misses,
-		srv.inode_table_len,
 		(unsigned long long) current_time.tv_sec,
 		(unsigned long long) current_time.tv_usec);
 
@@ -1336,6 +1326,7 @@ static void stats_signal(int signal)
 	g_idle_add(stats_dump, NULL);
 }
 
+#if 0 /* will be used again soon */
 static void dump_inode(FILE *f, const struct nfs_inode *ino)
 {
 	if (!ino)
@@ -1388,11 +1379,11 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 
 	fprintf(f, "===========================\n");
 }
+#endif
 
 static gboolean diag_dump(gpointer dummy)
 {
 	FILE *f;
-	unsigned int i;
 
 	if (dump_fn[0] != '/') {
 		char *fn;
@@ -1409,10 +1400,7 @@ static gboolean diag_dump(gpointer dummy)
 		goto out;
 	}
 
-	fprintf(f, "inode-table-size: %u\n", srv.inode_table_len);
-
-	for (i = 0; i < srv.inode_table_len; i++)
-		dump_inode(f, srv.inode_table[i]);
+	/* FIXME: iterate through inodes, dumping each one */
 
 out:
 	return FALSE;

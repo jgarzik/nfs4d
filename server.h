@@ -554,9 +554,6 @@ struct nfs_server_stats {
 };
 
 struct nfs_server {
-	struct nfs_inode	**inode_table;
-	unsigned int		inode_table_len;
-
 	GHashTable		*clid_idx;
 
 	GHashTable		*openfiles;
@@ -689,14 +686,16 @@ extern void inode_free(struct nfs_inode *ino);
 extern struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum, int flags);
 extern bool inode_check(DB_TXN *txn, nfsino_t inum);
 extern int inode_touch(DB_TXN *txn, struct nfs_inode *ino);
-extern bool inode_table_init(void);
 extern int inode_unlink(DB_TXN *txn, struct nfs_inode *ino);
 extern nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		   struct nfs_inode *new_ino, const struct nfs_fattr_set *attr,
 		   const struct nfs_buf *name, uint64_t *attrset,
 		   change_info4 *cinfo);
-extern struct nfs_inode *inode_new_file(struct nfs_cxn *cxn);
-extern enum nfsstat4 inode_apply_attrs(struct nfs_inode *ino,
+extern nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
+			const struct nfs_buf *linkdata,
+			const uint32_t *specdata,
+			struct nfs_inode **ino_out);
+extern enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 				const struct nfs_fattr_set *attr,
 			        uint64_t *bitmap_set_out,
 			        struct nfs_stateid *sid,

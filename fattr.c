@@ -799,7 +799,9 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 
 	attr->files_avail =
 	attr->files_free = 33000000ULL;
+#if 0 /* FIXME */
 	attr->files_total = srv.inode_table_len + attr->files_free;
+#endif
 
 	attr->space_avail =
 	attr->space_free = 4ULL * 1024 * 1024 * 1024;
