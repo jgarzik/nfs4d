@@ -457,6 +457,7 @@ int fsdb_inode_copyenc(struct fsdb_inode **dbino_o, size_t *dbino_len,
 	dbino->n_link = GUINT32_TO_LE(ino->n_link);
 	dbino->devdata[0] = GUINT32_TO_LE(ino->devdata[0]);
 	dbino->devdata[1] = GUINT32_TO_LE(ino->devdata[1]);
+	memcpy(dbino->dataname, ino->dataname, sizeof(dbino->dataname));
 	memcpy(dbino->create_verf, ino->create_verf, sizeof(dbino->create_verf));
 	dbino->user_len = GUINT16_TO_LE(user_len);
 	dbino->group_len = GUINT16_TO_LE(group_len);
@@ -522,6 +523,11 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 	ino->parent = GUINT64_FROM_LE(dbino->parent);
 	ino->type = GUINT32_FROM_LE(dbino->ftype);
 	ino->version = GUINT64_FROM_LE(dbino->version);
+
+	/* note we use sizeof(dbino->...) because its dataname is smaller */
+	memcpy(ino->dataname, dbino->dataname, sizeof(dbino->dataname));
+	ino->dataname[sizeof(ino->dataname) - 1] = 0;
+
 	memcpy(ino->create_verf, dbino->create_verf, sizeof(ino->create_verf));
 	ino->size = GUINT64_FROM_LE(dbino->size);
 	ino->ctime = GUINT64_FROM_LE(dbino->ctime);

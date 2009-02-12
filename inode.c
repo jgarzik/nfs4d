@@ -60,7 +60,6 @@ int inode_touch(DB_TXN *txn, struct nfs_inode *ino)
 
 void inode_free(struct nfs_inode *ino)
 {
-	GList *tmp;
 	struct nfs_openfile *of, *iter;
 	nfsino_t inum;
 
@@ -76,14 +75,6 @@ void inode_free(struct nfs_inode *ino)
 	switch (ino->type) {
 	case NF4LNK:
 		free(ino->linktext);
-		break;
-	case NF4REG:
-		tmp = ino->buf_list;
-		while (tmp) {
-			refbuf_unref(tmp->data);
-			tmp = tmp->next;
-		}
-		g_list_free(ino->buf_list);
 		break;
 	default:
 		/* do nothing */
@@ -168,9 +159,6 @@ nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 	new_ino->type = objtype;
 
 	switch(objtype) {
-	case NF4REG:
-		new_ino->buf_list = NULL;
-		break;
 	case NF4DIR:
 		new_ino->size = 4096;
 		break;
@@ -187,6 +175,7 @@ nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 		new_ino->linktext = linktext;
 		break;
 	}
+	case NF4REG:
 	case NF4SOCK:
 	case NF4FIFO:
 		break;
@@ -212,6 +201,7 @@ void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 {
 	int rc;
+	char *fdpath;
 
 	if (!ino || (ino->inum == INO_ROOT)) {
 		syslog(LOG_ERR, "BUG: null in inode_unlink");
@@ -229,7 +219,18 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 		rc = inode_touch(txn, ino);
 	}
 
-	/* FIXME: remove data!! */
+	if (rc || ino->type != NF4REG)
+		return rc;
+
+	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
+	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+
+	/* FIXME: metadata transaction could still be aborted, at this point */
+
+	if (unlink(fdpath) < 0) {
+		rc = -errno;
+		syslogerr(fdpath);
+	}
 
 	return rc;
 }
@@ -242,6 +243,7 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 {
 	uint64_t bitmap_set = 0;
 	enum nfsstat4 status = NFS4_OK;
+	char *fdpath;
 
 	if (attr->bitmap & fattr_read_only_mask) {
 		status = NFS4ERR_INVAL;
@@ -256,7 +258,6 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		uint64_t new_size = attr->size;
 		uint64_t ofs, len;
 		struct nfs_access ac = { NULL, };
-		struct refbuf *rb;
 
 		/* only permit size attribute manip on files */
 		if (ino->type != NF4REG) {
@@ -287,34 +288,13 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		if (new_size == ino->size)
 			goto size_done;
 
-		/* add zero-filled buffer */
-		if (new_size > ino->size) {
-			rb = refbuf_new(len, true);
-			if (!rb) {
-				status = NFS4ERR_NOSPC;
-				goto out;
-			}
-			ino->buf_list = g_list_append(ino->buf_list, rb);
-		}
+		fdpath = alloca(strlen(srv.data_dir) +
+			 strlen(ino->dataname) + 1);
+		sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
 
-		/* truncate buffers until we reach desired length */
-		else {
-			GList *ent, *tmp = g_list_last(ino->buf_list);
-			while (len > 0) {
-				ent = tmp;
-				tmp = tmp->prev;
-
-				rb = ent->data;
-				if (rb->len <= len) {
-					len -= rb->len;
-					refbuf_unref(rb);
-					ino->buf_list = g_list_delete_link(
-						ino->buf_list, ent);
-				} else {
-					rb->len -= len;
-					len = 0;
-				}
-			}
+		if (truncate(fdpath, new_size) < 0) {
+			status = NFS4ERR_IO;
+			goto out;
 		}
 
 		ino->size = new_size;

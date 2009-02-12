@@ -411,6 +411,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_ACCESS:
 		srv.stats.op_access++;
 		return nfs_op_access(cxn, cur, writes, wr);
+	case OP_COMMIT:
+		srv.stats.op_commit++;
+		return nfs_op_commit(cxn, cur, writes, wr);
 	case OP_CREATE:
 		srv.stats.op_create++;
 		return nfs_op_create(cxn, cur, writes, wr);
@@ -441,6 +444,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_PUTROOTFH:
 		srv.stats.op_putrootfh++;
 		return nfs_op_putrootfh(cxn, cur, writes, wr);
+	case OP_READ:
+		srv.stats.op_read++;
+		return nfs_op_read(cxn, cur, writes, wr);
 	case OP_READDIR:
 		srv.stats.op_readdir++;
 		return nfs_op_readdir(cxn, cur, writes, wr);
@@ -468,14 +474,14 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_VERIFY:
 		srv.stats.op_verify++;
 		return nfs_op_verify(cxn, cur, writes, wr, false);
+	case OP_WRITE:
+		srv.stats.op_write++;
+		return nfs_op_write(cxn, cur, writes, wr);
 
 	/* needs work for db4 */
 	case OP_CLOSE:
 		srv.stats.op_close++;
 		return nfs_op_close(cxn, cur, writes, wr);
-	case OP_COMMIT:
-		srv.stats.op_commit++;
-		return nfs_op_commit(cxn, cur, writes, wr);
 	case OP_LOCK:
 		srv.stats.op_lock++;
 		return nfs_op_lock(cxn, cur, writes, wr);
@@ -494,9 +500,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_OPEN_DOWNGRADE:
 		srv.stats.op_open_downgrade++;
 		return nfs_op_open_downgrade(cxn, cur, writes, wr);
-	case OP_READ:
-		srv.stats.op_read++;
-		return nfs_op_read(cxn, cur, writes, wr);
 	case OP_RELEASE_LOCKOWNER:
 		srv.stats.op_release_lockowner++;
 		return nfs_op_release_lockowner(cxn, cur, writes, wr);
@@ -509,9 +512,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_SETCLIENTID_CONFIRM:
 		srv.stats.op_setclientid_confirm++;
 		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
-	case OP_WRITE:
-		srv.stats.op_write++;
-		return nfs_op_write(cxn, cur, writes, wr);
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:

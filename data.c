@@ -19,7 +19,10 @@
 
 #define _GNU_SOURCE
 #include "nfs4d-config.h"
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <string.h>
+#include <fcntl.h>
 #include <syslog.h>
 #include "server.h"
 
@@ -40,9 +43,11 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint64_t offset;
 	uint32_t count;
+	char *fdpath;
+	int fd;
 
 	/* read COMMIT args */
 	offset = CR64();
@@ -74,40 +79,31 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	/* since this is a RAM-based server, we do nothing else.
-	 * everything is already committed.
-	 */
+	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
+	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+
+	fd = open(fdpath, O_WRONLY);
+	if (fd < 0)
+		goto err_io;
+
+	if (fsync(fd) < 0)
+		goto err_io_fd;
+	
+	if (close(fd) < 0)
+		goto err_io;
 
 out:
 	WR32(status);
 	if (status == NFS4_OK)
 		WRMEM(&srv.instance_verf, sizeof(srv.instance_verf));
+	inode_free(ino);
 	return status;
-}
 
-static GList *inode_data_ofs(struct nfs_inode *ino, uint64_t ofs,
-			     unsigned int *ofs_in_buf)
-{
-	GList *tmp;
-	struct refbuf *rb;
-
-	if (G_UNLIKELY(!ino || ino->type != NF4REG))
-		return NULL;
-
-	tmp = ino->buf_list;
-	while (tmp) {
-		rb = tmp->data;
-
-		if (ofs < rb->len)
-			break;
-
-		ofs -= rb->len;
-
-		tmp = tmp->next;
-	}
-
-	*ofs_in_buf = ofs;
-	return tmp;
+err_io_fd:
+	close(fd);
+err_io:
+	status = NFS4ERR_IO;
+	goto out;
 }
 
 nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -115,13 +111,16 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint64_t new_size, offset;
 	uint32_t stable;
 	struct nfs_buf data;
 	struct nfs_access ac = { NULL, };
-	uint64_t old_size, size_exist = 0, size_skip = 0, size_after = 0;
-	struct refbuf *zero_rb = NULL, *append_rb = NULL;
+	uint64_t old_size;
+	int fd, frc;
+	char *fdpath;
+	size_t pending;
+	void *p;
 
 	if (cur->len < 32) {
 		status = NFS4ERR_BADXDR;
@@ -177,77 +176,41 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (data.len == 0)
 		goto out;
 
-	/*
-	 * calculate the sizes of various regions we must deal
-	 * with: existing data region (may be overwritten),
-	 * zero-filled region that exists if offset is beyond EOF,
-	 * and the region that follows if data is being appended.
-	 *
-	 * Perform all allocations (and check for failure), before
-	 * overwriting any data.
-	 */
-
 	new_size = offset + data.len;
 	if (new_size < old_size)
 		new_size = old_size;
 
-	if (offset < old_size)
-		size_exist = MIN(data.len, old_size - offset);
+	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
+	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+	fd = open(fdpath, O_WRONLY);
+	if (fd < 0)
+		goto err_io;
 
-	if (offset > old_size) {
-		size_skip = offset - old_size;
-		zero_rb = refbuf_new(size_skip, true);
-		if (!zero_rb) {
-			status = NFS4ERR_NOSPC;
-			goto out;
-		}
+	if (lseek64(fd, offset, SEEK_SET) < 0)
+		goto err_io_fd;
+
+	p = data.val;
+	pending = data.len;
+	while (pending > 0) {
+		ssize_t rc = write(fd, p, pending);
+		if (rc < 0)
+			goto err_io_fd;
+
+		pending -= rc;
+		p += rc;
 	}
 
-	if (new_size > old_size) {
-		size_after = new_size - old_size - size_skip;
-		append_rb = refbuf_new(size_after, false);
-		if (!append_rb) {
-			status = NFS4ERR_NOSPC;
-			goto out;
-		}
-		memcpy(append_rb->buf,
-		       data.val + (data.len - size_after), size_after);
-	}
+	if (stable == FILE_SYNC4)
+		frc = fsync(fd);
+	else if (stable == DATA_SYNC4)
+		frc = fdatasync(fd);
+	else
+		frc = 0;
+	if (frc)
+		goto err_io_fd;
 
-	/* overwrite portion of existing-data region */
-	if (size_exist) {
-		unsigned int i, buf_ofs = 0;
-		GList *tmp;
-		struct refbuf *rb;
-		void *buf = data.val;
-
-		tmp = inode_data_ofs(ino, offset, &buf_ofs);
-		rb = tmp->data;
-		i = MIN(size_exist, rb->len - buf_ofs);
-		memcpy(rb->buf + buf_ofs, buf, i);
-
-		buf += i;
-		size_exist -= i;
-		tmp = tmp->next;
-
-		while (size_exist) {
-			rb = tmp->data;
-			i = MIN(size_exist, rb->len);
-			memcpy(rb->buf, buf, i);
-
-			buf += i;
-			size_exist -= i;
-			tmp = tmp->next;
-		}
-	}
-
-	/* store zero-filled region */
-	if (zero_rb)
-		ino->buf_list = g_list_append(ino->buf_list, zero_rb);
-
-	/* store data in appended-data region */
-	if (append_rb)
-		ino->buf_list = g_list_append(ino->buf_list, append_rb);
+	if (close(fd) < 0)
+		goto err_io;
 
 	ino->size = new_size;
 
@@ -258,7 +221,15 @@ out:
 		WR32(FILE_SYNC4);
 		WRMEM(&srv.instance_verf, sizeof(verifier4));
 	}
+	inode_free(ino);
 	return status;
+
+err_io_fd:
+	close(fd);
+err_io:
+	syslogerr(fdpath);
+	status = NFS4ERR_IO;
+	goto out;
 }
 
 nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
@@ -266,15 +237,14 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_inode *ino;
-	uint64_t read_size = 0, offset, tmp_read_size, pad_size;
+	struct nfs_inode *ino = NULL;
+	uint64_t read_size = 0, offset, pad_size;
 	uint32_t count;
 	bool eof = false;
 	struct nfs_access ac = { NULL, };
-	struct refbuf *rb;
-	GList *tmp, *buf_list = NULL;
-	unsigned int buf_ofs = 0;
-	struct rpc_write *tmp_wr, *final_wr = NULL, *pad_wr = NULL;
+	struct rpc_write *data_wr = NULL, *final_wr, *pad_wr = NULL;
+	int fd;
+	char *fdpath;
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -333,41 +303,39 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	read_size = ino->size - offset;
 	if (read_size > count)
 		read_size = count;
+	if (read_size > RPC_WRITE_BUFSZ)
+		read_size = RPC_WRITE_BUFSZ;
 
-	tmp_read_size = read_size;
-	tmp = inode_data_ofs(ino, offset, &buf_ofs);
-	while (tmp_read_size) {
-		unsigned int i;
-
-		rb = tmp->data;
-		i = MIN(tmp_read_size, rb->len - buf_ofs);
-
-		tmp_wr = wr_ref(rb, buf_ofs, i);
-		if (!tmp_wr) {
-			status = NFS4ERR_RESOURCE;
-			goto err_out;
-		}
-
-		buf_list = g_list_append(buf_list, tmp_wr);
-
-		buf_ofs = 0;
-		tmp_read_size -= i;
-		tmp = tmp->next;
-	}
-
-	final_wr = wr_alloc(0);
-	if (!final_wr) {
+	final_wr = data_wr = wr_alloc(read_size);
+	if (!data_wr) {
 		status = NFS4ERR_RESOURCE;
-		goto err_out;
+		goto out;
 	}
+
+	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
+	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+	fd = open(fdpath, O_WRONLY);
+	if (fd < 0)
+		goto err_io;
+
+	if (lseek64(fd, offset, SEEK_SET) < 0)
+		goto err_io_fd;
+
+	if (read(fd, data_wr->rbuf->buf, read_size) != read_size)
+		goto err_io_fd;
+
+	if (close(fd) < 0)
+		goto err_io;
 
 	pad_size = (XDR_QUADLEN(read_size) * 4) - read_size;
 	if (pad_size) {
 		pad_wr = wr_ref(&pad_rb, 0, pad_size);
 		if (!pad_wr) {
 			status = NFS4ERR_RESOURCE;
-			goto err_out_final;
+			goto err_out_data;
 		}
+
+		final_wr = pad_wr;
 	}
 
 	if ((offset + read_size) >= ino->size)
@@ -378,38 +346,23 @@ out:
 	if (status == NFS4_OK) {
 		WR32(eof);
 		WR32(read_size);
-
 		if (read_size) {
-			tmp = buf_list;
-			while (tmp) {
-				tmp_wr = tmp->data;
-				list_add_tail(&tmp_wr->node, writes);
-				tmp = tmp->next;
-			}
-
-			g_list_free(buf_list);
-
-			list_add_tail(&final_wr->node, writes);
-
-			if (pad_wr) {
+			list_add_tail(&data_wr->node, writes);
+			if (pad_wr)
 				list_add_tail(&pad_wr->node, writes);
-				final_wr = pad_wr;
-			}
-
 			*wr = final_wr;
 		}
 	}
+	inode_free(ino);
 	return status;
 
-err_out_final:
-	wr_unref(final_wr);
-err_out:
-	tmp = buf_list;
-	while (tmp) {
-		tmp_wr = tmp->data;
-		wr_unref(tmp_wr);
-		tmp = tmp->next;
-	}
+err_io_fd:
+	close(fd);
+err_io:
+	syslogerr(fdpath);
+	status = NFS4ERR_IO;
+err_out_data:
+	wr_unref(data_wr);
 	goto out;
 }
 

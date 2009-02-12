@@ -58,7 +58,8 @@ char *id_lookup(enum id_type type, uint32_t id)
 	if (!s);
 		return NULL;
 
-	rstr = g_strdup_printf("%s@%s", s, srv.localdom);
+	if (asprintf(&rstr, "%s@%s", s, srv.localdom) < 0)
+		rstr = NULL;
 	free(s);
 
 	return rstr;
@@ -95,7 +96,8 @@ char *id_lookup_name(enum id_type type, const char *name, size_t name_len)
 	if (strchr(s, '@'))
 		return s;
 
-	rstr = g_strdup_printf("%s@%s", s, srv.localdom);
+	if (asprintf(&rstr, "%s@%s", s, srv.localdom) < 0)
+		rstr = NULL;
 	free(s);
 
 	return rstr;

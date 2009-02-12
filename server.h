@@ -486,7 +486,8 @@ struct nfs_inode {
 
 	char			*linktext;	/* state for a symlink */
 	uint32_t		devdata[2];	/* "" blk/chrdev */
-	GList			*buf_list;	/* "" regular file */
+
+	char			dataname[32 + 1];
 
 	struct list_head	openfile_list;
 };
@@ -569,6 +570,9 @@ struct nfs_server {
 	verifier4		instance_verf;
 
 	char			*localdom;
+
+	char			*data_dir;
+	char			*metadata_dir;
 
 	struct fsdb		fsdb;
 

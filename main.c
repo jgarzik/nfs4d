@@ -56,6 +56,8 @@ struct refbuf pad_rb = { "\0\0\0\0", 4, 1 };
 static char startup_cwd[PATH_MAX];
 char my_hostname[HOST_NAME_MAX + 1];
 static bool opt_foreground;
+static char *opt_data_path = "/tmp/data/";
+static char *opt_metadata = "/tmp/metadata/";
 static char *pid_fn = "nfs4d.pid";
 static char *stats_fn = "nfs4d.stats";
 static char *dump_fn = "nfs4d.dump";
@@ -104,19 +106,28 @@ struct drc_ent {
 };
 
 static struct argp_option options[] = {
-	{ "debug", 'd', "LEVEL", 0,
-	  "Enable debug output (def. 0 = no debug, increase for more verbosity.  maximum: 2)" },
-	{ "foreground", 'f', NULL, 0,
-	  "Run daemon in foreground (def: chdir to /, detach, run in background)" },
+	{ "metadata", 'M', "DIRECTORY", 0,
+	  "Metadata directory" },
+	{ "data", 'D', "DIRECTORY", 0,
+	  "Data directory" },
+
 	{ "port", 'p', "PORT", 0,
 	  "Bind to TCP port PORT (def: 2049)" },
 	{ "pid", 'P', "FILE", 0,
-	  "Write daemon process id to FILE (def: nfs4d.pid, in current directory)" },
+	  "Write daemon process id to FILE (def: nfs4d.pid, in current dir)" },
+
+	{ "debug", 'd', "LEVEL", 0,
+	  "Enable debug output (def. 0 = no debug, 2 = maximum debug output)" },
+
+	{ "foreground", 'f', NULL, 0,
+	  "Run daemon in foreground (def: chdir to /, detach, run in background)" },
+
 	{ "localdomain", 'O', "DOMAIN", 0,
-	  "Local domain" },
+	  "Local domain (def: gethostname; used with user/group ids, required by NFS)" },
+
 	{ "stats", 'S', "FILE", 0,
 	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4d.stats, in current directory)" },
-	{ "dump", 'D', "FILE", 0,
+	{ "dump", 'U', "FILE", 0,
 	  "Diagnostic RAM data dumped to FILE, for each SIGUSR2 (def: nfs4d.dump, in current directory)" },
 
 	{ }
@@ -1073,6 +1084,9 @@ static GMainLoop *init_server(void)
 	request_cache = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					 NULL, drc_ent_free);
 	srv.localdom = opt_lcldom;
+	srv.data_dir = opt_data_path;
+	srv.metadata_dir = opt_metadata;
+	srv.fsdb.home = srv.metadata_dir;
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		slerror("gettimeofday(2)");
@@ -1100,6 +1114,41 @@ static GMainLoop *init_server(void)
 	return loop;
 }
 
+static bool is_dir(const char *arg, char **dirname)
+{
+	struct stat st;
+	char *s = NULL;
+
+	*dirname = NULL;
+
+	if (stat(arg, &st) < 0) {
+		perror(arg);
+		return false;
+	}
+
+	if (!S_ISDIR(st.st_mode)) {
+		fprintf(stderr, "%s: not a directory\n", arg);
+		return false;
+	}
+
+	if (arg[strlen(arg) - 1] == '/') {
+		s = strdup(arg);
+		if (s) {
+			*dirname = s;
+			return true;
+		} else
+			return false;
+	}
+
+	if (asprintf(&s, "%s/", arg) < 0) {
+		fprintf(stderr, "asprintf error in is_dir()\n");
+		return false;
+	}
+	
+	*dirname = s;
+	return true;
+}
+
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
 	switch (key) {
@@ -1111,6 +1160,14 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 				arg);
 			argp_usage(state);
 		}
+		break;
+	case 'D':
+		if (!is_dir(arg, &opt_data_path))
+			argp_usage(state);
+		break;
+	case 'M':
+		if (!is_dir(arg, &opt_metadata))
+			argp_usage(state);
 		break;
 	case 'O':
 		opt_lcldom = arg;
@@ -1131,7 +1188,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		pid_fn = arg;
 		break;
 
-	case 'D':
+	case 'U':
 		dump_fn = arg;
 		break;
 

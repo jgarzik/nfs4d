@@ -58,6 +58,8 @@ struct fsdb_inode {
 	uint32_t		n_link;
 	uint32_t		devdata[2];
 
+	char			dataname[32];
+
 	verifier4		create_verf;
 
 	uint16_t		user_len;
