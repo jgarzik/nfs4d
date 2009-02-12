@@ -402,6 +402,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_GETFH:
 		srv.stats.op_getfh++;
 		return nfs_op_getfh(cxn, cur, writes, wr);
+	case OP_LINK:
+		srv.stats.op_link++;
+		return nfs_op_link(cxn, cur, writes, wr);
 	case OP_LOOKUP:
 		srv.stats.op_lookup++;
 		return nfs_op_lookup(cxn, cur, writes, wr);
@@ -449,9 +452,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_GETATTR:
 		srv.stats.op_getattr++;
 		return nfs_op_getattr(cxn, cur, writes, wr);
-	case OP_LINK:
-		srv.stats.op_link++;
-		return nfs_op_link(cxn, cur, writes, wr);
 	case OP_LOCK:
 		srv.stats.op_lock++;
 		return nfs_op_lock(cxn, cur, writes, wr);

@@ -154,6 +154,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	rc = txn->commit(txn, 0);
 	if (rc) {
 		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
 		goto out;
 	}
 
@@ -251,10 +252,12 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status;
-	struct nfs_inode *dir_ino, *src_ino;
+	struct nfs_inode *dir_ino = NULL, *src_ino = NULL;
 	struct nfs_buf newname;
-	uint64_t before, after;
-	struct nfs_fh fh;
+	uint64_t before = 0, after = 0;
+	DB_TXN *txn;
+	DB_ENV *dbenv = srv.fsdb.env;
+	int rc;
 
 	CURBUF(&newname);
 
@@ -272,22 +275,29 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	dir_ino = inode_fhdec(NULL, cxn->current_fh, 0);
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	dir_ino = inode_fhdec(txn, cxn->current_fh, 0);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
-		goto out;
+		goto out_abort;
 	}
 
 	/* make sure target is a directory */
 	if (dir_ino->type != NF4DIR) {
 		status = NFS4ERR_NOTDIR;
-		goto out;
+		goto out_abort;
 	}
 
-	src_ino = inode_fhdec(NULL, cxn->save_fh, 0);
+	src_ino = inode_fhdec(txn, cxn->save_fh, 0);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
-		goto out;
+		goto out_abort;
 	}
 
 	/* make sure source is a regular file */
@@ -296,18 +306,23 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_ISDIR;
 		else
 			status = NFS4ERR_INVAL;
-		goto out;
+		goto out_abort;
 	}
 
 	before = dir_ino->version;
 
-	status = dir_add(NULL, dir_ino, &newname, src_ino);
+	status = dir_add(txn, dir_ino, &newname, src_ino);
 	if (status != NFS4_OK)
-		goto out;
-
-	fh_set(&fh, dir_ino->inum);
+		goto out_abort;
 
 	after = dir_ino->version;
+
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto out;
+	}
 
 out:
 	WR32(status);
@@ -316,7 +331,14 @@ out:
 		WR64(before);		/* cinfo.before */
 		WR64(after);		/* cinfo.after */
 	}
+	inode_free(src_ino);
+	inode_free(dir_ino);
 	return status;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
 }
 
 static bool dir_is_empty(DB_TXN *txn, struct nfs_inode *ino)
@@ -461,6 +483,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	rc = txn->commit(txn, 0);
 	if (rc) {
 		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
 		goto out;
 	}
 
@@ -624,6 +647,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	rc = txn->commit(txn, 0);
 	if (rc) {
 		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
 		goto out;
 	}
 
