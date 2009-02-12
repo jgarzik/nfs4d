@@ -429,6 +429,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_PUTROOTFH:
 		srv.stats.op_putrootfh++;
 		return nfs_op_putrootfh(cxn, cur, writes, wr);
+	case OP_READDIR:
+		srv.stats.op_readdir++;
+		return nfs_op_readdir(cxn, cur, writes, wr);
 	case OP_READLINK:
 		srv.stats.op_readlink++;
 		return nfs_op_readlink(cxn, cur, writes, wr);
@@ -482,9 +485,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_READ:
 		srv.stats.op_read++;
 		return nfs_op_read(cxn, cur, writes, wr);
-	case OP_READDIR:
-		srv.stats.op_readdir++;
-		return nfs_op_readdir(cxn, cur, writes, wr);
 	case OP_RELEASE_LOCKOWNER:
 		srv.stats.op_release_lockowner++;
 		return nfs_op_release_lockowner(cxn, cur, writes, wr);

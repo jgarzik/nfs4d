@@ -701,13 +701,10 @@ struct readdir_info {
 	unsigned int n_results;
 };
 
-#if 0 /* FIXME */
-static gboolean readdir_iter(gpointer _key, gpointer value, gpointer user_data)
+static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
+			 nfsino_t dirent, struct readdir_info *ri)
 {
 	uint64_t bitmap_out = 0;
-	nfsino_t *de = value;
-	struct fsdb_de_key *key = _key;
-	struct readdir_info *ri = user_data;
 	uint32_t dirlen, maxlen;
 	struct nfs_fattr_set attr;
 	struct nfs_inode *ino;
@@ -717,22 +714,22 @@ static gboolean readdir_iter(gpointer _key, gpointer value, gpointer user_data)
 	struct nfs_buf de_name;
 
 	if (ri->stop)
-		return TRUE;
+		return true;
 
 	if (!ri->cookie_found) {
 		if (ri->cookie && (ri->dir_pos <= ri->cookie)) {
 			ri->dir_pos++;
-			return FALSE;
+			return false;
 		}
 		ri->cookie_found = true;
 	}
 
-	ino = inode_getdec(NULL, *de, 0);
+	ino = inode_getdec(txn, dirent, 0);
 	if (!ino) {
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;
 		ri->status = NFS4ERR_NOENT;
-		return TRUE;
+		return true;
 	}
 
 	memset(&attr, 0, sizeof(attr));
@@ -797,20 +794,28 @@ static gboolean readdir_iter(gpointer _key, gpointer value, gpointer user_data)
 out:
 	fattr_free(&attr);
 	if (ri->stop)
-		return TRUE;
-	return FALSE;
+		return true;
+	return false;
 }
-#endif
 
 nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		        struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t dircount, maxcount, *status_p;
 	struct readdir_info ri;
 	uint64_t cookie, attr_request;
 	verifier4 *cookie_verf;
+	DB_TXN *txn = NULL;
+	DB *dirent = srv.fsdb.dirent;
+	DB_ENV *dbenv = srv.fsdb.env;
+	bool first_loop = true;
+	DBT pkey, pval;
+	struct fsdb_de_key key;
+	int cget_flags;
+	DBC *curs = NULL;
+	int rc;
 
 	cookie = CR64();
 	cookie_verf = CURMEM(sizeof(verifier4));
@@ -830,10 +835,12 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		print_fattr_bitmap("op READDIR", attr_request);
 	}
 
+	/* traditionally "." and "..", hardcoded */
 	if (cookie == 1 || cookie == 2) {
 		status = NFS4ERR_BAD_COOKIE;
 		goto out;
 	}
+	/* don't permit request of write-only attrib */
 	if (attr_request & fattr_write_only_mask) {
 		status = NFS4ERR_INVAL;
 		goto out;
@@ -846,6 +853,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* read inode of directory being read */
 	status = dir_curfh(NULL, cxn, &ino, 0);
 	if (status != NFS4_OK)
 		goto out;
@@ -862,11 +870,21 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	maxcount -= (8 + 4 + 4);
 
+	/* verify within server limits */
 	if (dircount > SRV_MAX_READ || maxcount > SRV_MAX_READ) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
+	/* open transaction */
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	/* set up directory iteration */
 	memset(&ri, 0, sizeof(ri));
 	ri.cookie = cookie;
 	ri.dircount = dircount;
@@ -878,15 +896,71 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	ri.dir_pos = 3;
 	ri.first_time = true;
 
-#if 0 /* FIXME */
-	if (g_tree_nnodes(ino->dir) == 0) {
+	/* if dir is empty, skip directory interation loop completely */
+	if (dir_is_empty(txn, ino)) {
 		WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
 
 		ri.val_follows = WRSKIP(4);
-	} else {
-		g_tree_foreach(ino->dir, readdir_iter, &ri);
+
+		goto the_finale;
 	}
-#endif
+
+	/* otherwise, loop through each dirent attached to ino->inum */
+	rc = dirent->cursor(dirent, txn, &curs, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dirent->err(dirent, rc, "dirent->cursor");
+		goto out_abort;
+	}
+
+	memset(&pkey, 0, sizeof(pkey));
+	memset(&pval, 0, sizeof(pval));
+	
+	key.inum = GUINT64_TO_LE(ino->inum);
+
+	pkey.data = &key;
+	pkey.size = sizeof(key);
+
+	while (1) {
+		struct fsdb_de_key *rkey;
+		uint64_t dirent, *dep;
+
+		if (first_loop) {
+			cget_flags = DB_SET_RANGE;
+			first_loop = false;
+		} else
+			cget_flags = DB_NEXT;
+
+		rc = curs->get(curs, &pkey, &pval, cget_flags);
+		if (rc)
+			break;
+
+		rkey = pkey.data;
+		if (GUINT64_FROM_LE(rkey->inum) != ino->inum)
+			break;
+
+		dep = pval.data;
+		dirent = GUINT64_FROM_LE(*dep);
+
+		if (readdir_iter(txn, rkey, dirent, &ri))
+			break;
+	}
+
+	rc = curs->close(curs);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dirent->err(dirent, rc, "dirent->cursor close");
+		goto out_abort;
+	}
+
+the_finale:
+
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto out;
+	}
 
 	/* terminate final entry4.nextentry and dirlist4.entries */
 	if (ri.val_follows)
@@ -901,6 +975,12 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 
 out:
 	*status_p = htonl(status);
+	inode_free(ino);
 	return status;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
 }
 
