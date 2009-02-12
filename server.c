@@ -161,7 +161,7 @@ static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaq
 {
 	struct nfs_cxn *cxn = calloc(1, sizeof(struct nfs_cxn));
 	nfsstat4 status = NFS4_OK;
-	uint32_t *p, v, ql;
+	uint32_t *p, v, ql, lim;
 
 	if (!cxn) {
 		status = NFS4ERR_RESOURCE;
@@ -189,8 +189,14 @@ static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaq
 
 		p = (uint32_t *) cred->oa_base;
 
-		p++;					/* stamp */
+		cxn->auth.u.up.stamp = ntohl(*p++);	/* stamp */
 		v = ntohl(*p++);			/* machinename len */
+
+		if (v < 1) {
+			syslog(LOG_INFO, "AUTH_SYS machinename null");
+			status = NFS4ERR_DENIED;
+			goto err_out;
+		}
 
 		ql = XDR_QUADLEN(v);
 		if (cred->oa_length < ((ql + 4) * 4)) {
@@ -199,7 +205,13 @@ static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaq
 			goto err_out;
 		}
 
+		lim = v;
+		if (lim > sizeof(cxn->auth.u.up.machine))
+			lim = sizeof(cxn->auth.u.up.machine);
+		memcpy(&cxn->auth.u.up.machine, p, lim);
+		cxn->auth.u.up.machine[lim - 1] = 0;
 		p += ql;				/* machinename */
+
 		cxn->auth.u.up.uid = ntohl(*p++);	/* uid */
 		cxn->auth.u.up.gid = ntohl(*p++);	/* gid */
 

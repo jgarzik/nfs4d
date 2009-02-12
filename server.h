@@ -370,8 +370,10 @@ struct cxn_auth {
 
 	union {
 		struct {
-			int		uid;
-			int		gid;
+			unsigned int	stamp;
+			char		machine[256];
+			unsigned int	uid;
+			unsigned int	gid;
 		} up;
 	} u;
 };
