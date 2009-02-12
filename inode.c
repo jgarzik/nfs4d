@@ -870,11 +870,9 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
         if (bitmap & (1ULL << FATTR4_FILEID))
 		if (attr->fileid != ino->inum)
 			return false;
-#if 0 /* FIXME */
         if (bitmap & (1ULL << FATTR4_NUMLINKS))
-		if (attr->numlinks != ino->parents->len)
+		if (attr->numlinks != ino->n_link)
 			return false;
-#endif
         if (bitmap & (1ULL << FATTR4_RAWDEV))
 		if ((attr->rawdev.specdata1 != ino->devdata[0]) ||
 		    (attr->rawdev.specdata2 != ino->devdata[1]))
@@ -903,7 +901,7 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 		       bool nverify)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	struct nfs_fattr_set fattr;
 	bool match;
 	bool printed = false;
@@ -952,6 +950,7 @@ out:
 		syslog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
 
 	WR32(status);
+	inode_free(ino);
 	return status;
 }
 

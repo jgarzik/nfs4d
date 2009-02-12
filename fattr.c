@@ -767,7 +767,7 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 
 void fattr_free(struct nfs_fattr_set *attr)
 {
-	/* FIXME - actually free stuff? */
+	/* FIXME FIXME FIXME !!!!    actually free stuff? */
 
 	memset(attr, 0, sizeof(*attr));
 }
@@ -822,7 +822,7 @@ static void fattr_fill_obj(const struct nfs_inode *ino, struct nfs_fattr_set *at
 	attr->filehandle = ino->inum;
 	attr->fileid = ino->inum;
 	attr->mode = ino->mode;
-	attr->numlinks = 1;		/* FIXME */
+	attr->numlinks = ino->n_link;
 
 	if (ino->type == NF4BLK || ino->type == NF4CHR)
 		memcpy(&attr->rawdev, &ino->devdata, sizeof(specdata4));

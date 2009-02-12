@@ -417,6 +417,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_LOOKUPP:
 		srv.stats.op_lookupp++;
 		return nfs_op_lookupp(cxn, cur, writes, wr);
+	case OP_NVERIFY:
+		srv.stats.op_nverify++;
+		return nfs_op_verify(cxn, cur, writes, wr, true);
 	case OP_PUTFH:
 		srv.stats.op_putfh++;
 		return nfs_op_putfh(cxn, cur, writes, wr);
@@ -447,6 +450,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_SETATTR:
 		srv.stats.op_setattr++;
 		return nfs_op_setattr(cxn, cur, writes, wr);
+	case OP_VERIFY:
+		srv.stats.op_verify++;
+		return nfs_op_verify(cxn, cur, writes, wr, false);
 
 	/* needs work for db4 */
 	case OP_CLOSE:
@@ -464,9 +470,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_LOCKU:
 		srv.stats.op_unlock++;
 		return nfs_op_unlock(cxn, cur, writes, wr);
-	case OP_NVERIFY:
-		srv.stats.op_nverify++;
-		return nfs_op_verify(cxn, cur, writes, wr, true);
 	case OP_OPEN:
 		srv.stats.op_open++;
 		return nfs_op_open(cxn, cur, writes, wr);
@@ -494,9 +497,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_SETCLIENTID_CONFIRM:
 		srv.stats.op_setclientid_confirm++;
 		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
-	case OP_VERIFY:
-		srv.stats.op_verify++;
-		return nfs_op_verify(cxn, cur, writes, wr, false);
 	case OP_WRITE:
 		srv.stats.op_write++;
 		return nfs_op_write(cxn, cur, writes, wr);
