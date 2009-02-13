@@ -137,6 +137,7 @@ int main (int argc, char *argv[])
 {
 	struct timezone tz = { 0, 0 };
 	error_t aprc;
+	int rc;
 
 	setlocale(LC_ALL, "");
 
@@ -151,6 +152,11 @@ int main (int argc, char *argv[])
 	memset(&fsdb, 0, sizeof(fsdb));
 	fsdb.home = opt_metadata;
 
+	rc = fsdb_open(&fsdb, DB_RECOVER | DB_CREATE, DB_CREATE,
+		       "nfs4dba", false);
+	if (rc)
+		return 1;
+
 	switch (pmode) {
 	case mode_store_root:
 		return store_root();
@@ -158,6 +164,8 @@ int main (int argc, char *argv[])
 	default:
 		break;
 	}
+
+	fsdb_close(&fsdb);
 
 	return 1;
 }
