@@ -12,6 +12,7 @@
 
 struct timeval current_time = { 0, 0 };
 static GQueue *timers_q;
+static struct drand48_data rng;
 
 int write_pid_file(const char *pid_fn)
 {
@@ -191,5 +192,49 @@ bool is_dir(const char *arg, char **dirname)
 	
 	*dirname = s;
 	return true;
+}
+
+void nrand32(void *mem, unsigned int dwords)
+{
+	uint32_t *v = mem;
+	long l[4] = { 0, };
+	int i;
+
+	for (i = 0; i < dwords; i++) {
+		lrand48_r(&rng, l);
+
+		v[i] = l[0];
+	}
+}
+
+/* seed our RNGs with high quality data from /dev/random */
+void init_rngs(void)
+{
+	unsigned long v;
+	int fd;
+	ssize_t bytes;
+
+	fd = open("/dev/random", O_RDONLY);
+	if (fd < 0) {
+		syslogerr("/dev/random");
+		goto srand_time;
+	}
+
+	bytes = read(fd, &v, sizeof(v));
+	if (bytes < 0)
+		syslogerr("/dev/random read");
+
+	close(fd);
+
+	if (bytes < sizeof(v))
+		goto srand_time;
+
+	srand48_r(v, &rng);
+	srand(v);
+	return;
+
+srand_time:
+	srand48_r(getpid() ^ time(NULL), &rng);
+	srand(getpid() ^ time(NULL));
 }
 

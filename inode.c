@@ -31,8 +31,6 @@
 #include "server.h"
 #include "nfs4_prot.h"
 
-static nfsino_t next_ino;		/* start next free-inode scan here */
-
 bool inode_check(DB_TXN *txn, nfsino_t inum)
 {
 	struct fsdb_inode *dbino = NULL;
@@ -96,24 +94,39 @@ void inode_free(struct nfs_inode *ino)
 	free(ino);
 }
 
-static struct nfs_inode *inode_new(struct nfs_cxn *cxn)
+static struct nfs_inode *inode_new(DB_TXN *txn, struct nfs_cxn *cxn)
 {
 	struct nfs_inode *ino;
+	int limit = 100000;
+	bool found = false;
+	nfsino_t new_inum = 0;
 
-	if (next_ino <= INO_RESERVED_LAST)
-		next_ino = INO_RESERVED_LAST + 1;
+	while (limit-- > 0) {
+		nrand32(&new_inum, 2);
+
+		if (new_inum <= INO_RESERVED_LAST)
+			continue;
+
+		if (inode_check(txn, new_inum) == false) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return NULL;
 
 	ino = calloc(1, sizeof(struct nfs_inode));
 	if (!ino)
 		return NULL;
 
+	ino->inum = new_inum;
 	ino->version = 1ULL;
 	ino->ctime =
 	ino->atime =
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
 
-	ino->inum = next_ino++;
 	INIT_LIST_HEAD(&ino->openfile_list);
 
 	/* connected user */
@@ -176,7 +189,7 @@ nfsstat4 inode_new_file(struct nfs_inode *ino)
 	return status;
 }
 
-nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
+nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
 			const struct nfs_buf *linkdata,
 			const uint32_t *specdata,
 			struct nfs_inode **ino_out)
@@ -186,7 +199,7 @@ nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 
 	*ino_out = NULL;
 
-	new_ino = inode_new(cxn);
+	new_ino = inode_new(txn, cxn);
 	if (!new_ino) {
 		status = NFS4ERR_RESOURCE;
 		goto out;
@@ -522,7 +535,8 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
-	status = inode_new_type(cxn, objtype, &linkdata, specdata, &new_ino);
+	status = inode_new_type(txn, cxn, objtype, &linkdata,
+				specdata, &new_ino);
 	if (status != NFS4_OK)
 		goto out_abort;
 

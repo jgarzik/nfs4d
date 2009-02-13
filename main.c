@@ -192,37 +192,6 @@ static unsigned long blob_hash(unsigned long hash, const void *_buf,
 	return hash;
 }
 
-/* seed our RNGs with high quality data from /dev/random */
-static void init_rng(void)
-{
-	unsigned long v;
-	int fd;
-	ssize_t bytes;
-
-	fd = open("/dev/random", O_RDONLY);
-	if (fd < 0) {
-		syslogerr("/dev/random");
-		goto srand_time;
-	}
-
-	bytes = read(fd, &v, sizeof(v));
-	if (bytes < 0)
-		syslogerr("/dev/random read");
-
-	close(fd);
-
-	if (bytes < sizeof(v))
-		goto srand_time;
-
-	srand48_r(v, &srv.rng);
-	srand(v);
-	return;
-
-srand_time:
-	srand48_r(getpid() ^ time(NULL), &srv.rng);
-	srand(getpid() ^ time(NULL));
-}
-
 static struct refbuf *refbuf_new(unsigned int size, bool clear)
 {
 	struct refbuf *rb;
@@ -1375,7 +1344,7 @@ static int init_server(void)
 	if (rc)
 		return rc;
 
-	init_rng();
+	init_rngs();
 	timers_init();
 	rand_verifier(&srv.instance_verf);
 

@@ -63,19 +63,6 @@ static bool blob_equal(const struct blob *a, const struct blob *b)
 	return memcmp(a->buf, b->buf, a->len) == 0 ? true : false;
 }
 
-static void nrand32(void *mem, unsigned int dwords)
-{
-	uint32_t *v = mem;
-	long l[4] = { 0, };
-	int i;
-
-	for (i = 0; i < dwords; i++) {
-		lrand48_r(&srv.rng, l);
-
-		v[i] = l[0];
-	}
-}
-
 void rand_verifier(verifier4 *verf)
 {
 	nrand32(verf, 2);

@@ -576,8 +576,6 @@ struct nfs_server {
 
 	unsigned int		lease_time;
 
-	struct drand48_data	rng;
-
 	verifier4		instance_verf;
 
 	char			*localdom;
@@ -711,7 +709,7 @@ extern nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		   struct nfs_inode *new_ino, const struct nfs_fattr_set *attr,
 		   const struct nfs_buf *name, uint64_t *attrset,
 		   change_info4 *cinfo);
-extern nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
+extern nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
 			const struct nfs_buf *linkdata,
 			const uint32_t *specdata,
 			struct nfs_inode **ino_out);
