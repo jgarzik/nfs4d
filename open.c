@@ -416,7 +416,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t seqid;
 	struct nfs_openfile *of = NULL;
 
@@ -476,6 +476,7 @@ out:
 	WR32(status);
 	if (status == NFS4_OK)
 		WRSID(&sid);
+	inode_free(ino);
 	return status;
 }
 
@@ -484,7 +485,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t seqid, share_access, share_deny;
 	struct nfs_openfile *of = NULL;
 
@@ -560,6 +561,7 @@ out:
 	WR32(status);
 	if (status == NFS4_OK)
 		WRSID(&sid);
+	inode_free(ino);
 	return status;
 }
 
@@ -569,7 +571,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
 	struct nfs_openfile *of = NULL;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t seqid;
 
 	cxn->drc_mask |= drc_close;
@@ -618,6 +620,7 @@ out:
 	WR32(status);
 	if (status == NFS4_OK)
 		WRSID(&sid);
+	inode_free(ino);
 	return status;
 }
 
