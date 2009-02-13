@@ -1010,6 +1010,8 @@ static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, unsigned int events)
 	rrc = read(cxn->fd, cxn->hdr + cxn->hdr_used,
 		   sizeof(cxn->hdr) - cxn->hdr_used);
 	if (rrc < 0) {
+		if (errno == EAGAIN)
+			return false;	/* read more data */
 		syslogerr(cxn->host_addr);
 		goto err_out;
 	}
@@ -1060,6 +1062,8 @@ static bool cxn_evt_get_data(struct rpc_cxn *cxn, unsigned int events)
 
 	rrc = read(cxn->fd, cxn->msg + cxn->msg_len, cxn->next_frag);
 	if (rrc < 0) {
+		if (errno == EAGAIN)
+			return false;	/* read more data */
 		syslogerr(cxn->host_addr);
 		goto err_out;
 	}
