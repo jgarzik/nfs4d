@@ -19,7 +19,10 @@
 
 #define _GNU_SOURCE
 #include "nfs4d-config.h"
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <string.h>
 #include <ctype.h>
 #include <syslog.h>
@@ -140,6 +143,39 @@ static gint nfstr_compare(gconstpointer _a, gconstpointer _b)
 }
 #endif
 
+nfsstat4 inode_new_file(struct nfs_inode *ino)
+{
+	char *s = alloca(strlen(srv.data_dir) + sizeof(ino->dataname) + 2);
+	uint64_t counter = ino->inum;
+	nfsstat4 status = NFS4_OK;
+
+	while (1) {
+		int fd;
+
+		sprintf(s, "%s%016llX", srv.data_dir,
+			(unsigned long long) counter);
+		
+		fd = open(s, O_CREAT | O_EXCL | O_WRONLY, 0666);
+		if (fd < 0) {
+			if (errno == EEXIST) {
+				counter++;
+				continue;
+			}
+
+			status = NFS4ERR_IO;
+			break;
+		}
+
+		if (close(fd) < 0)
+			syslogerr("inode_new_file close");
+
+		sprintf(ino->dataname, "%016llX", (unsigned long long) counter);
+		break;
+	}
+
+	return status;
+}
+
 nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 			const struct nfs_buf *linkdata,
 			const uint32_t *specdata,
@@ -176,6 +212,10 @@ nfsstat4 inode_new_type(struct nfs_cxn *cxn, uint32_t objtype,
 		break;
 	}
 	case NF4REG:
+		status = inode_new_file(new_ino);
+		if (status != NFS4_OK)
+			goto out;
+		break;
 	case NF4SOCK:
 	case NF4FIFO:
 		break;
