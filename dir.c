@@ -702,7 +702,8 @@ struct readdir_info {
 };
 
 static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
-			 nfsino_t dirent, struct readdir_info *ri)
+			 size_t key_len, nfsino_t dirent,
+			 struct readdir_info *ri)
 {
 	uint64_t bitmap_out = 0;
 	uint32_t dirlen, maxlen;
@@ -736,7 +737,7 @@ static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
 
 	fattr_fill(ino, &attr);
 
-	name_len = strlen(key->name);	/* FIXME FIXME FIXME */
+	name_len = key_len - sizeof(*key);
 
 	dirlen = 8 + 4 + (XDR_QUADLEN(name_len) * 4);
 	if (dirlen > ri->dircount) {
@@ -942,7 +943,8 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		dep = pval.data;
 		dirent = GUINT64_FROM_LE(*dep);
 
-		if (readdir_iter(txn, rkey, dirent, &ri))
+		if (readdir_iter(txn, rkey, pkey.size,
+				 dirent, &ri))
 			break;
 	}
 
