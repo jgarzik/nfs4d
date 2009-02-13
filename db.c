@@ -518,8 +518,8 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 	uint16_t tmp;
 
 	if (!ino) {
-		 ino = calloc(1, sizeof(struct nfs_inode));
-		 if (!ino)
+		ino = calloc(1, sizeof(struct nfs_inode));
+		if (!ino)
 			return -ENOMEM;
 	}
 
@@ -541,6 +541,8 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 	ino->n_link = GUINT32_FROM_LE(dbino->n_link);
 	ino->devdata[0] = GUINT32_FROM_LE(dbino->devdata[0]);
 	ino->devdata[1] = GUINT32_FROM_LE(dbino->devdata[1]);
+
+	INIT_LIST_HEAD(&ino->openfile_list);
 
 	p = dbino;
 	p += sizeof(*dbino);
@@ -569,6 +571,7 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 		 p += tmp;
 	}
 
+	*ino_io = ino;
 	return 0;
 }
 
