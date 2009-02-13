@@ -126,6 +126,7 @@ static struct nfs_inode *inode_new(DB_TXN *txn, struct nfs_cxn *cxn)
 	ino->atime =
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
+	ino->n_link = 1;
 
 	INIT_LIST_HEAD(&ino->openfile_list);
 
@@ -531,7 +532,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 	if (objtype == NF4REG) {
-		status = NFS4ERR_INVAL;
+		status = NFS4ERR_BADTYPE;
 		goto out_abort;
 	}
 
