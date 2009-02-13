@@ -22,6 +22,7 @@
 
 #include <stdbool.h>
 #include <db.h>
+#include "nfs4_prot.h"
 
 struct nfs_inode;
 struct nfs_buf;

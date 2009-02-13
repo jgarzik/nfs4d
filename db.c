@@ -85,7 +85,8 @@ static int usergroup_idx_key(DB *secondary, const DBT *pkey, const DBT *pdata,
 }
 
 static int open_db(DB_ENV *env, DB **db_out, const char *name,
-		   unsigned int page_size, DBTYPE dbtype, unsigned int flags)
+		   unsigned int page_size, DBTYPE dbtype, unsigned int flags,
+		   int (*bt_compare)(DB *db, const DBT *dbt1, const DBT *dbt2))
 {
 	int rc;
 	DB *db;
@@ -111,6 +112,15 @@ static int open_db(DB_ENV *env, DB **db_out, const char *name,
 		db->err(db, rc, "db->set_lorder");
 		rc = -EIO;
 		goto err_out;
+	}
+
+	if (bt_compare) {
+		rc = db->set_bt_compare(db, dirent_cmp);
+		if (rc) {
+			db->err(db, rc, "db->set_bt_compare");
+			rc = -EIO;
+			goto err_out;
+		}
 	}
 
 	rc = db->open(db, NULL, name, NULL, dbtype,
@@ -191,17 +201,17 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	 */
 
 	rc = open_db(dbenv, &fsdb->inodes, "inodes", FSDB_PGSZ_INODES,
-		     DB_HASH, flags);
+		     DB_HASH, flags, NULL);
 	if (rc)
 		goto err_out;
 
 	rc = open_db(dbenv, &fsdb->usergroup, "usergroup", FSDB_PGSZ_USERGROUP,
-		     DB_HASH, flags);
+		     DB_HASH, flags, NULL);
 	if (rc)
 		goto err_out_inodes;
 
 	rc = open_db(dbenv, &fsdb->ug_idx, "ug_idx",
-		     FSDB_PGSZ_UG_IDX, DB_HASH, flags | DB_DUP);
+		     FSDB_PGSZ_UG_IDX, DB_HASH, flags | DB_DUP, NULL);
 	if (rc)
 		goto err_out_ug;
 
@@ -214,18 +224,12 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	}
 
 	rc = open_db(dbenv, &fsdb->dirent, "dirent", FSDB_PGSZ_DIRENT,
-		     DB_BTREE, flags);
+		     DB_BTREE, flags, dirent_cmp);
 	if (rc)
 		goto err_out_ug_idx;
 
-	rc = fsdb->dirent->set_bt_compare(fsdb->dirent, dirent_cmp);
-	if (rc)
-		goto err_out_de;
-
 	return 0;
 
-err_out_de:
-	fsdb->dirent->close(fsdb->dirent, 0);
 err_out_ug_idx:
 	fsdb->ug_idx->close(fsdb->ug_idx, 0);
 err_out_ug:
@@ -255,7 +259,7 @@ void fsdb_close(struct fsdb *fsdb)
 int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 		    const struct nfs_buf *str, int flags, nfsino_t *inum_out)
 {
-	DB *dirent = srv.fsdb.dirent;
+	DB *dirent = fsdb->dirent;
 	DBT pkey, pval;
 	int rc;
 	size_t alloc_len;
@@ -290,7 +294,7 @@ int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 int fsdb_dirent_put(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 		    const struct nfs_buf *str, int flags, nfsino_t de_inum)
 {
-	DB *dirent = srv.fsdb.dirent;
+	DB *dirent = fsdb->dirent;
 	DBT pkey, pval;
 	int rc;
 	size_t alloc_len;
@@ -323,7 +327,7 @@ int fsdb_dirent_put(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 		    const struct nfs_buf *str, int flags)
 {
-	DB *dirent = srv.fsdb.dirent;
+	DB *dirent = fsdb->dirent;
 	DBT pkey;
 	int rc;
 	size_t alloc_len;
@@ -350,7 +354,7 @@ int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 
 int fsdb_inode_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags)
 {
-	DB *inodes = srv.fsdb.inodes;
+	DB *inodes = fsdb->inodes;
 	DBT pkey;
 	int rc;
 	nfsino_t inum_le = GUINT64_TO_LE(inum);
@@ -372,7 +376,7 @@ int fsdb_inode_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags)
 int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 			struct fsdb_inode **dbino_out)
 {
-	DB *inodes = srv.fsdb.inodes;
+	DB *inodes = fsdb->inodes;
 	DBT pkey, pval;
 	int rc;
 	nfsino_t inum_le = GUINT64_TO_LE(inum);
@@ -397,7 +401,7 @@ int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 int fsdb_inode_put(struct fsdb *fsdb, DB_TXN *txn,
 		   struct fsdb_inode *ino, size_t ino_size, int flags)
 {
-	DB *inodes = srv.fsdb.inodes;
+	DB *inodes = fsdb->inodes;
 	DBT pkey, pval;
 	int rc;
 	nfsino_t inum_le = GUINT64_TO_LE(ino->inum);

@@ -27,12 +27,12 @@
 #include <rpc/auth.h>
 #include "nfs4_prot.h"
 #include "elist.h"
+#include "nfscommon.h"
 #include "fsdb.h"
 
 struct nfs_owner;
 struct nfs_openfile;
 struct server_socket;
-struct timer;
 
 #define SRV_MAGIC		"J721"
 
@@ -56,10 +56,6 @@ struct timer;
 #define WRMAP(bitmap)		wr_map(writes, wr, (bitmap))
 
 enum {
-	INO_ROOT		= 10,
-	INO_FIRST		= INO_ROOT,
-	INO_RESERVED_LAST	= 99,
-
 	NFS_CLI_CONFIRMED	= (1 << 0),
 
 	RPC_WRITE_BUFSZ		= 8192,
@@ -235,15 +231,6 @@ struct rpc_write {
 	struct refbuf		*rbuf;
 
 	struct list_head	node;
-};
-
-typedef void (*timer_cb_t)(struct timer *);
-
-struct timer {
-	time_t			timeout;
-	bool			fired;
-	timer_cb_t		cb;
-	void			*cb_data;
 };
 
 struct nfs_buf {
@@ -602,8 +589,6 @@ struct nfs_server {
 
 	GList			*sockets;
 
-	GQueue			*timers;
-
 	struct fsdb		fsdb;
 
 	struct nfs_server_stats	stats;
@@ -633,7 +618,6 @@ struct nfs_access {
 };
 
 /* global variables */
-extern struct timeval current_time;
 extern struct nfs_server srv;
 extern int debugging;
 
@@ -826,16 +810,6 @@ extern nfsstat4 openfile_lookup(struct nfs_stateid *,
 				struct nfs_openfile **);
 extern void openfile_trash(struct nfs_openfile *, bool);
 
-/* util.c */
-extern int write_pid_file(const char *pid_fn);
-extern void syslogerr(const char *prefix);
-extern int fsetflags(const char *prefix, int fd, int or_flags);
-extern void timer_add(struct timer *timer);
-extern int timer_next(void);
-extern void timers_run(void);
-extern void timer_init(struct timer *timer, timer_cb_t cb, void *cb_data);
-extern void timer_renew(struct timer *timer, time_t timeout);
-extern void timer_del(struct timer *timer);
 
 static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 {

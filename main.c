@@ -57,7 +57,6 @@ enum {
 	HOST_ADDR_MAX_LEN	= 256,
 };
 
-struct timeval current_time;
 int debugging = 0;
 static char *opt_lcldom = "localdomain";
 struct nfs_server srv;
@@ -105,6 +104,8 @@ struct rpc_cxn {
 	int			fd;
 
 	struct sockaddr_in6	addr;
+
+	struct server_poll	poll;		/* poll info */
 	struct epoll_event	evt;		/* epoll info */
 
 	char			*host;
@@ -174,11 +175,6 @@ static struct argp_option options[] = {
 static error_t parse_opt (int key, char *arg, struct argp_state *state);
 static const struct argp argp = { options, parse_opt, NULL, doc };
 
-static void slerror(const char *prefix)
-{
-	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
-}
-
 /* "djb2"-derived hash function */
 static unsigned long blob_hash(unsigned long hash, const void *_buf,
 			       size_t buflen)
@@ -205,13 +201,13 @@ static void init_rng(void)
 
 	fd = open("/dev/random", O_RDONLY);
 	if (fd < 0) {
-		slerror("/dev/random");
+		syslogerr("/dev/random");
 		goto srand_time;
 	}
 
 	bytes = read(fd, &v, sizeof(v));
 	if (bytes < 0)
-		slerror("/dev/random read");
+		syslogerr("/dev/random read");
 
 	close(fd);
 
@@ -866,6 +862,8 @@ static void rpc_cxn_free(struct rpc_cxn *cxn)
 		cxn_write_free(cxn, rpcwr, false);
 	}
 
+	syslog(LOG_INFO, "%s disconnect", cxn->host_addr);
+
 	memset(cxn, 0, sizeof(*cxn));
 	free(cxn);
 }
@@ -1019,6 +1017,7 @@ static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, unsigned int events)
 		return false;		/* read more data */
 
 	srv.stats.sock_rx_bytes += rrc;
+	cxn->hdr_used += rrc;
 
 	if (cxn->hdr_used < sizeof(cxn->hdr))
 		return false;		/* read more data */
@@ -1035,6 +1034,8 @@ static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, unsigned int events)
 	mem = realloc(cxn->msg, next_frag + cxn->msg_len);
 	if (!mem)
 		goto err_out;
+
+	cxn->msg = mem;
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "RPC frag (%u bytes%s)",
@@ -1129,6 +1130,10 @@ static void tcp_srv_event(unsigned int events, struct server_socket *sock)
 
 	cxn->state = evt_get_hdr;
 	cxn->host = host;
+	cxn->poll.poll_type = spt_tcp_cli;
+	cxn->poll.u.cxn = cxn;
+	cxn->evt.events = EPOLLIN | EPOLLHUP;
+	cxn->evt.data.ptr = &cxn->poll;
 	INIT_LIST_HEAD(&cxn->write_q);
 
 	/* receive TCP connection from kernel */
@@ -1352,7 +1357,7 @@ static int init_server(void)
 	srv.fsdb.home = srv.metadata_dir;
 
 	if (gettimeofday(&current_time, &tz) < 0) {
-		slerror("gettimeofday(2)");
+		syslogerr("gettimeofday(2)");
 		return -errno;
 	}
 
@@ -1367,7 +1372,15 @@ static int init_server(void)
 		return rc;
 
 	init_rng();
+	timers_init();
 	rand_verifier(&srv.instance_verf);
+
+	/* create master epoll fd */
+	srv.epoll_fd = epoll_create(NFSD_EPOLL_INIT_SIZE);
+	if (srv.epoll_fd < 0) {
+		syslogerr("epoll_create");
+		return -errno;
+	}
 
 	timer_init(&garbage_timer, garbage_collect, NULL);
 	garbage_timer.timeout = current_time.tv_sec + SRV_GARBAGE_TIME;
@@ -1376,41 +1389,6 @@ static int init_server(void)
 	rc = net_open();
 
 	return rc;
-}
-
-static bool is_dir(const char *arg, char **dirname)
-{
-	struct stat st;
-	char *s = NULL;
-
-	*dirname = NULL;
-
-	if (stat(arg, &st) < 0) {
-		perror(arg);
-		return false;
-	}
-
-	if (!S_ISDIR(st.st_mode)) {
-		fprintf(stderr, "%s: not a directory\n", arg);
-		return false;
-	}
-
-	if (arg[strlen(arg) - 1] == '/') {
-		s = strdup(arg);
-		if (s) {
-			*dirname = s;
-			return true;
-		} else
-			return false;
-	}
-
-	if (asprintf(&s, "%s/", arg) < 0) {
-		fprintf(stderr, "asprintf error in is_dir()\n");
-		return false;
-	}
-	
-	*dirname = s;
-	return true;
 }
 
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
@@ -1780,7 +1758,7 @@ int main (int argc, char *argv[])
 	my_hostname[sizeof(my_hostname) - 1] = 0;
 
 	if ((!opt_foreground) && (daemon(0, 0) < 0)) {
-		slerror("daemon(2)");
+		syslogerr("daemon(2)");
 		return 1;
 	}
 

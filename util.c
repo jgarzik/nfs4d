@@ -1,4 +1,5 @@
 
+#define _GNU_SOURCE
 #include "nfs4d-config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -8,6 +9,9 @@
 #include <syslog.h>
 #include <time.h>
 #include "server.h"
+
+struct timeval current_time = { 0, 0 };
+static GQueue *timers_q;
 
 int write_pid_file(const char *pid_fn)
 {
@@ -103,12 +107,12 @@ void timer_init(struct timer *timer, timer_cb_t cb, void *cb_data)
 void timer_add(struct timer *timer)
 {
 	timer->fired = false;
-	g_queue_insert_sorted(srv.timers, timer, timer_cmp, NULL);
+	g_queue_insert_sorted(timers_q, timer, timer_cmp, NULL);
 }
 
 void timer_del(struct timer *timer)
 {
-	g_queue_remove(srv.timers, timer);
+	g_queue_remove(timers_q, timer);
 }
 
 void timer_renew(struct timer *timer, time_t timeout)
@@ -121,7 +125,7 @@ void timer_renew(struct timer *timer, time_t timeout)
 
 int timer_next(void)
 {
-	struct timer *timer = g_queue_peek_head(srv.timers);
+	struct timer *timer = g_queue_peek_head(timers_q);
 	if (!timer)
 		return -1;
 
@@ -136,15 +140,56 @@ void timers_run(void)
 	while (1) {
 		struct timer *timer;
 
-		timer = g_queue_peek_head(srv.timers);
+		timer = g_queue_peek_head(timers_q);
 		if (!timer)
 			break;
 		if (current_time.tv_sec < timer->timeout)
 			break;
 
-		g_queue_pop_head(srv.timers);
+		g_queue_pop_head(timers_q);
 
 		timer->fired = true;
 		timer->cb(timer);
 	}
 }
+
+void timers_init(void)
+{
+	timers_q = g_queue_new();
+}
+
+bool is_dir(const char *arg, char **dirname)
+{
+	struct stat st;
+	char *s = NULL;
+
+	*dirname = NULL;
+
+	if (stat(arg, &st) < 0) {
+		perror(arg);
+		return false;
+	}
+
+	if (!S_ISDIR(st.st_mode)) {
+		fprintf(stderr, "%s: not a directory\n", arg);
+		return false;
+	}
+
+	if (arg[strlen(arg) - 1] == '/') {
+		s = strdup(arg);
+		if (s) {
+			*dirname = s;
+			return true;
+		} else
+			return false;
+	}
+
+	if (asprintf(&s, "%s/", arg) < 0) {
+		fprintf(stderr, "asprintf error in is_dir()\n");
+		return false;
+	}
+	
+	*dirname = s;
+	return true;
+}
+

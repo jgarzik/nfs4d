@@ -21,9 +21,12 @@ stamp-h1
 
 # app-specific
 nfs4d
+nfs4dba
 nfs4d*.tar.gz
 nfs4d-config.h*
 
 nfs4d.pid
 nfs4d.stats
 nfs4d.dump*
+
+libnfscommon.a
