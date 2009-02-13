@@ -135,6 +135,14 @@ struct drc_ent {
 	unsigned int		len;
 };
 
+
+static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
+		      cxn_write_func cb, void *cb_data);
+static bool cxn_write_start(struct rpc_cxn *cxn);
+static void stats_dump(void);
+static void diag_dump(void);
+
+
 static struct argp_option options[] = {
 	{ "metadata", 'M', "DIRECTORY", 0,
 	  "Metadata directory" },
@@ -163,8 +171,6 @@ static struct argp_option options[] = {
 	{ }
 };
 
-static void stats_dump(void);
-static void diag_dump(void);
 static error_t parse_opt (int key, char *arg, struct argp_state *state);
 static const struct argp argp = { options, parse_opt, NULL, doc };
 
@@ -410,6 +416,16 @@ struct rpc_write *wr_alloc(unsigned int n)
 	return wr;
 }
 
+static bool wr_done_cb(struct rpc_cxn *cxn, struct rpc_cxn_write *rpcwr,
+		       bool done)
+{
+	struct rpc_write *wr = rpcwr->cb_data;
+
+	wr_unref(wr);
+
+	return false;
+}
+
 void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 		     unsigned int n)
 {
@@ -650,7 +666,7 @@ static void garbage_collect(struct timer *timer)
 	timer_add(&garbage_timer);
 }
 
-static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
+static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 {
 	struct timezone tz = { 0, 0 };
 	struct curbuf _cur = { msg, msg, msg_len, msg_len };
@@ -680,17 +696,21 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	xid = CR32();			/* xid */
 
-	drc = drc_lookup(hash, xid, rc->host_addr);
+	drc = drc_lookup(hash, xid, cxn->host_addr);
 	if (drc) {
 		srv.stats.drc_hits++;
 		drc->expire = current_time.tv_sec + SRV_DRC_TIME;
-#if 0 /* FIXME */
-		gnet_conn_write(rc->conn, drc->val, drc->len);
-#endif
+
+		if (cxn_writeq(cxn, drc->val, drc->len, NULL, NULL)) {
+			cxn->state = evt_dispose;
+			return true;
+		}
+
 		if (debugging > 1)
 			syslog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",
 			       drc->len);
-		return;
+
+		return cxn_write_start(cxn);
 	} else
 		srv.stats.drc_misses++;
 
@@ -751,12 +771,12 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 	switch (proc) {
 	case NFSPROC4_NULL:
 		srv.stats.proc_null++;
-		drc_mask = nfsproc_null(rc->host, &auth_cred, &auth_verf, cur,
+		drc_mask = nfsproc_null(cxn->host, &auth_cred, &auth_verf, cur,
 					writes, wr);
 		break;
 	case NFSPROC4_COMPOUND:
 		srv.stats.proc_compound++;
-		drc_mask = nfsproc_compound(rc->host, &auth_cred, &auth_verf,
+		drc_mask = nfsproc_compound(cxn->host, &auth_cred, &auth_verf,
 					    cur, writes, wr);
 		break;
 	default:
@@ -782,13 +802,14 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
 		if (_wr->len) {
-#if 0 /* FIXME */
-			gnet_conn_write(rc->conn, _wr->buf, _wr->len);
-#endif
+			if (cxn_writeq(cxn, _wr->buf, _wr->len,
+					wr_done_cb, _wr)) {
+				cxn->state = evt_dispose;
+				goto err_out;
+			}
 
 			if (cache) {
-				memcpy(cache + cache_used, _wr->buf,
-				       _wr->len);
+				memcpy(cache + cache_used, _wr->buf, _wr->len);
 				cache_used += _wr->len;
 			}
 
@@ -797,37 +818,26 @@ static void rpc_msg(struct rpc_cxn *rc, void *msg, unsigned int msg_len)
 		}
 
 		list_del(&_wr->node);
-		wr_unref(_wr);
 	}
 
 	srv.stats.sock_tx_bytes += n_wbytes;
 
 	if (cache)
-		drc_store(hash, cache, cache_len, xid, rc->host_addr);
+		drc_store(hash, cache, cache_len, xid, cxn->host_addr);
 
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "RPC reply: %u bytes, %u writes",
 			n_wbytes, n_writes);
 
-	return;
+	return cxn_write_start(cxn);
 
 err_out:
 	if (debugging > 1)
 		syslog(LOG_DEBUG, "RPC: invalid message (%u bytes, xid %x), "
 		       "ignoring",
 		       msg_len, xid);
-	/* FIXME: reply to bad XDR/RPC */
-}
 
-static void rpc_cxn_free(struct rpc_cxn *cxn)
-{
-	if (cxn->fd >= 0)
-		close(cxn->fd);
-	free(cxn->msg);
-	g_free(cxn->host);
-
-	memset(cxn, 0, sizeof(*cxn));
-	free(cxn);
+	return cxn_write_start(cxn);
 }
 
 static bool cxn_write_free(struct rpc_cxn *cxn, struct rpc_cxn_write *tmp,
@@ -841,6 +851,23 @@ static bool cxn_write_free(struct rpc_cxn *cxn, struct rpc_cxn_write *tmp,
 	free(tmp);
 
 	return rcb;
+}
+
+static void rpc_cxn_free(struct rpc_cxn *cxn)
+{
+	struct rpc_cxn_write *rpcwr, *iter;
+
+	if (cxn->fd >= 0)
+		close(cxn->fd);
+	free(cxn->msg);
+	g_free(cxn->host);
+
+	list_for_each_entry_safe(rpcwr, iter, &cxn->write_q, node) {
+		cxn_write_free(cxn, rpcwr, false);
+	}
+
+	memset(cxn, 0, sizeof(*cxn));
+	free(cxn);
 }
 
 static void cxn_writable(struct rpc_cxn *cxn)
@@ -912,7 +939,7 @@ do_write:
 	}
 }
 
-bool cxn_write_start(struct rpc_cxn *cxn)
+static bool cxn_write_start(struct rpc_cxn *cxn)
 {
 	int rc;
 
@@ -944,8 +971,8 @@ bool cxn_write_start(struct rpc_cxn *cxn)
 	return false;			/* epoll wait */
 }
 
-int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
-		     cxn_write_func cb, void *cb_data)
+static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
+		      cxn_write_func cb, void *cb_data)
 {
 	struct rpc_cxn_write *wr;
 
@@ -1028,6 +1055,7 @@ err_out:
 static bool cxn_evt_get_data(struct rpc_cxn *cxn, unsigned int events)
 {
 	ssize_t rrc;
+	bool rc;
 
 	rrc = read(cxn->fd, cxn->msg + cxn->msg_len, cxn->next_frag);
 	if (rrc < 0) {
@@ -1046,7 +1074,9 @@ static bool cxn_evt_get_data(struct rpc_cxn *cxn, unsigned int events)
 		return false;		/* read more data */
 	}
 
-	rpc_msg(cxn, cxn->msg, cxn->msg_len);
+	cxn->state = evt_get_hdr;
+
+	rc = rpc_msg(cxn, cxn->msg, cxn->msg_len);
 
 	free(cxn->msg);
 	cxn->msg = NULL;
@@ -1054,9 +1084,7 @@ static bool cxn_evt_get_data(struct rpc_cxn *cxn, unsigned int events)
 	cxn->next_frag = 0;
 	cxn->last_frag = false;
 
-	cxn->state = evt_get_hdr;
-
-	return true;			/* loop to cxn->state */
+	return rc;			/* loop to cxn->state */
 
 err_out:
 	cxn->state = evt_dispose;
