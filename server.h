@@ -417,7 +417,7 @@ struct nfs_owner {
 struct nfs_openfile {
 	struct nfs_owner	*owner;
 
-	nfsino_t		ino;
+	nfsino_t		inum;
 
 	enum nfs_state_type	type;		/* nst_xxx */
 
@@ -471,8 +471,6 @@ struct nfs_inode {
 	uint32_t		devdata[2];	/* "" blk/chrdev */
 
 	char			dataname[32 + 1];
-
-	struct list_head	openfile_list;
 };
 
 struct nfs_server_stats {
@@ -774,6 +772,7 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 			     struct rpc_write **wr);
 
 /* state.c */
+extern struct list_head ino_openfile_list;
 extern bool cli_new_owner(clientid4, char *);
 extern void state_gc(void);
 extern bool stateid_valid(const struct nfs_stateid *sid);

@@ -555,8 +555,6 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 	ino->devdata[0] = GUINT32_FROM_LE(dbino->devdata[0]);
 	ino->devdata[1] = GUINT32_FROM_LE(dbino->devdata[1]);
 
-	INIT_LIST_HEAD(&ino->openfile_list);
-
 	p = dbino;
 	p += sizeof(*dbino);
 

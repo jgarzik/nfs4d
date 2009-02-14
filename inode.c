@@ -61,7 +61,6 @@ int inode_touch(DB_TXN *txn, struct nfs_inode *ino)
 
 void inode_free(struct nfs_inode *ino)
 {
-	struct nfs_openfile *of, *iter;
 	nfsino_t inum;
 
 	if (!ino)
@@ -85,12 +84,6 @@ void inode_free(struct nfs_inode *ino)
 	free(ino->mimetype);
 	free(ino->user);
 	free(ino->group);
-
-	list_for_each_entry_safe(of, iter, &ino->openfile_list, inode_node) {
-		if (of->type == nst_open)
-			openfile_trash(of, false);
-	}
-
 	free(ino);
 }
 
@@ -127,8 +120,6 @@ static struct nfs_inode *inode_new(DB_TXN *txn, struct nfs_cxn *cxn)
 	ino->mtime = current_time.tv_sec;
 	ino->mode = MODE4_RUSR;
 	ino->n_link = 1;
-
-	INIT_LIST_HEAD(&ino->openfile_list);
 
 	/* connected user */
 	ino->user = cxn_getuser(cxn);
@@ -249,7 +240,7 @@ out:
 
 void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of)
 {
-	list_add(&of->inode_node, &ino->openfile_list);
+	list_add(&of->inode_node, &ino_openfile_list);
 }
 
 int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)

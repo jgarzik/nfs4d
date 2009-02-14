@@ -50,6 +50,7 @@ struct nfs_clientid {
 };
 
 static LIST_HEAD(cli_unconfirmed);
+LIST_HEAD(ino_openfile_list);
 
 static void client_cancel_id(struct nfs_clientid *, bool);
 static nfsstat4 clientid_touch(clientid4 id_in);
@@ -157,8 +158,10 @@ nfsstat4 openfile_lookup_owner(struct nfs_owner *o,
 
 	*of_out = NULL;
 
-	list_for_each_entry(of, &ino->openfile_list, inode_node) {
-		if (of->type == nst_open && of->owner == o) {
+	list_for_each_entry(of, &ino_openfile_list, inode_node) {
+		if (of->inum == ino->inum &&
+		    of->type == nst_open &&
+		    of->owner == o) {
 			*of_out = of;
 			break;
 		}
@@ -200,7 +203,7 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		if (id_in->seqid != of->my_seq)
 			return NFS4ERR_OLD_STATEID;
 
-		if (ino && (ino->inum != of->ino))
+		if (ino && (ino->inum != of->inum))
 			return NFS4ERR_BAD_STATEID;
 
 		clientid_touch(of->owner->cli);
@@ -346,8 +349,9 @@ nfsstat4 access_ok(struct nfs_access *ac)
 
 	ssi.status = NFS4_OK;
 
-	list_for_each_entry(tmp_of, &ac->ino->openfile_list, inode_node) {
-		access_search(ac, &ssi, tmp_of);
+	list_for_each_entry(tmp_of, &ino_openfile_list, inode_node) {
+		if (tmp_of->inum == ac->ino->inum)
+			access_search(ac, &ssi, tmp_of);
 	}
 
 	return ssi.status;
@@ -390,9 +394,9 @@ void openfile_free(gpointer data)
 		break;
 	}
 
-	if (of->ino) {
+	if (of->inum) {
 		list_del_init(&of->inode_node);
-		of->ino = 0;
+		of->inum = 0;
 	}
 
 	if (of->owner) {
@@ -424,10 +428,10 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 	if (of->type == nst_lock)
 		openfile_trash_locks(of);
 
-	if (of->ino) {
-		struct nfs_inode *ino = inode_getdec(NULL, of->ino, 0);
+	if (of->inum) {
+		struct nfs_inode *ino = inode_getdec(NULL, of->inum, 0);
 
-		of->ino = 0;
+		of->inum = 0;
 
 		list_del_init(&of->inode_node);
 
@@ -435,9 +439,10 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 			struct nfs_openfile *tmp_of, *iter;
 
 			list_for_each_entry_safe(tmp_of, iter,
-						 &ino->openfile_list,
+						 &ino_openfile_list,
 						 inode_node) {
-				if (tmp_of->type == nst_lock &&
+				if (tmp_of->inum == ino->inum &&
+				    tmp_of->type == nst_lock &&
 				    tmp_of->u.lock.open == of)
 					openfile_trash(tmp_of, expired);
 			}

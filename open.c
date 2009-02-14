@@ -360,11 +360,11 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto err_out;
 		}
 
-		of->ino = ino->inum;
+		of->inum = ino->inum;
 		of->u.share.access = args->share_access;
 		of->u.share.deny = args->share_deny;
 
-		list_add(&of->inode_node, &ino->openfile_list);
+		list_add(&of->inode_node, &ino_openfile_list);
 		list_add(&of->owner_node, &open_owner->openfiles);
 		g_hash_table_insert(srv.openfiles, GUINT_TO_POINTER(of->id),of);
 	}
