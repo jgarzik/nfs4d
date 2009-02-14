@@ -740,6 +740,8 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 
 	ino = inode_getdec(txn, dirent, 0);
 	if (!ino) {
+		syslog(LOG_WARNING, "           WARNING: inode %016llX not found",
+			(unsigned long long) dirent);
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;
 		ri->status = NFS4ERR_NOENT;
@@ -756,6 +758,8 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 	if (dirlen > ri->dircount) {
 		ri->hit_limit = true;
 		ri->stop = true;
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "           iter: hit dir limit");
 		goto out;
 	}
 
@@ -764,6 +768,8 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 	if (maxlen > ri->maxcount) {
 		ri->hit_limit = true;
 		ri->stop = true;
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "           iter: hit max limit");
 		goto out;
 	}
 
@@ -942,7 +948,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	while (1) {
 		struct fsdb_de_key *rkey;
-		uint64_t dirent, *dep;
+		uint64_t dirent_inum, *dep;
 
 		if (first_loop) {
 			cget_flags = DB_SET_RANGE;
@@ -951,20 +957,27 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 			cget_flags = DB_NEXT;
 
 		rc = curs->get(curs, &pkey, &pval, cget_flags);
-		if (rc)
+		if (rc) {
+			if (rc != DB_NOTFOUND)
+				dirent->err(dirent, rc, "readdir curs->get");
 			break;
+		}
 
 		rkey = pkey.data;
 		if (GUINT64_FROM_LE(rkey->inum) != ino->inum)
 			break;
 
 		dep = pval.data;
-		dirent = GUINT64_FROM_LE(*dep);
+		dirent_inum = GUINT64_FROM_LE(*dep);
 
-		if (readdir_iter(txn, rkey, pkey.size,
-				 dirent, &ri))
+		if (readdir_iter(txn, rkey, pkey.size, dirent_inum, &ri))
 			break;
 	}
+
+	if (debugging && !ri.n_results)
+		syslog(LOG_INFO, "           zero results, status %s",
+		       ri.status <= NFS4ERR_CB_PATH_DOWN ?
+		       		name_nfs4status[ri.status] : "n/a");
 
 	rc = curs->close(curs);
 	if (rc) {
@@ -975,19 +988,20 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 
 the_finale:
 
-	rc = txn->commit(txn, 0);
-	if (rc) {
-		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
-		status = NFS4ERR_IO;
-		goto out;
-	}
-
 	/* terminate final entry4.nextentry and dirlist4.entries */
 	if (ri.val_follows)
 		*ri.val_follows = htonl(0);
 
 	if (ri.cookie_found && !ri.n_results && ri.hit_limit) {
 		status = NFS4ERR_TOOSMALL;
+		goto out_abort;
+	}
+
+	/* close transaction */
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
 		goto out;
 	}
 
