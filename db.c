@@ -389,7 +389,8 @@ int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 
 	rc = inodes->get(inodes, txn, &pkey, &pval, flags);
 	if (rc) {
-		 inodes->err(inodes, rc, "inodes->get");
+		 if (rc != DB_NOTFOUND)
+		 	inodes->err(inodes, rc, "inodes->get");
 		 return rc;
 	}
 
