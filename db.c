@@ -511,6 +511,18 @@ int fsdb_inode_putenc(struct fsdb *fsdb, DB_TXN *txn,
 	return rc;
 }
 
+static char *copy_binstr(const char *s_in, size_t s_len)
+{
+	char *s = malloc(s_len + 1);
+	if (!s)
+		return NULL;
+	
+	memcpy(s, s_in, s_len);
+	s[s_len] = 0;
+
+	return s;
+}
+
 int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)
 {
 	struct nfs_inode *ino = *ino_io;
@@ -549,25 +561,25 @@ int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino
 
 	tmp = GUINT16_FROM_LE(dbino->user_len);
 	if (tmp) {
-		 ino->user = strndup(p, tmp);
+		 ino->user = copy_binstr(p, tmp);
 		 p += tmp;
 	}
 
 	tmp = GUINT16_FROM_LE(dbino->group_len);
 	if (tmp) {
-		 ino->group = strndup(p, tmp);
+		 ino->group = copy_binstr(p, tmp);
 		 p += tmp;
 	}
 
 	tmp = GUINT16_FROM_LE(dbino->type_len);
 	if (tmp) {
-		 ino->mimetype = strndup(p, tmp);
+		 ino->mimetype = copy_binstr(p, tmp);
 		 p += tmp;
 	}
 
 	tmp = GUINT16_FROM_LE(dbino->link_len);
 	if (tmp) {
-		 ino->linktext = strndup(p, tmp);
+		 ino->linktext = copy_binstr(p, tmp);
 		 p += tmp;
 	}
 

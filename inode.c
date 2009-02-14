@@ -715,8 +715,8 @@ out_abort:
 unsigned int inode_access(const struct nfs_cxn *cxn,
 			  const struct nfs_inode *ino, unsigned int req_access)
 {
-	unsigned int mode, rc;
-	char *user, *group;
+	unsigned int mode, rc = 0;
+	char *user = NULL, *group = NULL;
 	bool user_mat, group_mat;
 	bool root_user, root_group;
 
@@ -727,7 +727,7 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 			syslog(LOG_INFO, "invalid cxn%s%s",
 			       user ? "" : " user",
 			       group ? "" : " group");
-		return 0;
+		goto out;
 	}
 
 	user_mat = (strcmp(user, ino->user) == 0);
@@ -757,6 +757,9 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 
 	/* FIXME: check ACCESS4_DELETE */
 
+out:
+	free(user);
+	free(group);
 	return rc;
 }
 

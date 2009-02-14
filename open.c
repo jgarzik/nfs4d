@@ -132,7 +132,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status, lu_stat;
-	struct nfs_inode *dir_ino, *ino = NULL;
+	struct nfs_inode *dir_ino = NULL, *ino = NULL;
 	struct nfs_stateid sid;
 	bool creating, recreating = false;
 	struct nfs_open_args _args;
@@ -401,6 +401,9 @@ out:
 		WR32(OPEN_DELEGATE_NONE);
 		/* FIXME: handle open delegations */
 	}
+
+	inode_free(dir_ino);
+	inode_free(ino);
 	return status;
 
 err_out:

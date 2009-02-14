@@ -442,6 +442,8 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 					openfile_trash(tmp_of, expired);
 			}
 		}
+
+		inode_free(ino);
 	}
 
 	if (of->owner) {
@@ -674,7 +676,7 @@ static void clientid_timer(struct timer *timer)
 
 static int clientid_new(struct nfs_cxn *cxn,
 			struct nfs_buf *id_long, verifier4 *client_verf,
-			uint32_t cb_ident, cb_client4 *callback,
+			uint32_t cb_ident, const cb_client4 *callback,
 			struct nfs_clientid **clid_out)
 {
 	struct nfs_clientid *clid;
@@ -950,6 +952,9 @@ out:
 		WRSTR(confirmed->callback.cb_location.r_netid);
 		WRSTR(confirmed->callback.cb_location.r_addr);
 	}
+
+	free(callback.cb_location.r_netid);
+	free(callback.cb_location.r_addr);
 	return status;
 }
 
