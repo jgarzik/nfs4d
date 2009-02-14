@@ -81,6 +81,8 @@ static int store_root(void)
 
 	memcpy(p, group, strlen(group));
 
+	ino_size += strlen(user) + strlen(group);
+
 	rc = fsdb_inode_put(&fsdb, NULL, ino, ino_size, 0);
 	if (rc) {
 		fprintf(stderr, "error storing root inode\n");
