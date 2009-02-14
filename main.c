@@ -318,12 +318,12 @@ void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
 		memcpy(&sid->server_verf, verf, sizeof(verifier4));
 }
 
-static unsigned int wr_free(struct rpc_write *wr)
+static unsigned int wr_free_space(struct rpc_write *wr)
 {
 	return wr->rbuf->len - wr->len;
 }
 
-void wr_unref(struct rpc_write *wr)
+void wr_free(struct rpc_write *wr)
 {
 	if (!wr)
 		return;
@@ -386,7 +386,7 @@ static bool wr_done_cb(struct rpc_cxn *cxn, struct rpc_cxn_write *rpcwr,
 {
 	struct rpc_write *wr = rpcwr->cb_data;
 
-	wr_unref(wr);
+	wr_free(wr);
 
 	return false;
 }
@@ -397,7 +397,7 @@ void *wr_skip(struct list_head *writes, struct rpc_write **wr_io,
 	struct rpc_write *wr = *wr_io;
 	void *buf;
 
-	if (n > wr_free(wr)) {
+	if (n > wr_free_space(wr)) {
 		wr = wr_alloc(n);
 		if (!wr)
 			return NULL;
@@ -750,7 +750,6 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 
 	/*
 	 * send response back to client asynchronously
-	 * TODO: way too much alloc+copy
 	 */
 
 	tmp_tot = 0;
@@ -766,9 +765,12 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 	}
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
+		list_del(&_wr->node);
+
 		if (_wr->len) {
 			if (cxn_writeq(cxn, _wr->buf, _wr->len,
 					wr_done_cb, _wr)) {
+				/* FIXME: leak _wr's on err */
 				cxn->state = evt_dispose;
 				goto err_out;
 			}
@@ -780,9 +782,8 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 
 			n_wbytes += _wr->len;
 			n_writes++;
-		}
-
-		list_del(&_wr->node);
+		} else
+			wr_free(_wr);
 	}
 
 	srv.stats.sock_tx_bytes += n_wbytes;

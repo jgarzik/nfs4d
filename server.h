@@ -729,7 +729,7 @@ extern uint64_t cur_readmap(struct curbuf *cur);
 extern void *cur_readmem(struct curbuf *cur, unsigned int n);
 extern void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb);
 extern void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid);
-extern void wr_unref(struct rpc_write *wr);
+extern void wr_free(struct rpc_write *wr);
 extern struct rpc_write *wr_alloc(unsigned int n);
 extern struct rpc_write *wr_ref(struct refbuf *rb, unsigned int ofs,
 			 unsigned int len);

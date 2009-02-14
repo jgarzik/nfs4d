@@ -378,7 +378,7 @@ err_io_fd:
 err_io:
 	status = NFS4ERR_IO;
 err_out_data:
-	wr_unref(data_wr);
+	wr_free(data_wr);
 	goto out;
 }
 
