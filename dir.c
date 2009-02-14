@@ -721,7 +721,7 @@ static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
 	uint64_t bitmap_out = 0;
 	uint32_t dirlen, maxlen;
 	struct nfs_fattr_set attr;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	struct list_head *writes = ri->writes;
 	struct rpc_write **wr = ri->wr;
 	size_t name_len;
@@ -806,6 +806,7 @@ static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
 	ri->dir_pos++;
 
 out:
+	inode_free(ino);
 	fattr_free(&attr);
 	if (ri->stop)
 		return true;
