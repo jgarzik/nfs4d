@@ -515,7 +515,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	struct nfs_stateid *prev_sid;
 	uint32_t prev_id;
 	struct nfs_stateid *sid, lock_sid, open_sid, tmp_sid;
@@ -730,6 +730,7 @@ out:
 		if (status == NFS4_OK)
 			WRSID(sid);
 	}
+	inode_free(ino);
 	return status;
 
 err_out_lockof:

@@ -634,6 +634,8 @@ static void clientid_free(struct nfs_clientid *clid)
 	else
 		timer_del(&clid->timer);
 
+	g_hash_table_remove(srv.clid_idx, (void *) clid->id_short);
+
 	free(clid->id.buf);
 	free_cb_client4(&clid->callback);
 
