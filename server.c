@@ -40,7 +40,7 @@ const char *name_nfs_ftype4[] = {
 	[NF4NAMEDATTR] = "NF4NAMEDATTR",
 };
 
-static const char *name_nfs4status[] = {
+const char *name_nfs4status[] = {
 	[NFS4_OK] = "NFS4_OK",
 	[NFS4ERR_PERM] = "NFS4ERR_PERM",
 	[NFS4ERR_NOENT] = "NFS4ERR_NOENT",

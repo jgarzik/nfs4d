@@ -360,7 +360,7 @@ struct rpc_write *wr_alloc(unsigned int n)
 {
 	struct rpc_write *wr = malloc(sizeof(*wr));
 	if (G_UNLIKELY(!wr)) {
-		syslog(LOG_ERR, "OOM in wr_skip()");
+		syslog(LOG_ERR, "OOM in wr_alloc()");
 		return NULL;
 	}
 
@@ -370,7 +370,7 @@ struct rpc_write *wr_alloc(unsigned int n)
 	wr->rbuf = refbuf_new(n, false);
 	if (G_UNLIKELY(!wr->rbuf)) {
 		free(wr);
-		syslog(LOG_ERR, "OOM(2) in wr_skip()");
+		syslog(LOG_ERR, "OOM(2) in wr_alloc()");
 		return NULL;
 	}
 
@@ -765,12 +765,13 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 	}
 
 	list_for_each_entry_safe(_wr, iter, writes, node) {
+		n_writes++;
 		list_del(&_wr->node);
 
 		if (_wr->len) {
 			if (cxn_writeq(cxn, _wr->buf, _wr->len,
 					wr_done_cb, _wr)) {
-				/* FIXME: leak _wr's on err */
+				/* FIXME: leak several _wr's on err */
 				cxn->state = evt_dispose;
 				goto err_out;
 			}
@@ -781,7 +782,6 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 			}
 
 			n_wbytes += _wr->len;
-			n_writes++;
 		} else
 			wr_free(_wr);
 	}

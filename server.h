@@ -760,6 +760,7 @@ extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 
 /* server.c */
 extern const char *name_nfs_ftype4[];
+extern const char *name_nfs4status[];
 extern char *cxn_getuser(const struct nfs_cxn *cxn);
 extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 
