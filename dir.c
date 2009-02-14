@@ -267,6 +267,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		       newname.len,
 		       newname.val);
 
+	/* verify input parameters */
 	if (!valid_fh(cxn->current_fh) || !valid_fh(cxn->save_fh)) {
 		status = NFS4ERR_NOFILEHANDLE;
 		goto out;
@@ -276,6 +277,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* open transaction */
 	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
 	if (rc) {
 		status = NFS4ERR_IO;
@@ -283,6 +285,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	/* read source inode's directory inode */
 	dir_ino = inode_fhdec(txn, cxn->current_fh, 0);
 	if (!dir_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -295,6 +298,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
+	/* read source inode */
 	src_ino = inode_fhdec(txn, cxn->save_fh, 0);
 	if (!src_ino) {
 		status = NFS4ERR_NOFILEHANDLE;
@@ -312,12 +316,21 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	before = dir_ino->version;
 
+	/* add directory entry */
 	status = dir_add(txn, dir_ino, &newname, src_ino);
 	if (status != NFS4_OK)
 		goto out_abort;
 
 	after = dir_ino->version;
 
+	/* update source inode */
+	src_ino->n_link++;
+	if (inode_touch(txn, src_ino)) {
+		status = NFS4ERR_IO;
+		goto out_abort;
+	}
+
+	/* close transaction */
 	rc = txn->commit(txn, 0);
 	if (rc) {
 		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
