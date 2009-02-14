@@ -121,6 +121,9 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	char *fdpath;
 	size_t pending;
 	void *p;
+	DB_ENV *dbenv = srv.fsdb.env;
+	DB_TXN *txn;
+	int rc;
 
 	if (cur->len < 32) {
 		status = NFS4ERR_BADXDR;
@@ -144,10 +147,19 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (data.len > SRV_MAX_WRITE)
 		data.len = SRV_MAX_WRITE;
 
-	ino = inode_fhdec(NULL, cxn->current_fh, 0);
+	/* open transaction */
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	/* read target inode */
+	ino = inode_fhdec(txn, cxn->current_fh, DB_RMW);
 	if (!ino) {
 		status = NFS4ERR_NOFILEHANDLE;
-		goto out;
+		goto out_abort;
 	}
 
 	/* we only support writing to regular files */
@@ -159,11 +171,12 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_ISDIR;
 		else
 			status = NFS4ERR_INVAL;
-		goto out;
+		goto out_abort;
 	}
 
 	old_size = ino->size;
 
+	/* verify we have access to write */
 	ac.sid = &sid;
 	ac.ino = ino;
 	ac.op = OP_WRITE;
@@ -171,15 +184,17 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	ac.len = data.len;
 	status = access_ok(&ac);
 	if (status != NFS4_OK)
-		goto out;
+		goto out_abort;
 
+	/* if zero length, return success immediately */
 	if (data.len == 0)
-		goto out;
+		goto out_commit;
 
 	new_size = offset + data.len;
 	if (new_size < old_size)
 		new_size = old_size;
 
+	/* build file path, open file */
 	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
 	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
 	fd = open(fdpath, O_WRONLY);
@@ -188,11 +203,15 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto err_io;
 	}
 
-	if (lseek64(fd, offset, SEEK_SET) < 0) {
+	/* seek to desired write location */
+	if (offset && lseek64(fd, offset, SEEK_SET) < 0) {
 		syslogerr2("lseek64", fdpath);
 		goto err_io_fd;
 	}
 
+	/* write data to file.  handle write(2) writing
+	 * fewer less than requested bytes
+	 */
 	p = data.val;
 	pending = data.len;
 	while (pending > 0) {
@@ -206,6 +225,7 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		p += rc;
 	}
 
+	/* sync to storage, if requested */
 	if (stable == FILE_SYNC4)
 		frc = fsync(fd);
 	else if (stable == DATA_SYNC4)
@@ -217,12 +237,33 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto err_io_fd;
 	}
 
+	/* close file */
 	if (close(fd) < 0) {
 		syslogerr2("close", fdpath);
 		goto err_io;
 	}
 
+	/* reflect new file size in inode */
 	ino->size = new_size;
+
+	/* FIXME: ugh.  if inode_touch() or txn_commit() fail,
+	 * we leave the just-written data in the data object.
+	 */
+
+	rc = inode_touch(txn, ino);
+	if (rc) {
+		status = NFS4ERR_IO;
+		goto out_abort;
+	}
+
+out_commit:
+	/* close transaction */
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto out;
+	}
 
 out:
 	WR32(status);
@@ -238,6 +279,10 @@ err_io_fd:
 	close(fd);
 err_io:
 	status = NFS4ERR_IO;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
 	goto out;
 }
 
@@ -251,7 +296,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t count;
 	bool eof = false;
 	struct nfs_access ac = { NULL, };
-	struct rpc_write *data_wr = NULL, *final_wr = NULL, *pad_wr = NULL;
+	struct rpc_write *data_wr = NULL, *pad_wr = NULL, *next_wr = NULL;
 	int fd;
 	char *fdpath;
 
@@ -304,10 +349,15 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (offset >= ino->size) {
 		read_size = 0;
 		eof = true;
+		if (debugging > 1)
+			syslog(LOG_INFO, "        (read_size 0, EOF)");
 		goto out;
 	}
-	if (count == 0)
+	if (count == 0) {
+		if (debugging > 1)
+			syslog(LOG_INFO, "        (count 0, skip work)");
 		goto out;
+	}
 
 	read_size = ino->size - offset;
 	if (read_size > count)
@@ -315,10 +365,15 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (read_size > RPC_WRITE_BUFSZ)
 		read_size = RPC_WRITE_BUFSZ;
 
-	final_wr = data_wr = wr_alloc(read_size);
-	if (!data_wr) {
+	if (debugging > 1)
+		syslog(LOG_INFO, "        (read_size %llu)",
+			(unsigned long long) read_size);
+
+	next_wr = wr_alloc(0);
+	data_wr = wr_alloc(read_size);
+	if (!data_wr || !next_wr) {
 		status = NFS4ERR_RESOURCE;
-		goto out;
+		goto err_out_data;
 	}
 
 	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
@@ -344,6 +399,8 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto err_io;
 	}
 
+	data_wr->len = read_size;
+
 	pad_size = (XDR_QUADLEN(read_size) * 4) - read_size;
 	if (pad_size) {
 		pad_wr = wr_ref(&pad_rb, 0, pad_size);
@@ -351,8 +408,6 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_RESOURCE;
 			goto err_out_data;
 		}
-
-		final_wr = pad_wr;
 	}
 
 	if ((offset + read_size) >= ino->size)
@@ -367,7 +422,8 @@ out:
 			list_add_tail(&data_wr->node, writes);
 			if (pad_wr)
 				list_add_tail(&pad_wr->node, writes);
-			*wr = final_wr;
+			list_add_tail(&next_wr->node, writes);
+			*wr = next_wr;
 		}
 	}
 	inode_free(ino);
@@ -379,6 +435,7 @@ err_io:
 	status = NFS4ERR_IO;
 err_out_data:
 	wr_free(data_wr);
+	wr_free(next_wr);
 	goto out;
 }
 
