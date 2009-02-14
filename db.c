@@ -28,10 +28,10 @@
 #include "server.h"
 
 enum {
-	FSDB_PGSZ_INODES		= 1024,	/* inodes db4 page size */
-	FSDB_PGSZ_USERGROUP		= 1024,	/* user/group db4 page size */
-	FSDB_PGSZ_UG_IDX		= 1024,	/* u/g idx db4 page size */
-	FSDB_PGSZ_DIRENT		= 1024,	/* dir entry db4 page size */
+	FSDB_PGSZ_INODES		= 4096,	/* inodes db4 page size */
+	FSDB_PGSZ_USERGROUP		= 4096,	/* user/group db4 page size */
+	FSDB_PGSZ_UG_IDX		= 4096,	/* u/g idx db4 page size */
+	FSDB_PGSZ_DIRENT		= 4096,	/* dir entry db4 page size */
 };
 
 static void db4syslog(const DB_ENV *dbenv, const char *errpfx, const char *msg)
