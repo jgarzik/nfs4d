@@ -723,6 +723,7 @@ extern char my_hostname[];
 
 extern uint64_t srv_space_used(void);
 extern void syslogerr(const char *prefix);
+extern void syslogerr2(const char *pfx1, const char *pfx2);
 extern void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
 extern uint64_t cur_read64(struct curbuf *cur);

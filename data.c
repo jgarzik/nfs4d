@@ -183,18 +183,24 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
 	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
 	fd = open(fdpath, O_WRONLY);
-	if (fd < 0)
+	if (fd < 0) {
+		syslogerr2("open", fdpath);
 		goto err_io;
+	}
 
-	if (lseek64(fd, offset, SEEK_SET) < 0)
+	if (lseek64(fd, offset, SEEK_SET) < 0) {
+		syslogerr2("lseek64", fdpath);
 		goto err_io_fd;
+	}
 
 	p = data.val;
 	pending = data.len;
 	while (pending > 0) {
 		ssize_t rc = write(fd, p, pending);
-		if (rc < 0)
+		if (rc < 0) {
+			syslogerr2("write", fdpath);
 			goto err_io_fd;
+		}
 
 		pending -= rc;
 		p += rc;
@@ -206,11 +212,15 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		frc = fdatasync(fd);
 	else
 		frc = 0;
-	if (frc)
+	if (frc) {
+		syslogerr2("f[data]sync", fdpath);
 		goto err_io_fd;
+	}
 
-	if (close(fd) < 0)
+	if (close(fd) < 0) {
+		syslogerr2("close", fdpath);
 		goto err_io;
+	}
 
 	ino->size = new_size;
 
@@ -227,7 +237,6 @@ out:
 err_io_fd:
 	close(fd);
 err_io:
-	syslogerr(fdpath);
 	status = NFS4ERR_IO;
 	goto out;
 }
@@ -314,18 +323,26 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
 	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
-	fd = open(fdpath, O_WRONLY);
-	if (fd < 0)
+	fd = open(fdpath, O_RDONLY);
+	if (fd < 0) {
+		syslogerr2("open", fdpath);
 		goto err_io;
+	}
 
-	if (lseek64(fd, offset, SEEK_SET) < 0)
+	if (lseek64(fd, offset, SEEK_SET) < 0) {
+		syslogerr2("lseek64", fdpath);
 		goto err_io_fd;
+	}
 
-	if (read(fd, data_wr->rbuf->buf, read_size) != read_size)
+	if (read(fd, data_wr->rbuf->buf, read_size) != read_size) {
+		syslogerr2("read", fdpath);
 		goto err_io_fd;
+	}
 
-	if (close(fd) < 0)
+	if (close(fd) < 0) {
+		syslogerr2("close", fdpath);
 		goto err_io;
+	}
 
 	pad_size = (XDR_QUADLEN(read_size) * 4) - read_size;
 	if (pad_size) {
@@ -359,7 +376,6 @@ out:
 err_io_fd:
 	close(fd);
 err_io:
-	syslogerr(fdpath);
 	status = NFS4ERR_IO;
 err_out_data:
 	wr_unref(data_wr);

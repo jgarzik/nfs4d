@@ -62,6 +62,11 @@ void syslogerr(const char *prefix)
 	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
 }
 
+void syslogerr2(const char *pfx1, const char *pfx2)
+{
+	syslog(LOG_ERR, "%s(%s): %s", pfx1, pfx2, strerror(errno));
+}
+
 int fsetflags(const char *prefix, int fd, int or_flags)
 {
 	int flags, old_flags, rc;
