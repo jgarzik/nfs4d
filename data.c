@@ -242,7 +242,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t count;
 	bool eof = false;
 	struct nfs_access ac = { NULL, };
-	struct rpc_write *data_wr = NULL, *final_wr, *pad_wr = NULL;
+	struct rpc_write *data_wr = NULL, *final_wr = NULL, *pad_wr = NULL;
 	int fd;
 	char *fdpath;
 
