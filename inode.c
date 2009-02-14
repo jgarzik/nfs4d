@@ -68,10 +68,6 @@ void inode_free(struct nfs_inode *ino)
 
 	inum = ino->inum;
 
-	if (debugging > 1)
-		syslog(LOG_DEBUG, "freeing inode %llu",
-			(unsigned long long) inum);
-
 	switch (ino->type) {
 	case NF4LNK:
 		free(ino->linktext);
@@ -547,7 +543,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, new_ino->inum);
 
 	if (debugging)
-		syslog(LOG_INFO, "   CREATE -> %llu",
+		syslog(LOG_INFO, "   CREATE -> %016llX",
 			(unsigned long long) cxn->current_fh.inum);
 
 out:

@@ -162,7 +162,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, inum);
 
 	if (debugging) {
-		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %llu",
+		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %016llX",
 		       objname.len,
 		       objname.val,
 		       (unsigned long long) cxn->current_fh.inum);
@@ -714,7 +714,7 @@ struct readdir_info {
 	unsigned int n_results;
 };
 
-static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
+static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 			 size_t key_len, nfsino_t dirent,
 			 struct readdir_info *ri)
 {
@@ -786,7 +786,7 @@ static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
 	WR64(ri->dir_pos);		/* entry4.cookie */
 
 	de_name.len = name_len;
-	de_name.val = key->name;
+	de_name.val = (void *) key->name; /* cast is ok: RO data is copied */
 	WRBUF(&de_name);		/* entry4.name */
 
 	/* entry4.attrs */
@@ -796,8 +796,9 @@ static bool readdir_iter(DB_TXN *txn, struct fsdb_de_key *key,
 		ri->stop = true;
 
 	if (debugging)
-		syslog(LOG_DEBUG, "   READDIR ent: '%.*s' (MAP:%Lx WRLEN:%u)",
+		syslog(LOG_DEBUG, "   READDIR ent: '%.*s' (INO:%016llX MAP:%Lx WRLEN:%u)",
 			(int) name_len, key->name,
+			(unsigned long long) dirent,
 			(unsigned long long) bitmap_out, (*wr)->len);
 
 	ri->val_follows = WRSKIP(4);	/* entry4.nextentry */
@@ -916,6 +917,9 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */
 
 		ri.val_follows = WRSKIP(4);
+
+		if (debugging)
+			syslog(LOG_DEBUG, "   READDIR: empty directory");
 
 		goto the_finale;
 	}

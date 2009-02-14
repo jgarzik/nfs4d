@@ -1615,8 +1615,8 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 		return;
 
 	fprintf(f,
-		"INODE: %llu\n"
-		"parent: %llu\n"
+		"INODE: %016llX\n"
+		"parent: %016llX\n"
 		"type: %s\n"
 		"version: %Lu\n"
 		,
