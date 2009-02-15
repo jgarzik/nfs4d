@@ -361,8 +361,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		of->inum = ino->inum;
-		of->u.share.access = args->share_access;
-		of->u.share.deny = args->share_deny;
+		of->share_access = args->share_access;
+		of->share_deny = args->share_deny;
 
 		list_add(&of->inode_node, &ino_openfile_list);
 		list_add(&of->owner_node, &open_owner->openfiles);
@@ -538,18 +538,18 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 	if (share_access &&
-	    ((share_access & of->u.share.access) != share_access)) {
+	    ((share_access & of->share_access) != share_access)) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 	if (share_deny &&
-	    ((share_deny & of->u.share.deny) != share_deny)) {
+	    ((share_deny & of->share_deny) != share_deny)) {
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
-	of->u.share.access = share_access;
-	of->u.share.deny = share_deny;
+	of->share_access = share_access;
+	of->share_deny = share_deny;
 
 	sid.seqid = of->my_seq;
 	sid.id = of->id;

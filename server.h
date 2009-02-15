@@ -427,17 +427,11 @@ struct nfs_openfile {
 
 	uint32_t		my_seq;
 
-	union {
-		struct {
-			uint32_t		access;
-			uint32_t		deny;
-		} share;
+	uint32_t		share_access;
+	uint32_t		share_deny;
 
-		struct {
-			struct list_head	list;
-			struct nfs_openfile	*open;
-		} lock;
-	} u;
+	struct list_head	lock_list;
+	struct nfs_openfile	*lock_open;
 
 	struct list_head	inode_node;
 	struct list_head	owner_node;

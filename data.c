@@ -677,7 +677,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		of->owner->cli_next_seq++;
 
 		if ((locktype == WRITE_LT || locktype == WRITEW_LT) &&
-		    (of->u.share.access == OPEN4_SHARE_ACCESS_READ)) {
+		    (of->share_access == OPEN4_SHARE_ACCESS_READ)) {
 			status = NFS4ERR_OPENMODE;
 			goto out;
 		}
@@ -692,7 +692,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto out;
 		}
 
-		of = lock_of->u.lock.open;
+		of = lock_of->lock_open;
 	}
 
 	ac.sid = prev_sid;
@@ -754,7 +754,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 		new_lock_of = true;
 
 		lock_of->inum = ino->inum;
-		lock_of->u.lock.open = of;
+		lock_of->lock_open = of;
 
 		list_add(&lock_of->inode_node, &ino_openfile_list);
 		list_add(&lock_of->owner_node, &lock_owner->openfiles);
@@ -764,7 +764,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	} else
 		lock_of->my_seq++;
 
-	list_add_tail(&lock_ent->node, &lock_of->u.lock.list);
+	list_add_tail(&lock_ent->node, &lock_of->lock_list);
 
 	sid = &tmp_sid;
 	sid->seqid = lock_of->my_seq;
@@ -882,7 +882,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* delete the first matching lock range, on lock openfile's list */
 	status = NFS4ERR_LOCK_RANGE;
-	list_for_each_entry_safe(lock_ent, iter, &lock_of->u.lock.list, node) {
+	list_for_each_entry_safe(lock_ent, iter, &lock_of->lock_list, node) {
 		if (offset != lock_ent->ofs || length != lock_ent->len)
 			continue;
 
@@ -958,7 +958,7 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	/* scan for any remaining locks held */
 	list_for_each_entry(tmp_of, &o->openfiles, owner_node) {
-		if (!list_empty(&tmp_of->u.lock.list))
+		if (!list_empty(&tmp_of->lock_list))
 			found = true;
 	}
 

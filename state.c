@@ -244,7 +244,7 @@ static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
 		if (!ssi->opens)
 			return;
 
-		if ((of->u.share.deny & ac->share_access) &&
+		if ((of->share_deny & ac->share_access) &&
 		    ((ac->op == OP_OPEN) || !state_self(ac, of))) {
 			ac->match = of;
 			if ((ac->op == OP_WRITE) || (ac->op == OP_READ))
@@ -252,12 +252,12 @@ static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
 			else
 				ssi->status = NFS4ERR_SHARE_DENIED;
 
-		} else if (of->u.share.access & ac->share_deny) {
+		} else if (of->share_access & ac->share_deny) {
 			ac->match = of;
 			ssi->status = NFS4ERR_SHARE_DENIED;
 
 		} else if (state_self(ac, of) &&
-			 !(of->u.share.access & ac->share_access)) {
+			 !(of->share_access & ac->share_access)) {
 			ac->match = of;
 			ssi->status = NFS4ERR_OPENMODE;
 		}
@@ -276,7 +276,7 @@ static void access_search(struct nfs_access *ac, struct state_search_info *ssi,
 		else
 			ssi_end_ofs = ac->ofs + ac->len;
 
-		list_for_each_entry(lock, &of->u.lock.list, node) {
+		list_for_each_entry(lock, &of->lock_list, node) {
 			if (lock->len == 0xffffffffffffffffULL)
 				end_ofs = 0xffffffffffffffffULL;
 			else
@@ -361,7 +361,7 @@ static void openfile_trash_locks(struct nfs_openfile *of)
 {
 	struct nfs_lock *tmp, *iter;
 
-	list_for_each_entry_safe(tmp, iter, &of->u.lock.list, node) {
+	list_for_each_entry_safe(tmp, iter, &of->lock_list, node) {
 		list_del(&tmp->node);
 
 		memset(tmp, 0, sizeof(*tmp));
@@ -384,15 +384,15 @@ void openfile_free(gpointer data)
 		/* fall through */
 
 	case nst_open:
+	case nst_lock:
 		/* do nothing */
 		break;
 	case nst_dead:
 		list_del_init(&of->death_node);
 		break;
-	case nst_lock:
-		openfile_trash_locks(of);
-		break;
 	}
+
+	openfile_trash_locks(of);
 
 	if (of->inum) {
 		list_del_init(&of->inode_node);
@@ -443,7 +443,7 @@ void openfile_trash(struct nfs_openfile *of, bool expired)
 						 inode_node) {
 				if (tmp_of->inum == ino->inum &&
 				    tmp_of->type == nst_lock &&
-				    tmp_of->u.lock.open == of)
+				    tmp_of->lock_open == of)
 					openfile_trash(tmp_of, expired);
 			}
 		}
@@ -528,18 +528,7 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 		return NULL;
 	}
 
-	switch (type) {
-	case nst_any:
-	case nst_dead:
-	case nst_open:
-		/* do nothing */
-		break;
-
-	case nst_lock:
-		INIT_LIST_HEAD(&of->u.lock.list);
-		break;
-	}
-
+	INIT_LIST_HEAD(&of->lock_list);
 	INIT_LIST_HEAD(&of->inode_node);
 	INIT_LIST_HEAD(&of->owner_node);
 	INIT_LIST_HEAD(&of->death_node);
