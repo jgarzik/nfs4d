@@ -57,7 +57,7 @@ static int dirent_cmp(DB *db, const DBT *dbt1, const DBT *dbt2)
 	rc = memcmp(a->name, b->name, MIN(a_len, b_len));
 	if (rc)
 		return rc;
-	
+
 	return a_len - b_len;
 }
 
@@ -504,7 +504,7 @@ int fsdb_inode_putenc(struct fsdb *fsdb, DB_TXN *txn,
 	rc = fsdb_inode_copyenc(&dbino, &alloc_len, ino);
 	if (rc)
 		return rc;
-	
+
 	rc = fsdb_inode_put(fsdb, txn, dbino, alloc_len, flags);
 
 	free(dbino);
@@ -517,7 +517,7 @@ static char *copy_binstr(const char *s_in, size_t s_len)
 	char *s = malloc(s_len + 1);
 	if (!s)
 		return NULL;
-	
+
 	memcpy(s, s_in, s_len);
 	s[s_len] = 0;
 
@@ -600,7 +600,7 @@ int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 	rc = fsdb_inode_copydec(&ino, dbino);
 	if (rc)
 		return rc;
-	
+
 	*ino_o = ino;
 	return 0;
 }

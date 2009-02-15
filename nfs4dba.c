@@ -88,7 +88,7 @@ static int store_root(void)
 		fprintf(stderr, "error storing root inode\n");
 		return 1;
 	}
-	
+
 	fprintf(stderr, "root inode stored successfully\n");
 	return 0;
 }

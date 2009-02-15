@@ -137,7 +137,7 @@ int timer_next(void)
 
 	if (current_time.tv_sec >= timer->timeout)
 		return 0;
-	
+
 	return (timer->timeout - current_time.tv_sec) * 1000;
 }
 
@@ -194,7 +194,7 @@ bool is_dir(const char *arg, char **dirname)
 		fprintf(stderr, "asprintf error in is_dir()\n");
 		return false;
 	}
-	
+
 	*dirname = s;
 	return true;
 }

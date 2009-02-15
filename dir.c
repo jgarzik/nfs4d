@@ -396,7 +396,7 @@ static bool dir_is_empty(DB_TXN *txn, struct nfs_inode *ino)
 
 	if (have_rnum && (rnum != ino->inum))
 		return true;
-	
+
 	return false;
 }
 
@@ -637,7 +637,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* delete entry from source directory; add to target directory */
 	rc = fsdb_dirent_del(&srv.fsdb, txn, src_dir->inum, &oldname, 0);
 	if (rc == 0)
-		rc = fsdb_dirent_put(&srv.fsdb, txn, target_dir->inum, 
+		rc = fsdb_dirent_put(&srv.fsdb, txn, target_dir->inum,
 				     &newname, 0, new_dirent);
 	if (rc) {
 		status = NFS4ERR_IO;
@@ -940,7 +940,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	memset(&pkey, 0, sizeof(pkey));
 	memset(&pval, 0, sizeof(pval));
-	
+
 	key.inum = GUINT64_TO_LE(ino->inum);
 
 	pkey.data = &key;

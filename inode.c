@@ -37,7 +37,7 @@ bool inode_check(DB_TXN *txn, nfsino_t inum)
 
 	if (fsdb_inode_get(&srv.fsdb, txn, inum, 0, &dbino))
 		return false;
-	
+
 	return true;
 }
 
@@ -47,7 +47,7 @@ struct nfs_inode *inode_getdec(DB_TXN *txn, nfsino_t inum, int flags)
 
 	if (fsdb_inode_getdec(&srv.fsdb, txn, inum, flags, &ino))
 		return NULL;
-	
+
 	return ino;
 }
 
@@ -155,7 +155,7 @@ nfsstat4 inode_new_file(struct nfs_inode *ino)
 
 		sprintf(s, "%s%016llX", srv.data_dir,
 			(unsigned long long) counter);
-		
+
 		fd = open(s, O_CREAT | O_EXCL | O_WRONLY, 0666);
 		if (fd < 0) {
 			if (errno == EEXIST) {

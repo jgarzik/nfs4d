@@ -88,7 +88,7 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (fsync(fd) < 0)
 		goto err_io_fd;
-	
+
 	if (close(fd) < 0)
 		goto err_io;
 
@@ -443,7 +443,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 		         struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t locktype;
 	uint64_t offset, length;
 	clientid4 owner_id;
@@ -534,6 +534,7 @@ out:
 		WRSTR(ac.match->owner->owner);	/* owner name */
 	} else
 		WR32(status);
+	inode_free(ino);
 	return status;
 }
 
@@ -806,7 +807,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
-	struct nfs_inode *ino;
+	struct nfs_inode *ino = NULL;
 	uint32_t locktype, seqid;
 	uint64_t offset, length;
 	struct nfs_lock *lock_ent, *iter;
@@ -904,6 +905,7 @@ out:
 	WR32(status);
 	if (status == NFS4_OK)
 		WRSID(&sid);
+	inode_free(ino);
 	return status;
 }
 
