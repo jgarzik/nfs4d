@@ -295,8 +295,6 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (status != NFS4_OK)
 		goto out;
 
-	inode_free(ino);
-
 out:
 	WR32(status);
 	if (status == NFS4_OK) {
@@ -304,6 +302,7 @@ out:
 		WR32(AUTH_SYS);
 		WR32(AUTH_NONE);
 	}
+	inode_free(ino);
 	return status;
 }
 
