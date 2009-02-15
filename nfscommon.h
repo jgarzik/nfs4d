@@ -33,5 +33,6 @@ extern void timer_del(struct timer *timer);
 extern bool is_dir(const char *arg, char **dirname);
 extern void nrand32(void *mem, unsigned int dwords);
 extern void init_rngs(void);
+extern char *copy_binstr(const char *s_in, size_t s_len);
 
 #endif /* __NFSCOMMON_H__ */

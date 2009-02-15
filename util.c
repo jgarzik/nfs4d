@@ -243,3 +243,15 @@ srand_time:
 	srand(getpid() ^ time(NULL));
 }
 
+char *copy_binstr(const char *s_in, size_t s_len)
+{
+	char *s = malloc(s_len + 1);
+	if (!s)
+		return NULL;
+
+	memcpy(s, s_in, s_len);
+	s[s_len] = 0;
+
+	return s;
+}
+

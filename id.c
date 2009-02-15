@@ -21,85 +21,73 @@
 #include "nfs4d-config.h"
 #include <sys/types.h>
 #include <string.h>
-#include <errno.h>
+#include <stdlib.h>
 #include <pwd.h>
 #include <grp.h>
-#include <syslog.h>
-#include <glib.h>
 #include "server.h"
-#include "elist.h"
 
 char *id_lookup(enum id_type type, uint32_t id)
 {
-	DBT pkey, pval;
-	DB *ug_idx = srv.fsdb.ug_idx;
-	struct fsdb_ugidx_key idxkey;
 	char *s, *rstr;
-	int rc;
 
-	memset(&idxkey, 0, sizeof(idxkey));
-	memset(&pkey, 0, sizeof(pkey));
-	memset(&pval, 0, sizeof(pval));
+	if (type == idt_user) {
+		struct passwd *pw = getpwuid(id);
+		if (!pw)
+			return NULL;
 
-	idxkey.is_user = GUINT32_TO_LE(type == idt_user ? 1 : 0);
-	idxkey.id = GUINT32_TO_LE(id);
+		s = pw->pw_name;
+	} else {
+		struct group *gr = getgrgid(id);
+		if (!gr)
+			return NULL;
 
-	pkey.data = &idxkey;
-	pkey.size = sizeof(idxkey);
-
-	rc = ug_idx->get(ug_idx, NULL, &pkey, &pval, 0);
-	if (rc) {
-		if (rc != DB_NOTFOUND)
-			ug_idx->err(ug_idx, rc, "ug_idx->get");
-		return NULL;
+		s = gr->gr_name;
 	}
-
-	s = strndup(pval.data, pval.size);
-	if (!s);
-		return NULL;
-
+		
 	if (asprintf(&rstr, "%s@%s", s, srv.localdom) < 0)
 		rstr = NULL;
-	free(s);
 
 	return rstr;
 }
 
-char *id_lookup_name(enum id_type type, const char *name, size_t name_len)
+char *id_lookup_name(enum id_type type, const char *name_in, size_t name_len)
 {
-	DBT pkey, pval;
-	DB *ug = srv.fsdb.usergroup;
-	struct fsdb_ug_key *ugkey;
-	size_t alloc_len;
-	char *s, *rstr;
-	int rc;
+	char *s, *rstr = NULL, *name, *dom;
 
-	memset(&pkey, 0, sizeof(pkey));
-	memset(&pval, 0, sizeof(pval));
-
-	alloc_len = sizeof(*ugkey) + name_len;
-	ugkey = alloca(alloc_len);
-	ugkey->is_user = GUINT32_TO_LE(type == idt_user ? 1 : 0);
-	memcpy(ugkey->name, name, name_len);
-
-	pkey.data = ugkey;
-	pkey.size = alloc_len;
-
-	rc = ug->get(ug, NULL, &pkey, &pval, 0);
-	if (rc) {
-		if (rc != DB_NOTFOUND)
-			ug->err(ug, rc, "ug->get");
+	name = copy_binstr(name_in, name_len);
+	if (!name)
 		return NULL;
+
+	dom = strchr(name, '@');
+	if (dom) {
+		/* truncate 'name' before '@' */
+		*dom = 0;
+		dom++;
+
+		/* verify that domain names match */
+		if (strcmp(dom, srv.localdom))
+			return NULL;
 	}
 
-	s = strndup(name, name_len);
-	if (strchr(s, '@'))
-		return s;
+	if (type == idt_user) {
+		struct passwd *pw = getpwnam(name);
+		if (!pw)
+			goto out;
 
+		s = pw->pw_name;
+	} else {
+		struct group *gr = getgrnam(name);
+		if (!gr)
+			goto out;
+
+		s = gr->gr_name;
+	}
+		
 	if (asprintf(&rstr, "%s@%s", s, srv.localdom) < 0)
 		rstr = NULL;
-	free(s);
 
+out:
+	free(name);
 	return rstr;
 }
 

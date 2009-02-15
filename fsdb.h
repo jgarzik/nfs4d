@@ -38,16 +38,6 @@ struct fsdb_de_key {
 	char			name[0];
 };
 
-struct fsdb_ug_key {
-	uint32_t		is_user;
-	char			name[0];
-};
-
-struct fsdb_ugidx_key {
-	uint32_t		is_user;
-	uint32_t		id;
-};
-
 struct fsdb_inode {
 	nfsino_t		inum;
 	nfsino_t		parent;		/* only for directories */
@@ -84,8 +74,6 @@ struct fsdb {
 
 	DB_ENV		*env;			/* db4 env ptr */
 	DB		*inodes;		/* inodes */
-	DB		*usergroup;		/* users/groups */
-	DB		*ug_idx;		/* u/g index */
 	DB		*dirent;		/* dir entries */
 };
 

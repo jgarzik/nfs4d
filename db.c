@@ -61,29 +61,6 @@ static int dirent_cmp(DB *db, const DBT *dbt1, const DBT *dbt2)
 	return a_len - b_len;
 }
 
-static int usergroup_idx_key(DB *secondary, const DBT *pkey, const DBT *pdata,
-			     DBT *key_out)
-{
-	const struct fsdb_ug_key *key = pkey->data;
-	const uint32_t *val = pdata->data;
-	struct fsdb_ugidx_key *ikey;
-
-	ikey = malloc(sizeof(*ikey));
-	if (!ikey)
-		return ENOMEM;
-
-	ikey->is_user = key->is_user;
-	ikey->id = *val;
-
-	memset(key_out, 0, sizeof(*key_out));
-
-	key_out->flags = DB_DBT_APPMALLOC;
-	key_out->data = ikey;
-	key_out->size = sizeof(*ikey);
-
-	return 0;
-}
-
 static int open_db(DB_ENV *env, DB **db_out, const char *name,
 		   unsigned int page_size, DBTYPE dbtype, unsigned int flags,
 		   int (*bt_compare)(DB *db, const DBT *dbt1, const DBT *dbt2))
@@ -205,35 +182,13 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	if (rc)
 		goto err_out;
 
-	rc = open_db(dbenv, &fsdb->usergroup, "usergroup", FSDB_PGSZ_USERGROUP,
-		     DB_HASH, flags, NULL);
-	if (rc)
-		goto err_out_inodes;
-
-	rc = open_db(dbenv, &fsdb->ug_idx, "ug_idx",
-		     FSDB_PGSZ_UG_IDX, DB_HASH, flags | DB_DUP, NULL);
-	if (rc)
-		goto err_out_ug;
-
-	/* associate this secondary index with 'usergroup' primary db */
-	rc = fsdb->usergroup->associate(fsdb->usergroup, NULL,
-			fsdb->ug_idx, usergroup_idx_key, DB_CREATE);
-	if (rc) {
-		dbenv->err(dbenv, rc, "usergroup->associate");
-		goto err_out_ug;
-	}
-
 	rc = open_db(dbenv, &fsdb->dirent, "dirent", FSDB_PGSZ_DIRENT,
 		     DB_BTREE, flags, dirent_cmp);
 	if (rc)
-		goto err_out_ug_idx;
+		goto err_out_inodes;
 
 	return 0;
 
-err_out_ug_idx:
-	fsdb->ug_idx->close(fsdb->ug_idx, 0);
-err_out_ug:
-	fsdb->usergroup->close(fsdb->usergroup, 0);
 err_out_inodes:
 	fsdb->inodes->close(fsdb->inodes, 0);
 err_out:
@@ -244,15 +199,11 @@ err_out:
 void fsdb_close(struct fsdb *fsdb)
 {
 	fsdb->dirent->close(fsdb->dirent, 0);
-	fsdb->ug_idx->close(fsdb->ug_idx, 0);
-	fsdb->usergroup->close(fsdb->usergroup, 0);
 	fsdb->inodes->close(fsdb->inodes, 0);
 	fsdb->env->close(fsdb->env, 0);
 
 	fsdb->env = NULL;
 	fsdb->inodes = NULL;
-	fsdb->usergroup = NULL;
-	fsdb->ug_idx = NULL;
 	fsdb->dirent = NULL;
 }
 
@@ -509,18 +460,6 @@ int fsdb_inode_putenc(struct fsdb *fsdb, DB_TXN *txn,
 	free(dbino);
 
 	return rc;
-}
-
-static char *copy_binstr(const char *s_in, size_t s_len)
-{
-	char *s = malloc(s_len + 1);
-	if (!s)
-		return NULL;
-
-	memcpy(s, s_in, s_len);
-	s[s_len] = 0;
-
-	return s;
 }
 
 int fsdb_inode_copydec(struct nfs_inode **ino_io, const struct fsdb_inode *dbino)

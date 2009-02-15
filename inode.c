@@ -366,6 +366,11 @@ size_done:
 		char *ostr = id_lookup_name(idt_user, attr->owner.val,
 					    attr->owner.len);
 		if (!ostr) {
+			if (debugging > 1)
+				syslog(LOG_DEBUG,
+				       "   SETATTR DENIED owner \"%.*s\"",
+				       attr->owner.len,
+				       attr->owner.val);
 			status = NFS4ERR_DENIED;
 			goto out;
 		}
@@ -379,6 +384,11 @@ size_done:
 		char *ostr = id_lookup_name(idt_group, attr->owner_group.val,
 					    attr->owner_group.len);
 		if (!ostr) {
+			if (debugging > 1)
+				syslog(LOG_DEBUG,
+				       "   SETATTR DENIED group \"%.*s\"",
+				       attr->owner_group.len,
+				       attr->owner_group.val);
 			status = NFS4ERR_DENIED;
 			goto out;
 		}
