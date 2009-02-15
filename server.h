@@ -469,8 +469,6 @@ struct nfs_inode {
 
 	char			*linktext;	/* state for a symlink */
 	uint32_t		devdata[2];	/* "" blk/chrdev */
-
-	char			dataname[32 + 1];
 };
 
 struct nfs_server_stats {

@@ -79,8 +79,9 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
-	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
+	sprintf(fdpath, "%s%016llX", srv.data_dir,
+		(unsigned long long) ino->inum);
 
 	fd = open(fdpath, O_WRONLY);
 	if (fd < 0)
@@ -195,8 +196,9 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		new_size = old_size;
 
 	/* build file path, open file */
-	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
-	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
+	sprintf(fdpath, "%s%016llX", srv.data_dir,
+		(unsigned long long) ino->inum);
 	fd = open(fdpath, O_WRONLY);
 	if (fd < 0) {
 		syslogerr2("open", fdpath);
@@ -376,8 +378,9 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto err_out_data;
 	}
 
-	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
-	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
+	sprintf(fdpath, "%s%016llX", srv.data_dir,
+		(unsigned long long) ino->inum);
 	fd = open(fdpath, O_RDONLY);
 	if (fd < 0) {
 		syslogerr2("open", fdpath);

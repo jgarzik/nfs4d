@@ -144,35 +144,23 @@ static gint nfstr_compare(gconstpointer _a, gconstpointer _b)
 }
 #endif
 
-nfsstat4 inode_new_file(struct nfs_inode *ino)
+static nfsstat4 inode_new_file(nfsino_t inum)
 {
-	char *s = alloca(strlen(srv.data_dir) + sizeof(ino->dataname) + 2);
-	uint64_t counter = ino->inum;
+	char *s = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 2);
 	nfsstat4 status = NFS4_OK;
+	int fd;
 
-	while (1) {
-		int fd;
+	sprintf(s, "%s%016llX", srv.data_dir,
+		(unsigned long long) inum);
 
-		sprintf(s, "%s%016llX", srv.data_dir,
-			(unsigned long long) counter);
-
-		fd = open(s, O_CREAT | O_EXCL | O_WRONLY, 0666);
-		if (fd < 0) {
-			if (errno == EEXIST) {
-				counter++;
-				continue;
-			}
-
-			status = NFS4ERR_IO;
-			break;
-		}
-
-		if (close(fd) < 0)
-			syslogerr("inode_new_file close");
-
-		sprintf(ino->dataname, "%016llX", (unsigned long long) counter);
-		break;
+	fd = open(s, O_CREAT | O_EXCL | O_WRONLY, 0666);
+	if (fd < 0) {
+		syslogerr2("inode_new_file create", s);
+		return NFS4ERR_IO;
 	}
+
+	if (close(fd) < 0)
+		syslogerr2("inode_new_file close", s);
 
 	return status;
 }
@@ -213,7 +201,7 @@ nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
 		break;
 	}
 	case NF4REG:
-		status = inode_new_file(new_ino);
+		status = inode_new_file(new_ino->inum);
 		if (status != NFS4_OK)
 			goto out;
 		break;
@@ -243,8 +231,9 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 {
 	int rc;
 	char *fdpath;
+	nfsino_t inum = ino->inum;
 
-	if (!ino || (ino->inum == INO_ROOT)) {
+	if (!ino || !inum || (ino->inum == INO_ROOT)) {
 		syslog(LOG_ERR, "BUG: null in inode_unlink");
 		return -EINVAL;
 	}
@@ -263,8 +252,8 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 	if (rc || ino->type != NF4REG)
 		return rc;
 
-	fdpath = alloca(strlen(srv.data_dir) + strlen(ino->dataname) + 1);
-	sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
+	sprintf(fdpath, "%s%016llX", srv.data_dir, (unsigned long long) inum);
 
 	/* FIXME: metadata transaction could still be aborted, at this point */
 
@@ -329,9 +318,9 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		if (new_size == ino->size)
 			goto size_done;
 
-		fdpath = alloca(strlen(srv.data_dir) +
-			 strlen(ino->dataname) + 1);
-		sprintf(fdpath, "%s%s", srv.data_dir, ino->dataname);
+		fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
+		sprintf(fdpath, "%s%016llX", srv.data_dir,
+			(unsigned long long) ino->inum);
 
 		if (truncate(fdpath, new_size) < 0) {
 			status = NFS4ERR_IO;

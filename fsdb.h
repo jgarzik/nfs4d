@@ -29,6 +29,10 @@ struct nfs_buf;
 
 typedef uint64_t nfsino_t;
 
+enum {
+	INO_FNAME_LEN		= 16,
+};
+
 struct fsdb_de_key {
 	nfsino_t		inum;
 	char			name[0];
@@ -58,8 +62,6 @@ struct fsdb_inode {
 	uint32_t		mode;
 	uint32_t		n_link;
 	uint32_t		devdata[2];
-
-	char			dataname[32];
 
 	verifier4		create_verf;
 
