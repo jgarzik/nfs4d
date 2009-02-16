@@ -1711,6 +1711,7 @@ int main (int argc, char *argv[])
 
 	atexit(srv_exit_cleanup);
 	signal(SIGHUP, SIG_IGN);
+	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, term_signal);
 	signal(SIGTERM, term_signal);
 	signal(SIGUSR1, stats_signal);
