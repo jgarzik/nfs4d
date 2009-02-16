@@ -132,8 +132,8 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 		INC32(attr->chown_restricted ? 1 : 0);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		INC32(1);
-		INC32(attr->filehandle);
+		INC32(sizeof(struct nfs_fh));
+		INC64(attr->filehandle);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEID)) {
 		INC64(attr->fileid);
@@ -336,8 +336,8 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 		attr->chown_restricted = CR32();
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		if (CR32() == 4)
-			attr->filehandle = CR32();
+		if (CR32() == 8)
+			attr->filehandle = CR64();
 		else
 			status = NFS4ERR_BADXDR;
 	}
@@ -601,8 +601,8 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		bitmap_out |= (1ULL << FATTR4_CHOWN_RESTRICTED);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		WR32(4);
-		WR32(attr->filehandle);
+		WR32(8);
+		WR64(attr->filehandle);
 		bitmap_out |= (1ULL << FATTR4_FILEHANDLE);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEID)) {
