@@ -32,6 +32,18 @@ struct timeval current_time = { 0, 0 };
 static GQueue *timers_q;
 static struct drand48_data rng;
 
+const char *name_nfs_ftype4[] = {
+	[NF4REG] = "NF4REG",
+	[NF4DIR] = "NF4DIR",
+	[NF4BLK] = "NF4BLK",
+	[NF4CHR] = "NF4CHR",
+	[NF4LNK] = "NF4LNK",
+	[NF4SOCK] = "NF4SOCK",
+	[NF4FIFO] = "NF4FIFO",
+	[NF4ATTRDIR] = "NF4ATTRDIR",
+	[NF4NAMEDATTR] = "NF4NAMEDATTR",
+};
+
 int write_pid_file(const char *pid_fn)
 {
 	char str[32], *s;

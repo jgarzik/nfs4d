@@ -28,18 +28,6 @@
 #include "nfs4_prot.h"
 #include "server.h"
 
-const char *name_nfs_ftype4[] = {
-	[NF4REG] = "NF4REG",
-	[NF4DIR] = "NF4DIR",
-	[NF4BLK] = "NF4BLK",
-	[NF4CHR] = "NF4CHR",
-	[NF4LNK] = "NF4LNK",
-	[NF4SOCK] = "NF4SOCK",
-	[NF4FIFO] = "NF4FIFO",
-	[NF4ATTRDIR] = "NF4ATTRDIR",
-	[NF4NAMEDATTR] = "NF4NAMEDATTR",
-};
-
 const char *name_nfs4status[] = {
 	[NFS4_OK] = "NFS4_OK",
 	[NFS4ERR_PERM] = "NFS4ERR_PERM",

@@ -38,6 +38,7 @@ struct timer {
 };
 
 /* util.c */
+extern const char *name_nfs_ftype4[];
 extern struct timeval current_time;
 extern int write_pid_file(const char *pid_fn);
 extern void syslogerr(const char *prefix);

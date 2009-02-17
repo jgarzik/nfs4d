@@ -66,13 +66,11 @@ static char startup_cwd[PATH_MAX];
 char my_hostname[HOST_NAME_MAX + 1];
 static bool server_running = true;
 static bool dump_stats = false;
-static bool dump_data = false;
 static bool opt_foreground;
 static char *opt_data_path = "/tmp/data/";
 static char *opt_metadata = "/tmp/metadata/";
 static char *pid_fn = "nfs4d.pid";
 static char *stats_fn = "nfs4d.stats";
-static char *dump_fn = "nfs4d.dump";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GHashTable *request_cache;
@@ -141,7 +139,6 @@ static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
 		      cxn_write_func cb, void *cb_data);
 static bool cxn_write_start(struct rpc_cxn *cxn);
 static void stats_dump(void);
-static void diag_dump(void);
 
 
 static struct argp_option options[] = {
@@ -166,8 +163,6 @@ static struct argp_option options[] = {
 
 	{ "stats", 'S', "FILE", 0,
 	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4d.stats, in current directory)" },
-	{ "dump", 'U', "FILE", 0,
-	  "Diagnostic RAM data dumped to FILE, for each SIGUSR2 (def: nfs4d.dump, in current directory)" },
 
 	{ }
 };
@@ -1300,10 +1295,6 @@ static void main_loop(void)
 			stats_dump();
 			dump_stats = false;
 		}
-		if (dump_data) {
-			diag_dump();
-			dump_data = false;
-		}
 	}
 }
 
@@ -1404,10 +1395,6 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		pid_fn = arg;
 		break;
 
-	case 'U':
-		dump_fn = arg;
-		break;
-
 	case 'S':
 		stats_fn = arg;
 		break;
@@ -1434,11 +1421,6 @@ static void term_signal(int signal)
 static void stats_signal(int signal)
 {
 	dump_stats = true;
-}
-
-static void dump_signal(int signal)
-{
-	dump_data = true;
 }
 
 static void stats_dump(void)
@@ -1608,86 +1590,6 @@ static void stats_dump(void)
 		syslog(LOG_ERR, "close(%s): %s", stats_fn, strerror(errno));
 }
 
-#if 0 /* will be used again soon */
-static void dump_inode(FILE *f, const struct nfs_inode *ino)
-{
-	if (!ino)
-		return;
-
-	fprintf(f,
-		"INODE: %016llX\n"
-		"parent: %016llX\n"
-		"type: %s\n"
-		"version: %Lu\n"
-		,
-		(unsigned long long) ino->inum,
-		(unsigned long long) ino->parent,
-		name_nfs_ftype4[ino->type],
-		(unsigned long long) ino->version);
-
-	if (ino->ctime || ino->atime || ino->mtime)
-		fprintf(f, "time: create %Lu access %Lu modify %Lu\n",
-			(unsigned long long) ino->ctime,
-			(unsigned long long) ino->atime,
-			(unsigned long long) ino->mtime);
-	if (ino->mode)
-		fprintf(f, "mode: %o\n", ino->mode);
-	if (ino->user)
-		fprintf(f, "user: %s\n", ino->user);
-	if (ino->group)
-		fprintf(f, "group: %s\n", ino->group);
-	if (ino->mimetype)
-		fprintf(f, "mime-type: %s\n", ino->mimetype);
-
-	switch (ino->type) {
-	case NF4DIR:
-		fprintf(f, "directory: TODO\n");	/* FIXME */
-		break;
-	case NF4LNK:
-		fprintf(f, "linktext: %s\n", ino->linktext);
-		break;
-	case NF4BLK:
-	case NF4CHR:
-		fprintf(f, "devdata: %u %u\n", ino->devdata[0], ino->devdata[1]);
-		break;
-	case NF4REG:
-		fprintf(f, "size: %Lu\n", (unsigned long long) ino->size);
-		break;
-
-	default:
-		/* do nothing */
-		break;
-	}
-
-	fprintf(f, "===========================\n");
-}
-#endif
-
-static void diag_dump(void)
-{
-	FILE *f;
-
-	if (dump_fn[0] != '/') {
-		char *fn;
-
-		if (asprintf(&fn, "%s%s", startup_cwd, dump_fn) < 0)
-			exit(1);
-
-		dump_fn = fn;		/* NOTE: never freed */
-	}
-
-	f = fopen(dump_fn, "a");
-	if (!f) {
-		syslogerr(dump_fn);
-		goto out;
-	}
-
-	/* FIXME: iterate through inodes, dumping each one */
-
-out:
-	return;
-}
-
 static void srv_exit_cleanup(void)
 {
 	if (pid_opened && unlink(pid_fn) < 0)
@@ -1715,7 +1617,6 @@ int main (int argc, char *argv[])
 	signal(SIGINT, term_signal);
 	signal(SIGTERM, term_signal);
 	signal(SIGUSR1, stats_signal);
-	signal(SIGUSR2, dump_signal);
 
 	openlog("nfs4d", LOG_PID, LOG_LOCAL2);
 
