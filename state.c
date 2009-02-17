@@ -468,13 +468,18 @@ void owner_free(struct nfs_owner *o)
 	if (!o)
 		return;
 
-	free(o->owner);
-
 	/* FIXME technically we should loop through o->openfiles
 	 * and free resources, but I /think/ all paths already
 	 * do that for us
 	 */
+	if (!list_empty(&o->openfiles))
+		syslog(LOG_WARNING,
+		       "owner_free openfile list not empty (%s)",
+		       o->owner ? o->owner : "\"\"");
 
+	free(o->owner);
+
+	memset(o, 0, sizeof(*o));
 	free(o);
 }
 
@@ -482,11 +487,9 @@ struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 {
 	struct nfs_owner *o;
 
-	o = malloc(sizeof(struct nfs_owner));
+	o = calloc(1, sizeof(struct nfs_owner));
 	if (!o)
 		return NULL;
-
-	o->cli = 0;
 
 	o->owner = strndup(owner->val, owner->len);
 	if (!o->owner) {
@@ -495,8 +498,6 @@ struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 	}
 
 	o->type = type;
-	o->open_owner = NULL;
-	o->cli_next_seq = 0;
 
 	INIT_LIST_HEAD(&o->openfiles);
 	INIT_LIST_HEAD(&o->cli_node);

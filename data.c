@@ -728,12 +728,12 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	 	*/
 		status = clientid_test(id_short);
 		if (status != NFS4_OK)
-			goto err_out_lockof;
+			goto err_out;
 
 		lock_owner = owner_new(nst_lock, &owner);
 		if (!lock_owner) {
 			status = NFS4ERR_RESOURCE;
-			goto err_out_lockof;
+			goto err_out;
 		}
 
 		lock_owner->cli = id_short;
@@ -794,14 +794,8 @@ out:
 	inode_free(ino);
 	return status;
 
-err_out_lockof:
-	if (new_lock_of) {
-		free(lock_of);
-		lock_of = NULL;
-	}
 err_out:
 	free(lock_ent);
-	lock_ent = NULL;
 	goto out;
 }
 
