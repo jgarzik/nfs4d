@@ -360,7 +360,6 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 	DBT pkey, pval;
 	struct fsdb_de_key key;
 	nfsino_t rnum = 0;
-	bool have_rnum = false;
 
 	rc = dirent->cursor(dirent, txn, &cur, 0);
 	if (rc) {
@@ -381,7 +380,6 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 		struct fsdb_de_key *rkey = pkey.data;
 
 		rnum = GUINT64_FROM_LE(rkey->inum);
-		have_rnum = true;
 	} else if (rc != DB_NOTFOUND)
 		dirent->err(dirent, rc, "dir_is_empty cur->get");
 
@@ -391,10 +389,10 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 		return false;
 	}
 
-	if (have_rnum && (rnum != ino->inum))
-		return true;
+	if (rnum == ino->inum)
+		return false;
 
-	return false;
+	return true;
 }
 
 nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
