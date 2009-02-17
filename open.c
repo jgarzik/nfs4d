@@ -225,6 +225,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	    (args->how.mode == UNCHECKED4)) {
 		creating = false;
 		recreating = true;
+
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "   OPEN unchecked: recreating");
 	}
 
 	/*
@@ -331,10 +334,12 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 * if re-creating, only size attribute applies
 	 */
 	if (recreating && !exclusive) {
-		_args.attr.supported_attrs &= (1ULL << FATTR4_SIZE);
+		_args.attr.bitmap &= (1ULL << FATTR4_SIZE);
 
-		status = inode_apply_attrs(NULL, ino, &args->attr, &bitmap_set,
-					   NULL, false);
+		status = NFS4_OK;
+		if (_args.attr.size == 0)
+			status = inode_apply_attrs(NULL, ino, &args->attr,
+						   &bitmap_set, NULL, false);
 		if (status != NFS4_OK)
 			goto out;
 	}
@@ -379,6 +384,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	sid.id = of->id;
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
+
+	inode_touch(NULL, ino);
 
 	status = NFS4_OK;
 

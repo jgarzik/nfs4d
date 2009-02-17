@@ -301,6 +301,10 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		uint64_t ofs, len;
 		struct nfs_access ac = { NULL, };
 
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "   apply SIZE %llu",
+				(unsigned long long) attr->size);
+
 		/* only permit size attribute manip on files */
 		if (ino->type != NF4REG) {
 			if (ino->type == NF4DIR)
@@ -372,6 +376,9 @@ size_done:
 		}
 		ino->mode = attr->mode;
 		bitmap_set |= (1ULL << FATTR4_MODE);
+
+		if (debugging > 1)
+			syslog(LOG_DEBUG, "   apply MODE %o", ino->mode);
 	}
 	if ((attr->bitmap & (1ULL << FATTR4_OWNER)) &&
 	    (attr->owner.len)) {
