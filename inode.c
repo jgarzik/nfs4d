@@ -774,7 +774,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino = NULL;
 	uint32_t arg_access;
-	ACCESS4resok resok;
+	ACCESS4resok resok = { 0, 0 };
 
 	if (cur->len < sizeof(ACCESS4args)) {
 		status = NFS4ERR_BADXDR;

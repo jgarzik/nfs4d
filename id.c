@@ -43,7 +43,7 @@ char *id_lookup(enum id_type type, uint32_t id)
 
 		s = gr->gr_name;
 	}
-		
+
 	if (asprintf(&rstr, "%s@%s", s, srv.localdom) < 0)
 		rstr = NULL;
 
@@ -82,7 +82,7 @@ char *id_lookup_name(enum id_type type, const char *name_in, size_t name_len)
 
 		s = gr->gr_name;
 	}
-		
+
 	if (asprintf(&rstr, "%s@%s", s, srv.localdom) < 0)
 		rstr = NULL;
 
