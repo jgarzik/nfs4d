@@ -698,6 +698,7 @@ extern nfsstat4 inode_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		   const struct nfs_buf *name, uint64_t *attrset,
 		   change_info4 *cinfo);
 extern nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
+			const struct nfs_inode *dir_ino,
 			const struct nfs_buf *linkdata,
 			const uint32_t *specdata,
 			struct nfs_inode **ino_out);

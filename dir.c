@@ -305,12 +305,9 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
-	/* make sure source is a regular file */
-	if (src_ino->type == NF4REG) {
-		if (src_ino->type == NF4DIR)
-			status = NFS4ERR_ISDIR;
-		else
-			status = NFS4ERR_INVAL;
+	/* make sure source is a not a directory */
+	if (src_ino->type == NF4DIR) {
+		status = NFS4ERR_ISDIR;
 		goto out_abort;
 	}
 
@@ -642,6 +639,15 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (rc) {
 		status = NFS4ERR_IO;
 		goto out_abort;
+	}
+
+	/* if renamed file is a directory, ensure its 'parent' is updated */
+	if (old_file->type == NF4DIR) {
+		old_file->parent = target_dir->inum;
+		if (inode_touch(txn, old_file)) {
+			status = NFS4ERR_IO;
+			goto out_abort;
+		}
 	}
 
 	/* record directory change info */

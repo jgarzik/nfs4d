@@ -166,6 +166,7 @@ static nfsstat4 inode_new_file(nfsino_t inum)
 }
 
 nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
+			const struct nfs_inode *dir_ino,
 			const struct nfs_buf *linkdata,
 			const uint32_t *specdata,
 			struct nfs_inode **ino_out)
@@ -182,6 +183,7 @@ nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
 	}
 
 	new_ino->type = objtype;
+	new_ino->parent = dir_ino->inum;
 
 	switch(objtype) {
 	case NF4DIR:
@@ -238,24 +240,34 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 		return -EINVAL;
 	}
 
+	/* decrement link count */
 	ino->n_link--;
 
-	if (ino->n_link == 0) {
-		rc = fsdb_inode_del(&srv.fsdb, txn, ino->inum, 0);
+	/* if links remain, update the inode and exit */
+	if (ino->n_link > 0)
+		return inode_touch(txn, ino);
 
-		if (rc == 0)
-			ino->inum = 0;
-	} else {
-		rc = inode_touch(txn, ino);
-	}
+	/* no links remain. delete inode. */
+	rc = fsdb_inode_del(&srv.fsdb, txn, ino->inum, 0);
+	if (rc == 0)
+		ino->inum = 0;		/* if deleted, poison inode num */
 
+	/* if error, or not a regular file, exit */
 	if (rc || ino->type != NF4REG)
 		return rc;
+
+	/*
+	 * remove data associated with inode
+	 */
 
 	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
 	sprintf(fdpath, "%s%016llX", srv.data_dir, (unsigned long long) inum);
 
-	/* FIXME: metadata transaction could still be aborted, at this point */
+	/*
+	 * FIXME: metadata transaction could still be aborted, at this
+	 * point.  That results in intact metadata pointing to a file
+	 * that no longer exists
+	 */
 
 	if (unlink(fdpath) < 0) {
 		rc = -errno;
@@ -522,7 +534,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
-	status = inode_new_type(txn, cxn, objtype, &linkdata,
+	status = inode_new_type(txn, cxn, objtype, dir_ino, &linkdata,
 				specdata, &new_ino);
 	if (status != NFS4_OK)
 		goto out_abort;

@@ -284,7 +284,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 * create file, if necessary
 	 */
 	if (creating) {
-		status = inode_new_type(NULL, cxn, NF4REG, NULL, NULL, &ino);
+		status = inode_new_type(NULL, cxn, NF4REG, dir_ino,
+					NULL, NULL, &ino);
 		if (status != NFS4_OK)
 			goto out;
 
