@@ -2,7 +2,7 @@
 ## Toplevel Makefile.am
 ##
 
-SUBDIRS		= test
+SUBDIRS		= doc test
 
 INCLUDES	= @GLIB_CFLAGS@
 

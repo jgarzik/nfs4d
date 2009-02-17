@@ -1,0 +1,66 @@
+
+Building and installing from source code
+----------------------------------------
+
+nfs4d uses the GNU autotools build system.  The basic are
+
+	CFLAGS="-O2 -Wall -g" ./configure make make install
+
+See INSTALL for more information.
+
+
+Database setup
+--------------
+
+Filesystem metadata and data storage areas must be initialized,
+before the system can be used.
+
+a) Choose the user/group under which the server will run.  The server
+should not be run as root.
+
+b) Choose (and create if necessary) a DATA directory, where file data
+will be stored.
+
+c) Choose (and create if necessary) a METADATA directory, where
+filesystem metadata is stored (inodes, directory entries, etc.)
+
+d) Choose your LOCAL DOMAIN for NFS user and group names, or leave
+   blank to let the local domain be chosen via gethostname(2).
+
+   NFS does not use user and group ids, but rather user and group
+   names, such as
+	root@localdomain
+		or
+	jgarzik@yyz.us
+
+   If you use Kerberos, this will be familiar.
+
+   Currently, the nfs4d server translates uid/gid into NFS names
+   using getpwnam(3), getpwuid(3), getgrnam(3), and getgrgid(3).
+
+e) run nfs4dba administration utility, to initialize databases:
+
+	nfs4dba -D $DATA_DIR -M $METADATA_DIR -O $LOCALDOMAIN -R
+
+See 'nfs4dba --help' for a full list options.
+
+
+Running the server
+------------------
+
+The server forks itself into the background, opens databases, and
+starts serving clients.  Logging and debug output is sent to syslog's
+LOCAL2 facility.
+
+See 'nfs4d --help' for a full list of options.	Here is a typical
+setup:
+
+	nfs4d	-D $DATA_DIR -M $METADATA_DIR -O $LOCALDOMAIN \
+		-P /var/run/nfs4d.pid -S /var/tmp/nfs4d-stats.txt
+
+Use the --debug option to enable protocol and wire-level verbose
+debug output.
+
+Use of wireshark (http://www.wireshark.org/) is recommended for
+extensive protocol tracing and debugging.
+

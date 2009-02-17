@@ -12,15 +12,10 @@ overlapping locks
 test: OPDG2
 	OPENDOWNGRADE to never opened mode should return
 	NFS4ERR_INVAL, instead got NFS4_OK
-test: OPEN2
-	Attrs on recreate should be ignored: For mode expected
-	420, got 384
 replay cache for open/lock/etc.
-open exclusive: bitmap-out should indicate which attr we used for
-	storing create verifier?
+grace period after restart!
 
 
 Maybe
 -----
 LOCKU inside a locked area should return OK
-ditch GNet for epoll?

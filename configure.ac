@@ -66,5 +66,5 @@ AM_PATH_GLIB_2_0(2.0.0)
 dnl AC_SUBST(GSSRPC_LIBS)
 AC_SUBST(DB4_LIBS)
 
-AC_CONFIG_FILES([test/Makefile Makefile])
+AC_CONFIG_FILES([doc/Makefile test/Makefile Makefile])
 AC_OUTPUT
