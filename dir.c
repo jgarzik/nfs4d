@@ -370,7 +370,7 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 	memset(&pkey, 0, sizeof(pkey));
 	memset(&pval, 0, sizeof(pval));
 
-	key.inum = GUINT64_TO_LE(ino->inum);
+	key.inum = inum_encode(ino->inum);
 
 	pkey.data = &key;
 	pkey.size = sizeof(key);
@@ -379,7 +379,7 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 	if (rc == 0) {
 		struct fsdb_de_key *rkey = pkey.data;
 
-		rnum = GUINT64_FROM_LE(rkey->inum);
+		rnum = inum_decode(rkey->inum);
 	} else if (rc != DB_NOTFOUND)
 		dirent->err(dirent, rc, "dir_is_empty cur->get");
 
@@ -950,7 +950,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	memset(&pkey, 0, sizeof(pkey));
 	memset(&pval, 0, sizeof(pval));
 
-	key.inum = GUINT64_TO_LE(ino->inum);
+	key.inum = inum_encode(ino->inum);
 
 	pkey.data = &key;
 	pkey.size = sizeof(key);
@@ -973,11 +973,11 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		rkey = pkey.data;
-		if (GUINT64_FROM_LE(rkey->inum) != ino->inum)
+		if (inum_decode(rkey->inum) != ino->inum)
 			break;
 
 		dep = pval.data;
-		dirent_inum = GUINT64_FROM_LE(*dep);
+		dirent_inum = inum_decode(*dep);
 
 		if (readdir_iter(txn, rkey, pkey.size, dirent_inum, &ri))
 			break;

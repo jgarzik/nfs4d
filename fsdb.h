@@ -104,4 +104,14 @@ extern int fsdb_dirent_put(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 extern int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 		    const struct nfs_buf *str, int flags);
 
+static inline nfsino_t inum_decode(nfsino_t inum)
+{
+	return GUINT64_FROM_LE(inum);
+}
+
+static inline nfsino_t inum_encode(nfsino_t inum)
+{
+	return GUINT64_TO_LE(inum);
+}
+
 #endif /* __FSDB_H__ */

@@ -174,8 +174,8 @@ static void inode_iter(const struct fsdb_inode *ino)
 	"linktext '%.*s'\n"
 	"\n\n",
 
-	(unsigned long long) GUINT64_FROM_LE(ino->inum),
-	(unsigned long long) GUINT64_FROM_LE(ino->parent),
+	(unsigned long long) inum_decode(ino->inum),
+	(unsigned long long) inum_decode(ino->parent),
 	(unsigned long long) GUINT64_FROM_LE(ino->version),
 	(unsigned long long) GUINT64_FROM_LE(ino->size),
 	(unsigned long long) GUINT64_FROM_LE(ino->ctime),
@@ -265,7 +265,7 @@ static void readdir_iter(const struct fsdb_de_key *key,
 			 size_t key_len, nfsino_t dirent)
 {
 	printf("%016llX\t%016llX\t%.*s\n",
-		(unsigned long long) GUINT64_FROM_LE(key->inum),
+		(unsigned long long) inum_decode(key->inum),
 		(unsigned long long) dirent,
 		(int)(key_len - sizeof(*key)),
 		key->name);
@@ -313,7 +313,7 @@ static int show_dirs(void)
 		rkey = pkey.data;
 
 		dep = pval.data;
-		dirent_inum = GUINT64_FROM_LE(*dep);
+		dirent_inum = inum_decode(*dep);
 
 		readdir_iter(rkey, pkey.size, dirent_inum);
 	}
@@ -372,7 +372,7 @@ static int store_root(void)
 	p = ino;
 	p += sizeof(*ino);
 
-	ino->inum = GUINT64_TO_LE(INO_ROOT);
+	ino->inum = inum_encode(INO_ROOT);
 	ino->version = GUINT64_TO_LE(1);
 	ino->size = GUINT64_TO_LE(4096);
 	ino->ctime =

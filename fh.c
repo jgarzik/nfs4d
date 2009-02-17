@@ -32,7 +32,7 @@ static void *wr_fh(struct list_head *writes, struct rpc_write **wr_io,
 	struct nfs_buf nb;
 	struct nfs_fh fh;
 
-	fh.inum = GUINT64_TO_LE(fh_in.inum);
+	fh.inum = inum_encode(fh_in.inum);
 
 	nb.len = sizeof(fh);
 	nb.val = (char *) &fh;
@@ -54,7 +54,7 @@ static int nfs_fh_decode(DB_TXN *txn, const struct nfs_buf *fh_in,
 		return 0;
 	p = (void *) fh_in->val;
 
-	fh.inum = GUINT64_FROM_LE(*p);
+	fh.inum = inum_decode(*p);
 	p++;
 
 	if (!inode_fhcheck(txn, fh))
