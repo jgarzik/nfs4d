@@ -268,6 +268,10 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 	nfsstat4 status;
 	struct nfs_buf name;
 	struct nfs_inode *ino = NULL;
+	nfsino_t dummy;
+	DB_ENV *dbenv = srv.fsdb.env;
+	DB_TXN *txn;
+	int rc;
 
 	if (debugging)
 		syslog(LOG_INFO, "op SECINFO");
@@ -279,9 +283,29 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = dir_curfh(NULL, cxn, &ino, 0);
-	if (status != NFS4_OK)
+	/* open transaction */
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
 		goto out;
+	}
+
+	status = dir_curfh(txn, cxn, &ino, 0);
+	if (status != NFS4_OK)
+		goto out_abort;
+
+	status = dir_lookup(txn, ino, &name, 0, &dummy);
+	if (status != NFS4_OK)
+		goto out_abort;
+
+	/* close transaction */
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto out;
+	}
 
 out:
 	WR32(status);
@@ -292,6 +316,11 @@ out:
 	}
 	inode_free(ino);
 	return status;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
 }
 
 static const char *arg_str[] = {
