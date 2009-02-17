@@ -352,7 +352,7 @@ out_abort:
 	goto out;
 }
 
-static bool dir_is_empty(DB_TXN *txn, struct nfs_inode *ino)
+static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 {
 	int rc;
 	DBC *cur = NULL;
@@ -611,6 +611,10 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		if (old_file->type != NF4DIR && new_file->type != NF4DIR)
 			ok_to_remove = true;
+		else if (old_file->type == NF4DIR &&
+			 new_file->type == NF4DIR &&
+			 dir_is_empty(txn, new_file))
+			ok_to_remove = true;
 
 		if (!ok_to_remove) {
 			status = NFS4ERR_EXIST;
@@ -627,7 +631,8 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_IO;
 			goto out_abort;
 		}
-	}
+	} else
+		status = NFS4_OK;
 
 	new_dirent = old_dirent;
 
