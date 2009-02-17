@@ -144,6 +144,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_openfile *of = NULL;
 	bool new_owner = false, exclusive = false;
 	nfsino_t de_inum;
+	DB_TXN *txn;
+	DB_ENV *dbenv = srv.fsdb.env;
+	int rc;
 
 	cxn->drc_mask |= drc_open;
 
@@ -155,14 +158,22 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	print_open_args(args);
 
+	/* open transaction */
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
 	status = owner_lookup_name(args->clientid, &args->owner, &open_owner);
 	if (status != NFS4_OK)
-		goto out;
+		goto err_out;
 
 	if (open_owner) {
 		if (args->seqid != open_owner->cli_next_seq) {
 			status = NFS4ERR_BAD_SEQID;
-			goto out;
+			goto err_out;
 		}
 
 		open_owner->cli_next_seq++;
@@ -174,25 +185,25 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_RECLAIM_BAD;
 		else
 			status = NFS4ERR_NOTSUPP;
-		goto out;
+		goto err_out;
 	}
 
 	/* get directory handle */
-	status = dir_curfh(NULL, cxn, &dir_ino, 0);
+	status = dir_curfh(txn, cxn, &dir_ino, 0);
 	if (status != NFS4_OK)
-		goto out;
+		goto err_out;
 
 	/* lookup component name; get inode if exists */
-	lu_stat = dir_lookup(NULL, dir_ino, &args->u.file, 0, &de_inum);
+	lu_stat = dir_lookup(txn, dir_ino, &args->u.file, 0, &de_inum);
 	switch (lu_stat) {
 	case NFS4ERR_NOENT:
 		break;
 
 	case NFS4_OK:
-		ino = inode_getdec(NULL, de_inum, 0);
+		ino = inode_getdec(txn, de_inum, 0);
 		if (!ino) {
 			status = NFS4ERR_NOENT;
-			goto out;
+			goto err_out;
 		}
 		if (ino->type != NF4REG) {
 			if (ino->type == NF4DIR)
@@ -201,19 +212,19 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 				status = NFS4ERR_SYMLINK;
 			else
 				status = NFS4ERR_INVAL;
-			goto out;
+			goto err_out;
 		}
 		break;
 
 	default:
 		status = lu_stat;
-		goto out;
+		goto err_out;
 	}
 
 	if (open_owner && ino)
 		status = openfile_lookup_owner(open_owner, ino, &of);
 	if (status != NFS4_OK)
-		goto out;
+		goto err_out;
 	if (of)
 		of->my_seq++;
 
@@ -235,7 +246,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 */
 	if (!creating && (lu_stat == NFS4ERR_NOENT)) {
 		status = lu_stat;
-		goto out;
+		goto err_out;
 	}
 	if (creating && (lu_stat == NFS4_OK)) {
 		bool match_verf = false;
@@ -255,7 +266,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		if (!match_verf) {
 			status = NFS4ERR_EXIST;
-			goto out;
+			goto err_out;
 		}
 
 		creating = false;
@@ -266,7 +277,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 */
 	if ((args->share_access & OPEN4_SHARE_ACCESS_BOTH) == 0) {
 		status = NFS4ERR_INVAL;
-		goto out;
+		goto err_out;
 	}
 
 	if (ino) {
@@ -280,23 +291,23 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		ac.share_deny = args->share_deny;
 		status = access_ok(&ac);
 		if (status != NFS4_OK)
-			goto out;
+			goto err_out;
 	}
 
 	/*
 	 * create file, if necessary
 	 */
 	if (creating) {
-		status = inode_new_type(NULL, cxn, NF4REG, dir_ino,
+		status = inode_new_type(txn, cxn, NF4REG, dir_ino,
 					NULL, NULL, &ino);
 		if (status != NFS4_OK)
-			goto out;
+			goto err_out;
 
-		status = inode_add(NULL, dir_ino, ino,
+		status = inode_add(txn, dir_ino, ino,
 				   exclusive ? NULL : &args->attr,
 				   &args->u.file, &bitmap_set, &cinfo);
 		if (status != NFS4_OK)
-			goto out;
+			goto err_out;
 
 		if (exclusive) {
 			memcpy(&ino->create_verf,
@@ -322,12 +333,12 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			status = NFS4ERR_SYMLINK;
 		else
 			status = NFS4ERR_INVAL;
-		goto out;
+		goto err_out;
 	}
 
 	if (!ino->mode) {
 		status = NFS4ERR_ACCESS;
-		goto out;
+		goto err_out;
 	}
 
 	/*
@@ -338,17 +349,17 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		status = NFS4_OK;
 		if (_args.attr.size == 0)
-			status = inode_apply_attrs(NULL, ino, &args->attr,
+			status = inode_apply_attrs(txn, ino, &args->attr,
 						   &bitmap_set, NULL, false);
 		if (status != NFS4_OK)
-			goto out;
+			goto err_out;
 	}
 
 	if (!open_owner) {
 		open_owner = owner_new(nst_open, &args->owner);
 		if (!open_owner) {
 			status = NFS4ERR_RESOURCE;
-			goto out;
+			goto err_out;
 		}
 
 		open_owner->cli = args->clientid;
@@ -385,7 +396,18 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	memcpy(&sid.server_verf, &srv.instance_verf, 4);
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
-	inode_touch(NULL, ino);
+	if (inode_touch(txn, ino)) {
+		status = NFS4ERR_IO;
+		goto err_out;
+	}
+
+	/* close transaction */
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		status = NFS4ERR_IO;
+		goto err_out_owner;
+	}
 
 	status = NFS4_OK;
 
@@ -415,10 +437,11 @@ out:
 	return status;
 
 err_out:
-	if (new_owner) {
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+err_out_owner:
+	if (new_owner)
 		owner_free(open_owner);
-		open_owner = NULL;
-	}
 	goto out;
 }
 
