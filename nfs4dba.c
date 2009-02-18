@@ -29,7 +29,7 @@
 
 enum pgmmodes {
 	mode_none,
-	mode_store_root,
+	mode_init_fs,
 	mode_show,
 };
 
@@ -57,8 +57,8 @@ static struct argp_option options[] = {
 	{ "localdomain", 'O', "DOMAIN", 0,
 	  "Local domain (def: gethostname; used with user/group ids, required by NFS)" },
 
-	{ "store-root", 'R', NULL, 0,
-	  "Initialize FS, by storing (overwriting) root inode default data" },
+	{ "init-fs", 'I', NULL, 0,
+	  "Initialize FS" },
 	{ "show-data", 'S', NULL, 0,
 	  "Display all data in database" },
 
@@ -355,7 +355,7 @@ static int show_db(void)
 	return 0;
 }
 
-static int store_root(void)
+static int init_fs(void)
 {
 	int rc;
 	struct fsdb_inode *ino;
@@ -425,8 +425,8 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		opt_lcldom = arg;
 		break;
 
-	case 'R':
-		pmode = mode_store_root;
+	case 'I':
+		pmode = mode_init_fs;
 		break;
 	case 'S':
 		pmode = mode_show;
@@ -471,8 +471,8 @@ int main (int argc, char *argv[])
 		return 1;
 
 	switch (pmode) {
-	case mode_store_root:
-		return store_root();
+	case mode_init_fs:
+		return init_fs();
 	case mode_show:
 		return show_db();
 
