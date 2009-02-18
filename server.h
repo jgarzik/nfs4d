@@ -362,7 +362,12 @@ struct cxn_auth {
 };
 
 struct nfs_fh {
+#ifdef NFSD_INO64
 	nfsino_t		inum;
+#else
+	nfsino_t		inum;
+	uint32_t		reserved1;
+#endif
 };
 
 struct nfs_cxn {

@@ -27,7 +27,13 @@
 struct nfs_inode;
 struct nfs_buf;
 
+#undef NFSD_INO64
+
+#ifdef NFSD_INO64
 typedef uint64_t nfsino_t;
+#else
+typedef uint32_t nfsino_t;
+#endif /* NFSD_INO64 */
 
 enum {
 	INO_FNAME_LEN		= 16,
@@ -106,12 +112,20 @@ extern int fsdb_dirent_del(struct fsdb *fsdb, DB_TXN *txn, nfsino_t dir_inum,
 
 static inline nfsino_t inum_decode(nfsino_t inum)
 {
+#ifdef NFSD_INO64
 	return GUINT64_FROM_LE(inum);
+#else
+	return GUINT32_FROM_LE(inum);
+#endif /* NFSD_INO64 */
 }
 
 static inline nfsino_t inum_encode(nfsino_t inum)
 {
+#ifdef NFSD_INO64
 	return GUINT64_TO_LE(inum);
+#else
+	return GUINT32_TO_LE(inum);
+#endif /* NFSD_INO64 */
 }
 
 #endif /* __FSDB_H__ */

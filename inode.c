@@ -91,7 +91,11 @@ static struct nfs_inode *inode_new(DB_TXN *txn, struct nfs_cxn *cxn)
 	nfsino_t new_inum = 0;
 
 	while (limit-- > 0) {
+#ifdef NFSD_INO64
 		nrand32(&new_inum, 2);
+#else
+		nrand32(&new_inum, 1);
+#endif /* NFSD_INO64 */
 
 		if (new_inum <= INO_RESERVED_LAST)
 			continue;

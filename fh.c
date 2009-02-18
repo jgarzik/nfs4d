@@ -46,6 +46,8 @@ static int nfs_fh_decode(DB_TXN *txn, const struct nfs_buf *fh_in,
 	uint64_t *p;
 	struct nfs_fh fh;
 
+	memset(&fh, 0, sizeof(fh));
+
 	if (!fh_in)
 		return 0;
 	if (fh_in->len != sizeof(fh))
@@ -97,9 +99,11 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
-	struct nfs_fh fh = { 0, };
+	struct nfs_fh fh;
 	struct nfs_buf nb;
 	int rc;
+
+	memset(&fh, 0, sizeof(fh));
 
 	CURBUF(&nb);			/* opaque filehandle */
 

@@ -336,7 +336,7 @@ nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
 		attr->chown_restricted = CR32();
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		if (CR32() == 8)
+		if (CR32() == sizeof(struct nfs_fh))
 			attr->filehandle = CR64();
 		else
 			status = NFS4ERR_BADXDR;
@@ -601,7 +601,7 @@ nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *_bitmap_out,
 		bitmap_out |= (1ULL << FATTR4_CHOWN_RESTRICTED);
 	}
 	if (bitmap & (1ULL << FATTR4_FILEHANDLE)) {
-		WR32(8);
+		WR32(sizeof(struct nfs_fh));
 		WR64(attr->filehandle);
 		bitmap_out |= (1ULL << FATTR4_FILEHANDLE);
 	}
