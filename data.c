@@ -48,6 +48,7 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t count;
 	char *fdpath;
 	int fd;
+	char datapfx[4];
 
 	/* read COMMIT args */
 	offset = CR64();
@@ -79,8 +80,9 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
+	mk_datapfx(datapfx, ino->inum);
 	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
-	sprintf(fdpath, "%s%016llX", srv.data_dir,
+	sprintf(fdpath, INO_DATAFN_FMT, srv.data_dir, datapfx,
 		(unsigned long long) ino->inum);
 
 	fd = open(fdpath, O_WRONLY);
@@ -125,6 +127,7 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	DB_ENV *dbenv = srv.fsdb.env;
 	DB_TXN *txn;
 	int rc;
+	char datapfx[4];
 
 	if (cur->len < 32) {
 		status = NFS4ERR_BADXDR;
@@ -196,8 +199,9 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 		new_size = old_size;
 
 	/* build file path, open file */
+	mk_datapfx(datapfx, ino->inum);
 	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
-	sprintf(fdpath, "%s%016llX", srv.data_dir,
+	sprintf(fdpath, INO_DATAFN_FMT, srv.data_dir, datapfx,
 		(unsigned long long) ino->inum);
 	fd = open(fdpath, O_WRONLY);
 	if (fd < 0) {
@@ -301,6 +305,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct rpc_write *data_wr = NULL, *pad_wr = NULL, *next_wr = NULL;
 	int fd;
 	char *fdpath;
+	char datapfx[4];
 
 	if (cur->len < 28) {
 		status = NFS4ERR_BADXDR;
@@ -378,8 +383,9 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto err_out_data;
 	}
 
+	mk_datapfx(datapfx, ino->inum);
 	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
-	sprintf(fdpath, "%s%016llX", srv.data_dir,
+	sprintf(fdpath, INO_DATAFN_FMT, srv.data_dir, datapfx,
 		(unsigned long long) ino->inum);
 	fd = open(fdpath, O_RDONLY);
 	if (fd < 0) {

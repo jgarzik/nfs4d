@@ -31,8 +31,10 @@ struct nfs_buf;
 
 #ifdef NFSD_INO64
 typedef uint64_t nfsino_t;
+#define INO_DATAFN_FMT "%s%s%016llX"
 #else
 typedef uint32_t nfsino_t;
+#define INO_DATAFN_FMT "%s%s%08llX"
 #endif /* NFSD_INO64 */
 
 enum {

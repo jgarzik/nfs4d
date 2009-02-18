@@ -19,6 +19,8 @@
 
 #define _GNU_SOURCE
 #include "nfs4d-config.h"
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <locale.h>
@@ -355,9 +357,31 @@ static int show_db(void)
 	return 0;
 }
 
+static char *ddir;
+
+static int mk_datadir(int v)
+{
+	if (!ddir) {
+		ddir = malloc(strlen(opt_data_path) + 32);
+		if (!ddir) {
+			fprintf(stderr, "out of memory\n");
+			return 1;
+		}
+	}
+
+	sprintf(ddir, "%s%02X", opt_data_path, v);
+
+	if (mkdir(ddir, 0777) < 0) {
+		perror(ddir);
+		return 1;
+	}
+
+	return 0;
+}
+
 static int init_fs(void)
 {
-	int rc;
+	int rc, i;
 	struct fsdb_inode *ino;
 	size_t ino_size = sizeof(*ino);
 	char *user, *group;
@@ -397,7 +421,16 @@ static int init_fs(void)
 		return 1;
 	}
 
-	fprintf(stderr, "root inode stored successfully\n");
+	fprintf(stderr, "root inode stored\n");
+
+	for (i = 0; i <= 0xff; i++) {
+		rc = mk_datadir(i);
+		if (rc)
+			return rc;
+	}
+
+	fprintf(stderr, "data directories created\n");
+
 	return 0;
 }
 

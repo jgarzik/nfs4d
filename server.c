@@ -106,6 +106,22 @@ bool valid_utf8string(const struct nfs_buf *str)
 	return true;
 }
 
+void mk_datapfx(char *datapfx, nfsino_t inum)
+{
+	char inum_s[33];
+
+#ifdef NFSD_INO64
+	sprintf(inum_s, "%016llX", (unsigned long long) inum);
+#else
+	sprintf(inum_s, "%08llX", (unsigned long long) inum);
+#endif
+
+	datapfx[0] = inum_s[0];
+	datapfx[1] = inum_s[1];
+	datapfx[2] = '/';
+	datapfx[3] = 0;
+}
+
 char *cxn_getuser(const struct nfs_cxn *cxn)
 {
 	char *s = NULL;

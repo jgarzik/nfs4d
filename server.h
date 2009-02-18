@@ -761,6 +761,7 @@ extern const char *name_nfs4status[];
 extern char *cxn_getuser(const struct nfs_cxn *cxn);
 extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 
+extern void mk_datapfx(char *datapfx, nfsino_t inum);
 extern bool valid_utf8string(const struct nfs_buf *str);
 extern int nfsproc_null(const char *host, struct opaque_auth *cred, struct opaque_auth *verf,
 			 struct curbuf *cur, struct list_head *writes,

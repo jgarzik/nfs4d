@@ -153,8 +153,10 @@ static nfsstat4 inode_new_file(nfsino_t inum)
 	char *s = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 2);
 	nfsstat4 status = NFS4_OK;
 	int fd;
+	char datapfx[4];
 
-	sprintf(s, "%s%016llX", srv.data_dir,
+	mk_datapfx(datapfx, inum);
+	sprintf(s, INO_DATAFN_FMT, srv.data_dir, datapfx,
 		(unsigned long long) inum);
 
 	fd = open(s, O_CREAT | O_EXCL | O_WRONLY, 0666);
@@ -238,6 +240,7 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 	int rc;
 	char *fdpath;
 	nfsino_t inum = ino->inum;
+	char datapfx[4];
 
 	if (!ino || !inum || (ino->inum == INO_ROOT)) {
 		syslog(LOG_ERR, "BUG: null in inode_unlink");
@@ -264,8 +267,10 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 	 * remove data associated with inode
 	 */
 
+	mk_datapfx(datapfx, inum);
 	fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
-	sprintf(fdpath, "%s%016llX", srv.data_dir, (unsigned long long) inum);
+	sprintf(fdpath, INO_DATAFN_FMT, srv.data_dir, datapfx,
+		(unsigned long long) inum);
 
 	/*
 	 * FIXME: metadata transaction could still be aborted, at this
@@ -304,6 +309,7 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		uint64_t new_size = attr->size;
 		uint64_t ofs, len;
 		struct nfs_access ac = { NULL, };
+		char datapfx[4];
 
 		if (debugging > 1)
 			syslog(LOG_DEBUG, "   apply SIZE %llu",
@@ -338,8 +344,9 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		if (new_size == ino->size)
 			goto size_done;
 
+		mk_datapfx(datapfx, ino->inum);
 		fdpath = alloca(strlen(srv.data_dir) + INO_FNAME_LEN + 1);
-		sprintf(fdpath, "%s%016llX", srv.data_dir,
+		sprintf(fdpath, INO_DATAFN_FMT, srv.data_dir, datapfx,
 			(unsigned long long) ino->inum);
 
 		if (truncate(fdpath, new_size) < 0) {
