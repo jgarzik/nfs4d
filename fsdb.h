@@ -80,6 +80,8 @@ struct fsdb {
 	char		*home;			/* database home dir */
 	char		*key;			/* database AES key */
 
+	bool		txn_nosync;		/* disable txn sync? */
+
 	DB_ENV		*env;			/* db4 env ptr */
 	DB		*inodes;		/* inodes */
 	DB		*dirent;		/* dir entries */

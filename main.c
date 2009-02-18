@@ -67,6 +67,7 @@ char my_hostname[HOST_NAME_MAX + 1];
 static bool server_running = true;
 static bool dump_stats = false;
 static bool opt_foreground;
+static bool opt_txn_nosync;
 static char *opt_data_path = "/tmp/data/";
 static char *opt_metadata = "/tmp/metadata/";
 static char *pid_fn = "nfs4d.pid";
@@ -163,6 +164,9 @@ static struct argp_option options[] = {
 
 	{ "stats", 'S', "FILE", 0,
 	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4d.stats, in current directory)" },
+
+	{ "no-sync", 'N', NULL, 0,
+	  "Disable synchronous log flushing.  Increases performance, decreases durability" },
 
 	{ }
 };
@@ -1320,6 +1324,7 @@ static int init_server(void)
 	srv.data_dir = opt_data_path;
 	srv.metadata_dir = opt_metadata;
 	srv.fsdb.home = srv.metadata_dir;
+	srv.fsdb.txn_nosync = opt_txn_nosync;
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		syslogerr("gettimeofday(2)");
@@ -1381,6 +1386,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		break;
 	case 'f':
 		opt_foreground = true;
+		break;
+	case 'N':
+		opt_txn_nosync = true;
 		break;
 	case 'p':
 		if (atoi(arg) > 0 && atoi(arg) < 65536)

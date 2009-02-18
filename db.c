@@ -160,6 +160,14 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 		fsdb->key = NULL;
 	}
 
+	if (fsdb->txn_nosync) {
+		rc = dbenv->set_flags(dbenv, DB_TXN_NOSYNC, 1);
+		if (rc) {
+			dbenv->err(dbenv, rc, "dbenv->set_flags(TXN_NOSYNC)");
+			goto err_out;
+		}
+	}
+
 	/* init DB transactional environment, stored in directory db_home */
 	rc = dbenv->open(dbenv, db_home,
 			 env_flags |
