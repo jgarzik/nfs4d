@@ -401,7 +401,7 @@ size_done:
 				       "   SETATTR DENIED owner \"%.*s\"",
 				       attr->owner.len,
 				       attr->owner.val);
-			status = NFS4ERR_DENIED;
+			status = NFS4ERR_PERM;
 			goto out;
 		}
 
@@ -419,7 +419,7 @@ size_done:
 				       "   SETATTR DENIED group \"%.*s\"",
 				       attr->owner_group.len,
 				       attr->owner_group.val);
-			status = NFS4ERR_DENIED;
+			status = NFS4ERR_PERM;
 			goto out;
 		}
 
