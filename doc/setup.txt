@@ -38,9 +38,10 @@ d) Choose your LOCAL DOMAIN for NFS user and group names, or leave
    Currently, the nfs4d server translates uid/gid into NFS names
    using getpwnam(3), getpwuid(3), getgrnam(3), and getgrgid(3).
 
-e) run nfs4dba administration utility, to initialize databases:
+e) run nfs4dba administration utility, to initialize databases
+   for data and metadata:
 
-	nfs4dba -D $DATA_DIR -M $METADATA_DIR -O $LOCALDOMAIN -R
+	nfs4dba -D $DATA_DIR -M $METADATA_DIR -O $LOCALDOMAIN -I
 
 See 'nfs4dba --help' for a full list options.
 

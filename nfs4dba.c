@@ -487,6 +487,9 @@ int main (int argc, char *argv[])
 
 	setlocale(LC_ALL, "");
 
+	argp_program_version = PACKAGE_VERSION;
+	argp_err_exit_status = EXIT_FAILURE;
+
 	aprc = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (aprc) {
 		fprintf(stderr, "argp_parse failed: %s\n", strerror(aprc));
