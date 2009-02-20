@@ -92,7 +92,7 @@ static int open_db(DB_ENV *env, DB **db_out, const char *name,
 	}
 
 	if (bt_compare) {
-		rc = db->set_bt_compare(db, dirent_cmp);
+		rc = db->set_bt_compare(db, bt_compare);
 		if (rc) {
 			db->err(db, rc, "db->set_bt_compare");
 			rc = -EIO;
