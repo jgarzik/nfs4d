@@ -396,7 +396,7 @@ size_done:
 		char *ostr = id_lookup_name(idt_user, attr->owner.val,
 					    attr->owner.len);
 		if (!ostr) {
-			if (debugging > 1)
+			if (debugging)
 				syslog(LOG_DEBUG,
 				       "   SETATTR DENIED owner \"%.*s\"",
 				       attr->owner.len,
@@ -414,7 +414,7 @@ size_done:
 		char *ostr = id_lookup_name(idt_group, attr->owner_group.val,
 					    attr->owner_group.len);
 		if (!ostr) {
-			if (debugging > 1)
+			if (debugging)
 				syslog(LOG_DEBUG,
 				       "   SETATTR DENIED group \"%.*s\"",
 				       attr->owner_group.len,
