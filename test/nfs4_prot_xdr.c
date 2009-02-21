@@ -3,6 +3,7 @@
  * It was generated using rpcgen.
  */
 
+#include "nfs4_compat.h"
 #include "nfs4_prot.h"
 
 bool_t

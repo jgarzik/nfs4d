@@ -1,4 +1,6 @@
+
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include "nfs4_prot.h"
 #include "nfstest.h"

@@ -52,6 +52,7 @@ AC_CHECK_LIB(db-4.7, db_create, DB4_LIBS=-ldb-4.7,
 dnl -------------------------------------
 dnl Checks for optional library functions
 dnl -------------------------------------
+AC_CHECK_FUNCS(fdatasync lseek64 srand48_r xdr_u_quad_t)
 
 dnl -----------------
 dnl Configure options

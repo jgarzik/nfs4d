@@ -200,7 +200,7 @@ nfsstat4 inode_new_type(DB_TXN *txn, struct nfs_cxn *cxn, uint32_t objtype,
 		memcpy(&new_ino->devdata[0], specdata, sizeof(uint32_t) * 2);
 		break;
 	case NF4LNK: {
-		char *linktext = strndup(linkdata->val, linkdata->len);
+		char *linktext = g_strndup(linkdata->val, linkdata->len);
 		if (!linktext) {
 			status = NFS4ERR_RESOURCE;
 			goto out;

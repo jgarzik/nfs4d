@@ -21,6 +21,8 @@
 #include "nfs4d-config.h"
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -30,7 +32,10 @@
 
 struct timeval current_time = { 0, 0 };
 static GQueue *timers_q;
+
+#ifdef HAVE_SRAND48_R
 static struct drand48_data rng;
+#endif
 
 const char *name_nfs_ftype4[] = {
 	[NF4REG] = "NF4REG",
@@ -232,19 +237,30 @@ bool is_dir(const char *arg, char **dirname)
 void nrand32(void *mem, unsigned int dwords)
 {
 	uint32_t *v = mem;
-	long l[4] = { 0, };
 	int i;
 
 	for (i = 0; i < dwords; i++) {
+#ifdef HAVE_SRAND48_R
+		long l[4] = { 0, };
+
 		lrand48_r(&rng, l);
 
 		v[i] = l[0];
+#else
+		long l;
+
+		l = lrand48();
+
+		v[i] = l;
+#endif
+
 	}
 }
 
 /* seed our RNGs with high quality data from /dev/random */
 void init_rngs(void)
 {
+#ifdef HAVE_SRAND48_R
 	unsigned long v;
 	int fd;
 	ssize_t bytes;
@@ -270,6 +286,9 @@ void init_rngs(void)
 
 srand_time:
 	srand48_r(getpid() ^ time(NULL), &rng);
+#else
+	srand48(getpid() ^ time(NULL));
+#endif
 	srand(getpid() ^ time(NULL));
 }
 
@@ -285,3 +304,16 @@ char *copy_binstr(const char *s_in, size_t s_len)
 	return s;
 }
 
+#ifndef HAVE_FDATASYNC
+int fdatasync(int fd)
+{
+	return fsync(fd);
+}
+#endif
+
+#ifndef HAVE_LSEEK64
+off_t lseek64(int fd, off_t offset, int whence)
+{
+	return lseek(fd, offset, whence);
+}
+#endif

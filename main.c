@@ -22,17 +22,18 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
+#include <sys/uio.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <signal.h>
 #include <argp.h>
-#include <mcheck.h>
 #include <locale.h>
 #include <netdb.h>
 #include <syslog.h>
-#include <rpc/auth.h>
-#include <rpc/rpc_msg.h>
 #include "server.h"
 
 struct rpc_cxn;
@@ -88,6 +89,12 @@ enum rpc_cxn_state {
 	evt_get_hdr,
 	evt_get_data,
 	evt_dispose,				/* dispose of client */
+};
+
+struct server_socket {
+	int			fd;
+	struct server_poll	poll;
+	struct epoll_event	evt;
 };
 
 struct rpc_cxn_write {
@@ -1608,8 +1615,6 @@ int main (int argc, char *argv[])
 {
 	error_t aprc;
 	char debugstr[64];
-
-	mcheck(NULL);
 
 	setlocale(LC_ALL, "");
 

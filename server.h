@@ -21,10 +21,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <sys/epoll.h>
 #include <sys/time.h>
 #include <glib.h>
+#include <rpc/types.h>
 #include <rpc/auth.h>
+#include <rpc/rpc_msg.h>
+#include <rpc/xdr.h>
 #include "nfs4_prot.h"
 #include "elist.h"
 #include "nfscommon.h"
@@ -35,6 +37,11 @@ struct nfs_openfile;
 struct server_socket;
 
 #define SRV_MAGIC		"J721"
+
+/* portability */
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX	64
+#endif
 
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
 
@@ -552,12 +559,6 @@ struct server_poll {
 		struct server_socket	*sock;
 		struct rpc_cxn		*cxn;
 	} u;
-};
-
-struct server_socket {
-	int			fd;
-	struct server_poll	poll;
-	struct epoll_event	evt;
 };
 
 struct nfs_server {

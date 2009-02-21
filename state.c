@@ -19,6 +19,7 @@
 
 #define _GNU_SOURCE
 #include "nfs4d-config.h"
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <syslog.h>
@@ -491,7 +492,7 @@ struct nfs_owner *owner_new(enum nfs_state_type type, struct nfs_buf *owner)
 	if (!o)
 		return NULL;
 
-	o->owner = strndup(owner->val, owner->len);
+	o->owner = g_strndup(owner->val, owner->len);
 	if (!o->owner) {
 		free(o);
 		return NULL;
@@ -870,10 +871,10 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 	callback.cb_program = CR32();	/* cb_program */
 	CURBUF(&tmpstr);		/* r_netid */
 	if (tmpstr.len)
-		callback.cb_location.r_netid = strndup(tmpstr.val, tmpstr.len);
+		callback.cb_location.r_netid = g_strndup(tmpstr.val, tmpstr.len);
 	CURBUF(&tmpstr);		/* r_addr */
 	if (tmpstr.len)
-		callback.cb_location.r_addr = strndup(tmpstr.val, tmpstr.len);
+		callback.cb_location.r_addr = g_strndup(tmpstr.val, tmpstr.len);
 	cb_ident = CR32();		/* callback_ident */
 
 	/* look up client id */

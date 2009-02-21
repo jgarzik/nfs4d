@@ -55,4 +55,12 @@ extern void nrand32(void *mem, unsigned int dwords);
 extern void init_rngs(void);
 extern char *copy_binstr(const char *s_in, size_t s_len);
 
+#ifndef HAVE_FDATASYNC
+extern int fdatasync(int fd);
+#endif
+
+#ifndef HAVE_LSEEK64
+extern off_t lseek64(int fd, off_t offset, int whence);
+#endif
+
 #endif /* __NFSCOMMON_H__ */

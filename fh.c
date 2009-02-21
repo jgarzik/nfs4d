@@ -19,6 +19,7 @@
 
 #include "nfs4d-config.h"
 
+#include <string.h>
 #include <syslog.h>
 #include <glib.h>
 #include "nfs4_prot.h"
