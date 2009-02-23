@@ -694,13 +694,22 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 			syslog(LOG_DEBUG, "RPC: invalid msg type");
 		goto err_out;
 	}
-	if ((CR32() != 2) ||		/* rpc version */
-	    (CR32() != NFS4_PROGRAM) ||	/* rpc program */
-	    (CR32() != NFS_V4))	{	/* rpc program version */
-		if (debugging > 1)
-			syslog(LOG_DEBUG, "RPC: invalid msg hdr");
-		goto err_out;
+
+	{
+		uint32_t rpc_ver = CR32();
+		uint32_t rpc_prog = CR32();
+		uint32_t rpc_pver = CR32();
+
+		if ((rpc_ver != 2) ||			/* rpc version */
+		    (rpc_prog != NFS4_PROGRAM) ||	/* rpc program */
+		    (rpc_pver != NFS_V4))	{	/* rpc program version*/
+			if (debugging > 1)
+				syslog(LOG_DEBUG, "RPC: invalid msg hdr (ver %u, prog %u, prog vers %u",
+					rpc_ver, rpc_prog, rpc_pver);
+			goto err_out;
+		}
 	}
+
 	proc = CR32();
 
 	auth_cred.oa_flavor = CR32();
