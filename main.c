@@ -90,7 +90,6 @@ enum rpc_cxn_state {
 
 struct server_socket {
 	int			fd;
-	struct server_poll	poll;
 	struct event		ev;
 };
 
@@ -108,7 +107,6 @@ struct rpc_cxn {
 
 	struct sockaddr_in6	addr;
 
-	struct server_poll	poll;		/* poll info */
 	struct event		ev;
 	struct event		write_ev;
 
@@ -1127,8 +1125,6 @@ static void tcp_srv_event(int fd, short events, void *userdata)
 
 	cxn->state = evt_get_hdr;
 	cxn->host = host;
-	cxn->poll.poll_type = spt_tcp_cli;
-	cxn->poll.u.cxn = cxn;
 	INIT_LIST_HEAD(&cxn->write_q);
 
 	/* receive TCP connection from kernel */
@@ -1252,8 +1248,6 @@ static int net_open(void)
 		}
 
 		sock->fd = fd;
-		sock->poll.poll_type = spt_tcp_srv;
-		sock->poll.u.sock = sock;
 
 		event_set(&sock->ev, fd, EV_READ | EV_PERSIST,
 			  tcp_srv_event, sock);

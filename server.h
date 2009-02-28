@@ -548,19 +548,6 @@ struct nfs_server_stats {
 	unsigned long		opt_write;
 };
 
-enum server_poll_type {
-	spt_tcp_srv,				/* TCP server */
-	spt_tcp_cli,				/* TCP client */
-};
-
-struct server_poll {
-	enum server_poll_type	poll_type;	/* spt_xxx above */
-	union {
-		struct server_socket	*sock;
-		struct rpc_cxn		*cxn;
-	} u;
-};
-
 struct nfs_server {
 	GHashTable		*clid_idx;
 
