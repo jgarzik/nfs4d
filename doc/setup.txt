@@ -4,7 +4,9 @@ Building and installing from source code
 
 nfs4d uses the GNU autotools build system.  The basic are
 
-	CFLAGS="-O2 -Wall -g" ./configure make make install
+	CFLAGS="-O2 -Wall -g" ./configure
+	make
+	make install
 
 See INSTALL for more information.
 
