@@ -16,7 +16,7 @@ nfs4d_SOURCES	= nfscommon.h elist.h nfs4_prot.h server.h fattr.h fsdb.h \
 		  main.c server.c			\
 		  dir.c fh.c fattr.c inode.c open.c	\
 		  id.c state.c data.c
-nfs4d_LDADD	= @GLIB_LIBS@ @DB4_LIBS@ libnfscommon.a
+nfs4d_LDADD	= @GLIB_LIBS@ @DB4_LIBS@ @EVENT_LIBS@ libnfscommon.a
 
 nfs4dba_LDADD	= @GLIB_LIBS@ @DB4_LIBS@ libnfscommon.a
 

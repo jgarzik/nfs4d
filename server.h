@@ -577,8 +577,6 @@ struct nfs_server {
 	char			*data_dir;
 	char			*metadata_dir;
 
-	int			epoll_fd;	/* epoll descriptor */
-
 	GList			*sockets;
 
 	struct fsdb		fsdb;

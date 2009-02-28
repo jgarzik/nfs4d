@@ -22,7 +22,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
-#include <sys/epoll.h>
 #include <sys/uio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -34,6 +33,7 @@
 #include <locale.h>
 #include <netdb.h>
 #include <syslog.h>
+#include <event.h>
 #include "server.h"
 
 struct rpc_cxn;
@@ -49,9 +49,6 @@ enum {
 	MAX_MSG_SZ		= MAX_FRAG_SZ,
 
 	HDR_FRAG_END		= (1U << 31),
-
-	NFSD_EPOLL_INIT_SIZE	= 200,		/* passed to epoll_create(2) */
-	NFSD_EPOLL_MAX_EVT	= 100,		/* max events per poll */
 
 	CLI_MAX_WR_IOV		= 32,		/* max iov per writev(2) */
 
@@ -76,12 +73,12 @@ static char *stats_fn = "nfs4d.stats";
 static bool pid_opened;
 static unsigned int opt_nfs_port = 2049;
 static GHashTable *request_cache;
-static struct timer garbage_timer;
+static struct event garbage_timer;
 
 static const char doc[] =
 "nfs4-ram - NFS4 server daemon";
 
-typedef bool (*cxn_evt_func)(struct rpc_cxn *, unsigned int);
+typedef bool (*cxn_evt_func)(struct rpc_cxn *, short);
 typedef bool (*cxn_write_func)(struct rpc_cxn *, struct rpc_cxn_write *, bool);
 
 /* internal client socket state */
@@ -94,7 +91,7 @@ enum rpc_cxn_state {
 struct server_socket {
 	int			fd;
 	struct server_poll	poll;
-	struct epoll_event	evt;
+	struct event		ev;
 };
 
 struct rpc_cxn_write {
@@ -112,7 +109,8 @@ struct rpc_cxn {
 	struct sockaddr_in6	addr;
 
 	struct server_poll	poll;		/* poll info */
-	struct epoll_event	evt;		/* epoll info */
+	struct event		ev;
+	struct event		write_ev;
 
 	char			*host;
 	char			host_addr[HOST_ADDR_MAX_LEN];
@@ -128,6 +126,7 @@ struct rpc_cxn {
 	unsigned int		hdr_used;
 
 	struct list_head	write_q;	/* list of async writes */
+	bool			writing;
 };
 
 struct drc_ent {
@@ -146,6 +145,7 @@ struct drc_ent {
 static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
 		      cxn_write_func cb, void *cb_data);
 static bool cxn_write_start(struct rpc_cxn *cxn);
+static void tcp_cxn_event(int fd, short events, void *userdata);
 static void stats_dump(void);
 
 
@@ -625,7 +625,18 @@ uint64_t srv_space_used(void)
 	return total;
 }
 
-static void garbage_collect(struct timer *timer)
+static void gc_timer_add(void)
+{
+	struct timeval tv;
+
+	tv.tv_sec = SRV_GARBAGE_TIME;
+	tv.tv_usec = 0;
+
+	if (evtimer_add(&garbage_timer, &tv) < 0)
+		syslog(LOG_ERR, "evtimer_add(garbage) failed");
+}
+
+static void garbage_collect(int fd, short events, void *userdata)
 {
 	if (debugging)
 		syslog(LOG_DEBUG, "Garbage collection");
@@ -633,8 +644,7 @@ static void garbage_collect(struct timer *timer)
 	drc_gc();
 	state_gc();
 
-	garbage_timer.timeout = current_time.tv_sec + SRV_GARBAGE_TIME;
-	timer_add(&garbage_timer);
+	gc_timer_add();
 }
 
 static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
@@ -912,46 +922,43 @@ do_write:
 
 	/* if we emptied the queue, clear write notification */
 	if (list_empty(&cxn->write_q)) {
-		cxn->evt.events &= ~EPOLLOUT;
-		int rrc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_MOD,
-				    cxn->fd, &cxn->evt);
-		if (rrc < 0) {
-			syslogerr("cxn_writable epoll_ctl(EPOLL_CTL_MOD)");
+		cxn->writing = false;
+
+		if (event_del(&cxn->write_ev) < 0) {
+			syslog(LOG_WARNING, "cxn_writable event_del");
 			cxn->state = evt_dispose;
+			return;
 		}
 	}
 }
 
 static bool cxn_write_start(struct rpc_cxn *cxn)
 {
-	int rc;
-
 	if (list_empty(&cxn->write_q))
-		return true;		/* loop, not epoll */
+		return true;		/* loop, not poll */
 
-	/* if EPOLLOUT already active, nothing further to do */
-	if (cxn->evt.events & EPOLLOUT)
-		return false;		/* epoll wait */
+	/* if EV_WRITE already active, nothing further to do */
+	if (cxn->writing)
+		return false;		/* poll wait */
 
-	/* attempt optimistic write, in hopes of avoiding epoll,
+	/* attempt optimistic write, in hopes of avoiding poll,
 	 * or at least refill the write buffers so as to not
 	 * get -immediately- called again by the kernel
 	 */
 	cxn_writable(cxn);
 	if (list_empty(&cxn->write_q)) {
 		srv.stats.opt_write++;
-		return true;		/* loop, not epoll */
+		return true;		/* loop, not poll */
 	}
 
-	cxn->evt.events |= EPOLLOUT;
-
-	rc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_MOD, cxn->fd, &cxn->evt);
-	if (rc < 0) {
-		syslogerr("cxn_write epoll_ctl(EPOLL_CTL_MOD)");
-		return true;		/* loop, not epoll */
+	if (event_add(&cxn->write_ev, NULL) < 0) {
+		syslog(LOG_WARNING, "cxn_write_start event_add");
+		return true;		/* loop, not poll */
 	}
 
-	return false;			/* epoll wait */
+	cxn->writing = true;
+
+	return false;			/* poll wait */
 }
 
 static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
@@ -975,10 +982,10 @@ static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
 	return 0;
 }
 
-static bool cxn_evt_dispose(struct rpc_cxn *cxn, unsigned int events)
+static bool cxn_evt_dispose(struct rpc_cxn *cxn, short events)
 {
 	/* if write queue is not empty, we should continue to get
-	 * epoll callbacks here until it is
+	 * poll callbacks here until it is
 	 */
 	if (list_empty(&cxn->write_q))
 		rpc_cxn_free(cxn);
@@ -986,7 +993,7 @@ static bool cxn_evt_dispose(struct rpc_cxn *cxn, unsigned int events)
 	return false;
 }
 
-static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, unsigned int events)
+static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, short events)
 {
 	uint32_t next_frag;
 	ssize_t rrc;
@@ -1040,7 +1047,7 @@ err_out:
 	return true;			/* loop to cxn->state */
 }
 
-static bool cxn_evt_get_data(struct rpc_cxn *cxn, unsigned int events)
+static bool cxn_evt_get_data(struct rpc_cxn *cxn, short events)
 {
 	ssize_t rrc;
 	bool rc;
@@ -1087,26 +1094,27 @@ static cxn_evt_func state_funcs[] = {
 	[evt_dispose]		= cxn_evt_dispose,
 };
 
-static void tcp_cli_event(unsigned int events, struct rpc_cxn *cxn)
+static void tcp_cxn_wr_event(int fd, short events, void *userdata)
 {
-	bool loop;
+	cxn_writable(userdata);
+}
 
-	if (events & EPOLLOUT) {
-		events &= ~EPOLLOUT;
-		cxn_writable(cxn);
-	}
+static void tcp_cxn_event(int fd, short events, void *userdata)
+{
+	struct rpc_cxn *cxn = userdata;
+	bool loop;
 
 	do {
 		loop = state_funcs[cxn->state](cxn, events);
 	} while (loop);
 }
 
-static void tcp_srv_event(unsigned int events, struct server_socket *sock)
+static void tcp_srv_event(int fd, short events, void *userdata)
 {
+	struct server_socket *sock = userdata;
 	socklen_t addrlen = sizeof(struct sockaddr_in6);
 	struct rpc_cxn *cxn;
 	char host[64];
-	int rc;
 
 	/* alloc and init client info */
 	cxn = calloc(1, sizeof(*cxn));
@@ -1121,8 +1129,6 @@ static void tcp_srv_event(unsigned int events, struct server_socket *sock)
 	cxn->host = host;
 	cxn->poll.poll_type = spt_tcp_cli;
 	cxn->poll.u.cxn = cxn;
-	cxn->evt.events = EPOLLIN | EPOLLHUP;
-	cxn->evt.data.ptr = &cxn->poll;
 	INIT_LIST_HEAD(&cxn->write_q);
 
 	/* receive TCP connection from kernel */
@@ -1132,16 +1138,19 @@ static void tcp_srv_event(unsigned int events, struct server_socket *sock)
 		goto err_out;
 	}
 
+	event_set(&cxn->ev, cxn->fd, EV_READ | EV_PERSIST, tcp_cxn_event, cxn);
+	event_set(&cxn->write_ev, cxn->fd, EV_WRITE | EV_PERSIST,
+		  tcp_cxn_wr_event, cxn);
+
 	srv.stats.tcp_accept++;
 
-	/* mark non-blocking, for upcoming epoll use */
+	/* mark non-blocking, for upcoming libevent use */
 	if (fsetflags("tcp client", cxn->fd, O_NONBLOCK) < 0)
 		goto err_out_fd;
 
-	/* add to epoll watchlist */
-	rc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_ADD, cxn->fd, &cxn->evt);
-	if (rc < 0) {
-		syslogerr("tcp client epoll_ctl");
+	/* add to libevent watchlist */
+	if (event_add(&cxn->ev, NULL) < 0) {
+		syslog(LOG_WARNING, "tcp client event_add");
 		goto err_out_fd;
 	}
 
@@ -1245,14 +1254,13 @@ static int net_open(void)
 		sock->fd = fd;
 		sock->poll.poll_type = spt_tcp_srv;
 		sock->poll.u.sock = sock;
-		sock->evt.events = EPOLLIN;
-		sock->evt.data.ptr = &sock->poll;
 
-		rc = epoll_ctl(srv.epoll_fd, EPOLL_CTL_ADD, fd,
-			       &sock->evt);
-		if (rc < 0) {
-			syslogerr("tcp socket epoll_ctl");
-			rc = -errno;
+		event_set(&sock->ev, fd, EV_READ | EV_PERSIST,
+			  tcp_srv_event, sock);
+
+		if (event_add(&sock->ev, NULL) < 0) {
+			syslog(LOG_WARNING, "tcp socket event_add failed");
+			rc = -EINVAL;
 			goto err_out;
 		}
 
@@ -1268,54 +1276,6 @@ err_out:
 	freeaddrinfo(res0);
 err_addr:
 	return rc;
-}
-
-static void handle_event(unsigned int events, void *event_data)
-{
-	struct server_poll *sp = event_data;
-
-	srv.stats.event++;
-
-	switch (sp->poll_type) {
-	case spt_tcp_srv:
-		tcp_srv_event(events, sp->u.sock);
-		break;
-	case spt_tcp_cli:
-		tcp_cli_event(events, sp->u.cxn);
-		break;
-	}
-}
-
-static void main_loop(void)
-{
-	struct epoll_event evt[NFSD_EPOLL_MAX_EVT];
-	int rc, i;
-
-	while (server_running) {
-		rc = epoll_wait(srv.epoll_fd, evt, NFSD_EPOLL_MAX_EVT,
-				timer_next());
-		if (rc < 0) {
-			if (errno == EINTR)
-				continue;
-
-			syslogerr("epoll_wait");
-			return;
-		}
-
-		if (rc == NFSD_EPOLL_MAX_EVT)
-			srv.stats.max_evt++;
-		srv.stats.poll++;
-
-		for (i = 0; i < rc; i++)
-			handle_event(evt[i].events, evt[i].data.ptr);
-
-		timers_run();
-
-		if (dump_stats) {
-			stats_dump();
-			dump_stats = false;
-		}
-	}
 }
 
 static int init_server(void)
@@ -1358,19 +1318,10 @@ static int init_server(void)
 		return rc;
 
 	init_rngs();
-	timers_init();
 	rand_verifier(&srv.instance_verf);
 
-	/* create master epoll fd */
-	srv.epoll_fd = epoll_create(NFSD_EPOLL_INIT_SIZE);
-	if (srv.epoll_fd < 0) {
-		syslogerr("epoll_create");
-		return -errno;
-	}
-
-	timer_init(&garbage_timer, garbage_collect, NULL);
-	garbage_timer.timeout = current_time.tv_sec + SRV_GARBAGE_TIME;
-	timer_add(&garbage_timer);
+	evtimer_set(&garbage_timer, garbage_collect, NULL);
+	gc_timer_add();
 
 	rc = net_open();
 
@@ -1440,11 +1391,13 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 static void term_signal(int signal)
 {
 	server_running = false;
+	event_loopbreak();
 }
 
 static void stats_signal(int signal)
 {
 	dump_stats = true;
+	event_loopbreak();
 }
 
 static void stats_dump(void)
@@ -1664,6 +1617,8 @@ int main (int argc, char *argv[])
 		return 1;
 	}
 
+	event_init();
+
 	if (init_server())
 		return 1;
 
@@ -1674,7 +1629,14 @@ int main (int argc, char *argv[])
 
 	syslog(LOG_INFO, PACKAGE_STRING " initialized%s", debugstr);
 
-	main_loop();
+	while (server_running) {
+		event_dispatch();
+
+		if (dump_stats) {
+			dump_stats = false;
+			stats_dump();
+		}
+	}
 
 	fsdb_close(&srv.fsdb);
 

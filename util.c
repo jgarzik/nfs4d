@@ -31,7 +31,6 @@
 #include "server.h"
 
 struct timeval current_time = { 0, 0 };
-static GQueue *timers_q;
 
 #ifdef HAVE_SRAND48_R
 static struct drand48_data rng;
@@ -125,78 +124,6 @@ int fsetflags(const char *prefix, int fd, int or_flags)
 		}
 
 	return rc;
-}
-
-static gint timer_cmp(gconstpointer _a, gconstpointer _b, gpointer user_data)
-{
-	const struct timer *a = _a;
-	const struct timer *b = _b;
-	int64_t at = a->timeout;
-	int64_t bt = b->timeout;
-
-	return (at - bt);
-}
-
-void timer_init(struct timer *timer, timer_cb_t cb, void *cb_data)
-{
-	timer->timeout = 0;
-	timer->fired = false;
-	timer->cb = cb;
-	timer->cb_data = cb_data;
-}
-
-void timer_add(struct timer *timer)
-{
-	timer->fired = false;
-	g_queue_insert_sorted(timers_q, timer, timer_cmp, NULL);
-}
-
-void timer_del(struct timer *timer)
-{
-	g_queue_remove(timers_q, timer);
-}
-
-void timer_renew(struct timer *timer, time_t timeout)
-{
-	timer_del(timer);
-
-	timer->timeout = current_time.tv_sec + timeout;
-	timer_add(timer);
-}
-
-int timer_next(void)
-{
-	struct timer *timer = g_queue_peek_head(timers_q);
-	if (!timer)
-		return -1;
-
-	if (current_time.tv_sec >= timer->timeout)
-		return 0;
-
-	return (timer->timeout - current_time.tv_sec) * 1000;
-}
-
-void timers_run(void)
-{
-	while (1) {
-		struct timer *timer;
-
-		timer = g_queue_peek_head(timers_q);
-		if (!timer)
-			break;
-		if (current_time.tv_sec < timer->timeout)
-			break;
-
-		g_queue_pop_head(timers_q);
-
-		timer->fired = true;
-		timer->cb(timer);
-	}
-}
-
-void timers_init(void)
-{
-	timers_q = g_queue_new();
 }
 
 bool is_dir(const char *arg, char **dirname)

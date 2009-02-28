@@ -24,6 +24,8 @@ Dependencies
 	Berkeley DB 4.3 or later
 	http://www.oracle.com/technology/products/berkeley-db/
 
+	libevent
+	http://www.monkey.org/~provos/libevent/
 
 See doc/setup.txt for more information.
 

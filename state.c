@@ -23,6 +23,7 @@
 #include <string.h>
 #include <errno.h>
 #include <syslog.h>
+#include <event.h>
 #include <glib.h>
 #include "nfs4_prot.h"
 #include "server.h"
@@ -47,7 +48,7 @@ struct nfs_clientid {
 
 	struct list_head	owner_list;
 
-	struct timer		timer;
+	struct event		timer;
 };
 
 static LIST_HEAD(cli_unconfirmed);
@@ -556,6 +557,18 @@ static void gen_clientid4(clientid4 *id)
 				(void *)((unsigned long) *id)) != NULL);
 }
 
+static int evtimer_renew(struct event *ev, int more_sec)
+{
+	struct timeval tv;
+
+	evtimer_del(ev);
+
+	tv.tv_sec = more_sec;
+	tv.tv_usec = 0;
+
+	return evtimer_add(ev, &tv);
+}
+
 static nfsstat4 clientid_touch(clientid4 id_in)
 {
 	struct nfs_clientid *clid;
@@ -567,7 +580,7 @@ static nfsstat4 clientid_touch(clientid4 id_in)
 	if (clid->expired)
 		return NFS4ERR_EXPIRED;
 
-	timer_renew(&clid->timer, SRV_LEASE_TIME);
+	evtimer_renew(&clid->timer, SRV_LEASE_TIME);
 
 	return NFS4_OK;
 }
@@ -623,7 +636,7 @@ static void clientid_free(struct nfs_clientid *clid)
 	if (clid->pending)
 		list_del(&clid->node);
 	else
-		timer_del(&clid->timer);
+		evtimer_del(&clid->timer);
 
 	g_hash_table_remove(srv.clid_idx, (void *) clid->id_short);
 
@@ -639,9 +652,9 @@ static void clientid_free(struct nfs_clientid *clid)
 	free(clid);
 }
 
-static void clientid_timer(struct timer *timer)
+static void clientid_timer(int fd, short events, void *userdata)
 {
-	struct nfs_clientid *clid = timer->cb_data;
+	struct nfs_clientid *clid = userdata;
 	const char *msg;
 	unsigned long long id_short;
 
@@ -663,7 +676,7 @@ static void clientid_timer(struct timer *timer)
 		 * keep the client id around for a while longer
 		 */
 		clid->expired = true;
-		timer_renew(&clid->timer, SRV_CLID_DEATH);
+		evtimer_renew(&clid->timer, SRV_CLID_DEATH);
 
 		msg = "expired state for";
 	}
@@ -688,7 +701,7 @@ static int clientid_new(struct nfs_cxn *cxn,
 
 	INIT_LIST_HEAD(&clid->owner_list);
 	INIT_LIST_HEAD(&clid->node);
-	timer_init(&clid->timer, clientid_timer, clid);
+	evtimer_set(&clid->timer, clientid_timer, clid);
 
 	memcpy(&clid->auth, &cxn->auth, sizeof(struct cxn_auth));
 
@@ -828,7 +841,7 @@ static void clientid_promote(struct nfs_clientid *old_clid,
 	new_clid->pending = false;
 	list_del(&new_clid->node);
 
-	timer_renew(&new_clid->timer, SRV_LEASE_TIME);
+	evtimer_renew(&new_clid->timer, SRV_LEASE_TIME);
 
 	id_short = (unsigned long) new_clid->id_short;
 	g_hash_table_insert(srv.clid_idx, (void *) id_short, new_clid);
