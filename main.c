@@ -85,6 +85,7 @@ typedef bool (*cxn_write_func)(struct rpc_cxn *, struct rpc_cxn_write *, bool);
 enum rpc_cxn_state {
 	evt_get_hdr,
 	evt_get_data,
+	evt_rpc_msg,
 	evt_dispose,				/* dispose of client */
 };
 
@@ -1048,7 +1049,6 @@ err_out:
 static bool cxn_evt_get_data(struct rpc_cxn *cxn, short events)
 {
 	ssize_t rrc;
-	bool rc;
 
 	rrc = read(cxn->fd, cxn->msg + cxn->msg_len, cxn->next_frag);
 	if (rrc < 0) {
@@ -1069,6 +1069,19 @@ static bool cxn_evt_get_data(struct rpc_cxn *cxn, short events)
 		return false;		/* read more data */
 	}
 
+	cxn->state = evt_rpc_msg;
+	return true;			/* loop to cxn->state */
+
+err_out:
+	cxn->state = evt_dispose;
+	return true;			/* loop to cxn->state */
+}
+
+static bool cxn_evt_rpc_msg(struct rpc_cxn *cxn, short events)
+{
+	bool rc;
+
+	/* set up next-state now; rpc_msg may override */
 	cxn->state = evt_get_hdr;
 
 	rc = rpc_msg(cxn, cxn->msg, cxn->msg_len);
@@ -1080,15 +1093,12 @@ static bool cxn_evt_get_data(struct rpc_cxn *cxn, short events)
 	cxn->last_frag = false;
 
 	return rc;			/* loop to cxn->state */
-
-err_out:
-	cxn->state = evt_dispose;
-	return true;			/* loop to cxn->state */
 }
 
 static cxn_evt_func state_funcs[] = {
 	[evt_get_hdr]		= cxn_evt_get_hdr,
 	[evt_get_data]		= cxn_evt_get_data,
+	[evt_rpc_msg]		= cxn_evt_rpc_msg,
 	[evt_dispose]		= cxn_evt_dispose,
 };
 
