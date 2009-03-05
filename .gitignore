@@ -8,7 +8,6 @@ autom4te.cache
 aclocal.m4
 Makefile
 Makefile.in
-COPYING
 INSTALL
 config.log
 config.status
