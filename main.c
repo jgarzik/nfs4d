@@ -968,7 +968,7 @@ static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
 	if (!buf || !buflen)
 		return -EINVAL;
 
-	wr = malloc(sizeof(struct rpc_cxn_write));
+	wr = calloc(1, sizeof(struct rpc_cxn_write));
 	if (!wr)
 		return -ENOMEM;
 
@@ -976,6 +976,7 @@ static int cxn_writeq(struct rpc_cxn *cxn, const void *buf, unsigned int buflen,
 	wr->len = buflen;
 	wr->cb = cb;
 	wr->cb_data = cb_data;
+	INIT_LIST_HEAD(&wr->node);
 	list_add_tail(&wr->node, &cxn->write_q);
 
 	return 0;
