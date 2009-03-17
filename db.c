@@ -147,6 +147,23 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	else
 		dbenv->set_errfile(dbenv, stderr);
 
+	/* enable automatic deadlock detection */
+	rc = dbenv->set_lk_detect(dbenv, DB_LOCK_DEFAULT);
+	if (rc) {
+		dbenv->err(dbenv, rc, "set_lk_detect");
+		goto err_out;
+	}
+
+	/* enable automatic removal of unused logs.  should be re-examined
+	 * once this project is more mature, as this makes catastrophic
+	 * recovery more difficult.
+	 */
+	rc = dbenv->log_set_config(dbenv, DB_LOG_AUTO_REMOVE, 1);
+	if (rc) {
+		dbenv->err(dbenv, rc, "log_set_config");
+		goto err_out;
+	}
+
 	if (db_password) {
 		flags |= DB_ENCRYPT;
 		rc = dbenv->set_encrypt(dbenv, db_password, DB_ENCRYPT_AES);

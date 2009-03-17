@@ -27,6 +27,7 @@
 #include <rpc/auth.h>
 #include <rpc/rpc_msg.h>
 #include <rpc/xdr.h>
+#include <event.h>
 #include "nfs4_prot.h"
 #include "elist.h"
 #include "nfscommon.h"
@@ -84,6 +85,8 @@ enum server_limits {
 	SRV_CLID_DEATH		= SRV_LEASE_TIME * 2,
 	SRV_SPACE_USED_TTL	= 10,
 	SRV_GARBAGE_TIME	= 45,
+
+	SRV_CHKPT_SEC		= 60 * 5,	/* secs between db4 chkpt */
 
 	SRV_MAX_COMPOUND_OPS	= 3000,		/* arbitrary */
 
@@ -565,6 +568,8 @@ struct nfs_server {
 	char			*metadata_dir;
 
 	GList			*sockets;
+
+	struct event		chkpt_timer;	/* db4 checkpoint timer */
 
 	struct fsdb		fsdb;
 

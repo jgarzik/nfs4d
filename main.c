@@ -1185,6 +1185,31 @@ err_out:
 	free(cxn);
 }
 
+static void add_chkpt_timer(void)
+{
+	struct timeval tv = { SRV_CHKPT_SEC, 0 };
+
+	if (evtimer_add(&srv.chkpt_timer, &tv) < 0)
+		syslog(LOG_WARNING, "unable to add checkpoint timer");
+}
+
+static void fsdb_checkpoint(int fd, short events, void *userdata)
+{
+	DB_ENV *dbenv = srv.fsdb.env;
+	int rc;
+
+	if (debugging)
+		syslog(LOG_INFO, "db4 checkpoint");
+
+	/* flush logs to db, if log files >= 1MB */
+	rc = dbenv->txn_checkpoint(dbenv, 1024, 0, 0);
+	if (rc)
+		dbenv->err(dbenv, rc, "txn_checkpoint");
+
+	/* reactivate timer, to call ourselves again */
+	add_chkpt_timer();
+}
+
 static int net_open(void)
 {
 	int ipv6_found;
@@ -1335,6 +1360,9 @@ static int init_server(void)
 
 	evtimer_set(&garbage_timer, garbage_collect, NULL);
 	gc_timer_add();
+
+	evtimer_set(&srv.chkpt_timer, fsdb_checkpoint, NULL);
+	add_chkpt_timer();
 
 	rc = net_open();
 
