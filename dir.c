@@ -841,7 +841,6 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	DB_TXN *txn = NULL;
 	DB *dirent = srv.fsdb.dirent;
 	DB_ENV *dbenv = srv.fsdb.env;
-	bool first_loop = true;
 	DBT pkey, pval;
 	struct fsdb_de_key key;
 	int cget_flags;
@@ -955,15 +954,10 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	pkey.data = &key;
 	pkey.size = sizeof(key);
 
+	cget_flags = DB_SET_RANGE;
 	while (1) {
 		struct fsdb_de_key *rkey;
 		uint64_t dirent_inum, *dep;
-
-		if (first_loop) {
-			cget_flags = DB_SET_RANGE;
-			first_loop = false;
-		} else
-			cget_flags = DB_NEXT;
 
 		rc = curs->get(curs, &pkey, &pval, cget_flags);
 		if (rc) {
@@ -971,6 +965,8 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 				dirent->err(dirent, rc, "readdir curs->get");
 			break;
 		}
+
+		cget_flags = DB_NEXT;
 
 		rkey = pkey.data;
 		if (inum_decode(rkey->inum) != ino->inum)
