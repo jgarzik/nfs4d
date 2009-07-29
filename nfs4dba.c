@@ -225,7 +225,9 @@ static int show_inodes(void)
 	}
 
 	memset(&pkey, 0, sizeof(pkey));
+
 	memset(&pval, 0, sizeof(pval));
+	pval.flags = DB_DBT_MALLOC;
 
 	while (1) {
 		struct fsdb_inode *raw_ino;
@@ -238,8 +240,8 @@ static int show_inodes(void)
 		}
 
 		raw_ino = pval.data;
-
 		inode_iter(raw_ino);
+		free(raw_ino);
 	}
 
 	rc = curs->close(curs);
@@ -282,6 +284,7 @@ static int show_dirs(void)
 	DBT pkey, pval;
 	DBC *curs = NULL;
 	int rc;
+	uint64_t dirent_inum, db_de;
 
 	printf("Parent          \tTarget inode    \tTarget name\n");
 
@@ -300,11 +303,15 @@ static int show_dirs(void)
 	}
 
 	memset(&pkey, 0, sizeof(pkey));
+	pkey.flags = DB_DBT_MALLOC;
+
 	memset(&pval, 0, sizeof(pval));
+	pval.data = &db_de;
+	pval.ulen = sizeof(db_de);
+	pval.flags = DB_DBT_USERMEM;
 
 	while (1) {
 		struct fsdb_de_key *rkey;
-		uint64_t dirent_inum, *dep;
 
 		rc = curs->get(curs, &pkey, &pval, DB_NEXT);
 		if (rc) {
@@ -315,10 +322,11 @@ static int show_dirs(void)
 
 		rkey = pkey.data;
 
-		dep = pval.data;
-		dirent_inum = inum_decode(*dep);
+		dirent_inum = inum_decode(db_de);
 
 		readdir_iter(rkey, pkey.size, dirent_inum);
+
+		free(rkey);
 	}
 
 	rc = curs->close(curs);

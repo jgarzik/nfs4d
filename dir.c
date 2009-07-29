@@ -360,6 +360,7 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 	DBT pkey, pval;
 	struct fsdb_de_key key;
 	nfsino_t rnum = 0;
+	uint64_t db_dummy;
 
 	rc = dirent->cursor(dirent, txn, &cur, 0);
 	if (rc) {
@@ -367,19 +368,25 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 		return false;
 	}
 
-	memset(&pkey, 0, sizeof(pkey));
-	memset(&pval, 0, sizeof(pval));
-
 	key.inum = inum_encode(ino->inum);
 
+	memset(&pkey, 0, sizeof(pkey));
 	pkey.data = &key;
 	pkey.size = sizeof(key);
+	pkey.flags = DB_DBT_MALLOC;
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = &db_dummy;
+	pval.ulen = sizeof(db_dummy);
+	pval.flags = DB_DBT_USERMEM;
 
 	rc = cur->get(cur, &pkey, &pval, DB_SET_RANGE);
 	if (rc == 0) {
 		struct fsdb_de_key *rkey = pkey.data;
 
 		rnum = inum_decode(rkey->inum);
+
+		free(rkey);
 	} else if (rc != DB_NOTFOUND)
 		dirent->err(dirent, rc, "dir_is_empty cur->get");
 
@@ -846,6 +853,8 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	int cget_flags;
 	DBC *curs = NULL;
 	int rc;
+	uint64_t dirent_inum, db_de;
+	struct fsdb_de_key *rkey;
 
 	cookie = CR64();
 	cookie_verf = CURMEM(sizeof(verifier4));
@@ -946,18 +955,21 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out_abort;
 	}
 
-	memset(&pkey, 0, sizeof(pkey));
-	memset(&pval, 0, sizeof(pval));
-
 	key.inum = inum_encode(ino->inum);
 
+	memset(&pkey, 0, sizeof(pkey));
 	pkey.data = &key;
 	pkey.size = sizeof(key);
+	pkey.flags = DB_DBT_MALLOC;
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = &db_de;
+	pval.ulen = sizeof(db_de);
+	pval.flags = DB_DBT_USERMEM;
 
 	cget_flags = DB_SET_RANGE;
 	while (1) {
-		struct fsdb_de_key *rkey;
-		uint64_t dirent_inum, *dep;
+		bool iter_rc;
 
 		rc = curs->get(curs, &pkey, &pval, cget_flags);
 		if (rc) {
@@ -969,13 +981,17 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		cget_flags = DB_NEXT;
 
 		rkey = pkey.data;
-		if (inum_decode(rkey->inum) != ino->inum)
+		if (inum_decode(rkey->inum) != ino->inum) {
+			free(rkey);
 			break;
+		}
 
-		dep = pval.data;
-		dirent_inum = inum_decode(*dep);
+		dirent_inum = inum_decode(db_de);
 
-		if (readdir_iter(txn, rkey, pkey.size, dirent_inum, &ri))
+		iter_rc = readdir_iter(txn, rkey, pkey.size, dirent_inum, &ri);
+		free(rkey);
+
+		if (iter_rc)
 			break;
 	}
 

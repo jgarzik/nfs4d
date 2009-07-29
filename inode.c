@@ -34,8 +34,13 @@
 bool inode_check(DB_TXN *txn, nfsino_t inum)
 {
 	struct fsdb_inode *dbino = NULL;
+	int rc;
 
-	if (fsdb_inode_get(&srv.fsdb, txn, inum, 0, &dbino))
+	rc = fsdb_inode_get(&srv.fsdb, txn, inum, 0, &dbino);
+
+	free(dbino);
+
+	if (rc)
 		return false;
 
 	return true;

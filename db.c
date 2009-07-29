@@ -240,18 +240,21 @@ int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 	int rc;
 	size_t alloc_len;
 	struct fsdb_de_key *key;
-	nfsino_t *v;
-
-	memset(&pkey, 0, sizeof(pkey));
-	memset(&pval, 0, sizeof(pval));
+	nfsino_t v;
 
 	alloc_len = sizeof(*key) + str->len;
 	key = alloca(alloc_len);
 	key->inum = inum_encode(inum);
 	memcpy(key->name, str->val, str->len);
 
+	memset(&pkey, 0, sizeof(pkey));
 	pkey.data = key;
 	pkey.size = alloc_len;
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = &v;
+	pval.ulen = sizeof(v);
+	pval.flags = DB_DBT_USERMEM;
 
 	rc = dirent->get(dirent, txn, &pkey, &pval, flags);
 	if (rc) {
@@ -260,9 +263,8 @@ int fsdb_dirent_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum,
 		 return rc;
 	}
 
-	v = pval.data;
 	if (inum_out)
-		*inum_out = inum_decode(*v);
+		*inum_out = inum_decode(v);
 
 	return 0;
 }
@@ -358,10 +360,11 @@ int fsdb_inode_get(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 	nfsino_t inum_le = inum_encode(inum);
 
 	memset(&pkey, 0, sizeof(pkey));
-	memset(&pval, 0, sizeof(pval));
-
 	pkey.data = &inum_le;
 	pkey.size = sizeof(inum_le);
+
+	memset(&pval, 0, sizeof(pval));
+	pval.flags = DB_DBT_MALLOC;
 
 	rc = inodes->get(inodes, txn, &pkey, &pval, flags);
 	if (rc) {
@@ -557,6 +560,9 @@ int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 		return rc;
 
 	rc = fsdb_inode_copydec(&ino, dbino);
+
+	free(dbino);
+
 	if (rc)
 		return rc;
 
