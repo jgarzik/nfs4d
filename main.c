@@ -1319,11 +1319,11 @@ err_addr:
 static int init_server(void)
 {
 	struct timezone tz = { 0, 0 };
-	int rc;
+	int rc = 0, pid_fd;
 
-	rc = write_pid_file(pid_fn);
-	if (rc)
-		return rc;
+	pid_fd = write_pid_file(pid_fn);
+	if (pid_fd < 0)
+		return pid_fd;
 
 	memset(&srv, 0, sizeof(srv));
 	INIT_LIST_HEAD(&srv.dead);
@@ -1342,18 +1342,20 @@ static int init_server(void)
 
 	if (gettimeofday(&current_time, &tz) < 0) {
 		syslogerr("gettimeofday(2)");
-		return -errno;
+		rc = -errno;
+		goto err_out;
 	}
 
 	if (!srv.clid_idx || !srv.openfiles || !request_cache) {
 		syslog(LOG_ERR, "OOM in init_server()");
-		return -ENOMEM;
+		rc = -ENOMEM;
+		goto err_out;
 	}
 
 	rc = fsdb_open(&srv.fsdb, DB_RECOVER | DB_CREATE, DB_CREATE,
 		       "nfs4d", true);
 	if (rc)
-		return rc;
+		goto err_out;
 
 	init_rngs();
 	rand_verifier(&srv.instance_verf);
@@ -1365,7 +1367,16 @@ static int init_server(void)
 	add_chkpt_timer();
 
 	rc = net_open();
+	if (rc)
+		goto err_out_fsdb;
 
+	return 0;
+
+err_out_fsdb:
+	fsdb_close(&srv.fsdb);
+err_out:
+	unlink(pid_fn);
+	close(pid_fd);
 	return rc;
 }
 
