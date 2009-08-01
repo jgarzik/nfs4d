@@ -29,8 +29,10 @@ enum various_inode_numbers {
 };
 
 /* util.c */
+extern bool use_syslog;
 extern const char *name_nfs_ftype4[];
 extern struct timeval current_time;
+extern void applog(int prio, const char *fmt, ...);
 extern int write_pid_file(const char *pid_fn);
 extern void syslogerr(const char *prefix);
 extern int fsetflags(const char *prefix, int fd, int or_flags);

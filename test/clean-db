@@ -1,0 +1,11 @@
+#!/bin/sh
+
+if [ ! -d data ]
+then
+	echo "data dir does not exist"
+	exit 1
+fi
+
+rm -rf data
+
+exit 0

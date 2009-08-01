@@ -164,6 +164,9 @@ static struct argp_option options[] = {
 	{ "debug", 'd', "LEVEL", 0,
 	  "Enable debug output (def. 0 = no debug, 2 = maximum debug output)" },
 
+	{ "stderr", 'E', NULL, 0,
+	  "Switch the log to standard error" },
+
 	{ "foreground", 'f', NULL, 0,
 	  "Run daemon in foreground (def: chdir to /, detach, run in background)" },
 
@@ -225,7 +228,7 @@ static struct refbuf *refbuf_new(unsigned int size, bool clear)
 static void refbuf_unref(struct refbuf *rb)
 {
 	if (G_UNLIKELY(!rb || !rb->len || !rb->refcnt)) {
-		syslog(LOG_ERR, "BUG: invalid refbuf");
+		applog(LOG_ERR, "BUG: invalid refbuf");
 		return;
 	}
 
@@ -346,12 +349,12 @@ struct rpc_write *wr_ref(struct refbuf *rb, unsigned int ofs,
 {
 	struct rpc_write *wr = malloc(sizeof(*wr));
 	if (G_UNLIKELY(!wr)) {
-		syslog(LOG_ERR, "OOM in wr_ref()");
+		applog(LOG_ERR, "OOM in wr_ref()");
 		return NULL;
 	}
 
 	if (G_UNLIKELY(len > (rb->len - ofs))) {
-		syslog(LOG_ERR, "BUG in wr_ref()");
+		applog(LOG_ERR, "BUG in wr_ref()");
 		return NULL;
 	}
 
@@ -367,7 +370,7 @@ struct rpc_write *wr_alloc(unsigned int n)
 {
 	struct rpc_write *wr = malloc(sizeof(*wr));
 	if (G_UNLIKELY(!wr)) {
-		syslog(LOG_ERR, "OOM in wr_alloc()");
+		applog(LOG_ERR, "OOM in wr_alloc()");
 		return NULL;
 	}
 
@@ -377,7 +380,7 @@ struct rpc_write *wr_alloc(unsigned int n)
 	wr->rbuf = refbuf_new(n, false);
 	if (G_UNLIKELY(!wr->rbuf)) {
 		free(wr);
-		syslog(LOG_ERR, "OOM(2) in wr_alloc()");
+		applog(LOG_ERR, "OOM(2) in wr_alloc()");
 		return NULL;
 	}
 
@@ -634,13 +637,13 @@ static void gc_timer_add(void)
 	tv.tv_usec = 0;
 
 	if (evtimer_add(&garbage_timer, &tv) < 0)
-		syslog(LOG_ERR, "evtimer_add(garbage) failed");
+		applog(LOG_ERR, "evtimer_add(garbage) failed");
 }
 
 static void garbage_collect(int fd, short events, void *userdata)
 {
 	if (debugging)
-		syslog(LOG_DEBUG, "Garbage collection");
+		applog(LOG_DEBUG, "Garbage collection");
 
 	drc_gc();
 	state_gc();
@@ -689,7 +692,7 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 		}
 
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",
+			applog(LOG_DEBUG, "RPC DRC cache hit (%u bytes)",
 			       drc->len);
 
 		return cxn_write_start(cxn);
@@ -702,7 +705,7 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 
 	if (CR32() != CALL) {		/* msg type */
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "RPC: invalid msg type");
+			applog(LOG_DEBUG, "RPC: invalid msg type");
 		goto err_out;
 	}
 
@@ -715,7 +718,7 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 		    (rpc_prog != NFS4_PROGRAM) ||	/* rpc program */
 		    (rpc_pver != NFS_V4))	{	/* rpc program version*/
 			if (debugging > 1)
-				syslog(LOG_DEBUG, "RPC: invalid msg hdr (ver %u, prog %u, prog vers %u",
+				applog(LOG_DEBUG, "RPC: invalid msg hdr (ver %u, prog %u, prog vers %u",
 					rpc_ver, rpc_prog, rpc_pver);
 			goto err_out;
 		}
@@ -735,7 +738,7 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 	 */
 	_wr = wr_alloc(0);
 	if (!_wr) {
-		syslog(LOG_ERR, "RPC: out of memory");
+		applog(LOG_ERR, "RPC: out of memory");
 		goto err_out;
 	}
 
@@ -752,7 +755,7 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 	WR32(0);			/* accept status (0 == success) */
 
 	if (debugging > 1)
-		syslog(LOG_DEBUG, "RPC: message (%u bytes, xid %x, proc %u)",
+		applog(LOG_DEBUG, "RPC: message (%u bytes, xid %x, proc %u)",
 		       msg_len, xid, proc);
 
 	/*
@@ -818,14 +821,14 @@ static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
 		drc_store(hash, cache, cache_len, xid, cxn->host_addr);
 
 	if (debugging > 1)
-		syslog(LOG_DEBUG, "RPC reply: %u bytes, %u writes",
+		applog(LOG_DEBUG, "RPC reply: %u bytes, %u writes",
 			n_wbytes, n_writes);
 
 	return cxn_write_start(cxn);
 
 err_out:
 	if (debugging > 1)
-		syslog(LOG_DEBUG, "RPC: invalid message (%u bytes, xid %x), "
+		applog(LOG_DEBUG, "RPC: invalid message (%u bytes, xid %x), "
 		       "ignoring",
 		       msg_len, xid);
 
@@ -858,7 +861,7 @@ static void rpc_cxn_free(struct rpc_cxn *cxn)
 		cxn_write_free(cxn, rpcwr, false);
 	}
 
-	syslog(LOG_INFO, "%s disconnect", cxn->host_addr);
+	applog(LOG_INFO, "%s disconnect", cxn->host_addr);
 
 	memset(cxn, 0, sizeof(*cxn));
 	free(cxn);
@@ -926,7 +929,7 @@ do_write:
 		cxn->writing = false;
 
 		if (event_del(&cxn->write_ev) < 0) {
-			syslog(LOG_WARNING, "cxn_writable event_del");
+			applog(LOG_WARNING, "cxn_writable event_del");
 			cxn->state = evt_dispose;
 			return;
 		}
@@ -953,7 +956,7 @@ static bool cxn_write_start(struct rpc_cxn *cxn)
 	}
 
 	if (event_add(&cxn->write_ev, NULL) < 0) {
-		syslog(LOG_WARNING, "cxn_write_start event_add");
+		applog(LOG_WARNING, "cxn_write_start event_add");
 		return true;		/* loop, not poll */
 	}
 
@@ -1034,7 +1037,7 @@ static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, short events)
 	cxn->msg = mem;
 
 	if (debugging > 1)
-		syslog(LOG_DEBUG, "RPC frag (%u bytes%s)",
+		applog(LOG_DEBUG, "RPC frag (%u bytes%s)",
 		       next_frag,
 		       cxn->last_frag ? ", LAST" : "");
 
@@ -1160,12 +1163,12 @@ static void tcp_srv_event(int fd, short events, void *userdata)
 
 	/* disable delay of small output packets */
 	if (setsockopt(cxn->fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on)) < 0)
-		syslog(LOG_WARNING, "TCP_NODELAY failed: %s",
+		applog(LOG_WARNING, "TCP_NODELAY failed: %s",
 		       strerror(errno));
 
 	/* add to libevent watchlist */
 	if (event_add(&cxn->ev, NULL) < 0) {
-		syslog(LOG_WARNING, "tcp client event_add");
+		applog(LOG_WARNING, "tcp client event_add");
 		goto err_out_fd;
 	}
 
@@ -1174,7 +1177,7 @@ static void tcp_srv_event(int fd, short events, void *userdata)
 	getnameinfo((struct sockaddr *) &cxn->addr, addrlen,
 		    host, sizeof(host), NULL, 0, NI_NUMERICHOST);
 	host[sizeof(host) - 1] = 0;
-	syslog(LOG_INFO, "client %s connected", host);
+	applog(LOG_INFO, "client %s connected", host);
 
 	strcpy(cxn->host_addr, host);
 
@@ -1191,7 +1194,7 @@ static void add_chkpt_timer(void)
 	struct timeval tv = { SRV_CHKPT_SEC, 0 };
 
 	if (evtimer_add(&srv.chkpt_timer, &tv) < 0)
-		syslog(LOG_WARNING, "unable to add checkpoint timer");
+		applog(LOG_WARNING, "unable to add checkpoint timer");
 }
 
 static void fsdb_checkpoint(int fd, short events, void *userdata)
@@ -1200,7 +1203,7 @@ static void fsdb_checkpoint(int fd, short events, void *userdata)
 	int rc;
 
 	if (debugging)
-		syslog(LOG_INFO, "db4 checkpoint");
+		applog(LOG_INFO, "db4 checkpoint");
 
 	/* flush logs to db, if log files >= 1MB */
 	rc = dbenv->txn_checkpoint(dbenv, 1024, 0, 0);
@@ -1227,7 +1230,7 @@ static int net_open(void)
 
 	rc = getaddrinfo(NULL, port_str, &hints, &res0);
 	if (rc) {
-		syslog(LOG_ERR, "getaddrinfo(*:%s) failed: %s",
+		applog(LOG_ERR, "getaddrinfo(*:%s) failed: %s",
 		       port_str, gai_strerror(rc));
 		rc = -EINVAL;
 		goto err_addr;
@@ -1299,7 +1302,7 @@ static int net_open(void)
 			  tcp_srv_event, sock);
 
 		if (event_add(&sock->ev, NULL) < 0) {
-			syslog(LOG_WARNING, "tcp socket event_add failed");
+			applog(LOG_WARNING, "tcp socket event_add failed");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -1349,7 +1352,7 @@ static int init_server(void)
 	}
 
 	if (!srv.clid_idx || !srv.openfiles || !request_cache) {
-		syslog(LOG_ERR, "OOM in init_server()");
+		applog(LOG_ERR, "OOM in init_server()");
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -1397,6 +1400,9 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	case 'D':
 		if (!is_dir(arg, &opt_data_path))
 			argp_usage(state);
+		break;
+	case 'E':
+		use_syslog = false;
 		break;
 	case 'M':
 		if (!is_dir(arg, &opt_metadata))
@@ -1604,12 +1610,12 @@ static void stats_dump(void)
 
 	fd = open(stats_fn, O_WRONLY | O_APPEND | O_CREAT, 0644);
 	if (fd < 0) {
-		syslog(LOG_ERR, "open(%s): %s", stats_fn, strerror(errno));
+		applog(LOG_ERR, "open(%s): %s", stats_fn, strerror(errno));
 		return;
 	}
 
 	if (write(fd, stats_str, strlen(stats_str)) < 0) {
-		syslog(LOG_ERR, "write(%s, %lu): %s",
+		applog(LOG_ERR, "write(%s, %lu): %s",
 		       stats_fn,
 		       (unsigned long) strlen(stats_str),
 		       strerror(errno));
@@ -1618,7 +1624,7 @@ static void stats_dump(void)
 	}
 
 	if (close(fd) < 0)
-		syslog(LOG_ERR, "close(%s): %s", stats_fn, strerror(errno));
+		applog(LOG_ERR, "close(%s): %s", stats_fn, strerror(errno));
 }
 
 static void srv_exit_cleanup(void)
@@ -1631,11 +1637,14 @@ int main (int argc, char *argv[])
 {
 	error_t aprc;
 	char debugstr[64];
+	int rc;
 
 	setlocale(LC_ALL, "");
 
 	argp_program_version = PACKAGE_VERSION;
 	argp_err_exit_status = EXIT_FAILURE;
+
+	use_syslog = true;
 
 	aprc = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (aprc) {
@@ -1650,7 +1659,8 @@ int main (int argc, char *argv[])
 	signal(SIGTERM, term_signal);
 	signal(SIGUSR1, stats_signal);
 
-	openlog("nfs4d", LOG_PID, LOG_LOCAL2);
+	if (use_syslog)
+		openlog("nfs4d", LOG_PID, LOG_LOCAL2);
 
 	if (getcwd(startup_cwd, sizeof(startup_cwd) - 2) < 0) {
 		syslogerr("getcwd(2)");
@@ -1666,7 +1676,7 @@ int main (int argc, char *argv[])
 	}
 	my_hostname[sizeof(my_hostname) - 1] = 0;
 
-	if ((!opt_foreground) && (daemon(0, 0) < 0)) {
+	if ((!opt_foreground) && (daemon(0, !use_syslog) < 0)) {
 		syslogerr("daemon(2)");
 		return 1;
 	}
@@ -1681,7 +1691,7 @@ int main (int argc, char *argv[])
 	else
 		debugstr[0] = 0;
 
-	syslog(LOG_INFO, PACKAGE_STRING " initialized%s", debugstr);
+	applog(LOG_INFO, PACKAGE_STRING " initialized%s", debugstr);
 
 	while (server_running) {
 		event_dispatch();
@@ -1692,9 +1702,14 @@ int main (int argc, char *argv[])
 		}
 	}
 
+	applog(LOG_INFO, "shutting down");
+
 	fsdb_close(&srv.fsdb);
 
-	syslog(LOG_INFO, "server exit");
-	return 0;
+	rc = 0;
+
+	unlink(pid_fn);
+	closelog();
+	return rc;
 }
 

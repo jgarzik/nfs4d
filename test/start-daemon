@@ -6,7 +6,7 @@ then
 	exit 1
 fi
 
-../nfs4d -P $PWD/nfs4d.pid
+../nfs4d -D $PWD/data/data -M $PWD/data/metadata -P $PWD/nfs4d.pid -E
 
 sleep 2
 

@@ -100,7 +100,7 @@ uint32_t gen_stateid(void)
 
 	do {
 		if (G_UNLIKELY(loop == 0)) {
-			syslog(LOG_ERR, "gen_stateid: 1,000,000 collisions");
+			applog(LOG_ERR, "gen_stateid: 1,000,000 collisions");
 			return 0;
 		}
 
@@ -475,7 +475,7 @@ void owner_free(struct nfs_owner *o)
 	 * do that for us
 	 */
 	if (!list_empty(&o->openfiles))
-		syslog(LOG_WARNING,
+		applog(LOG_WARNING,
 		       "owner_free openfile list not empty (%s)",
 		       o->owner ? o->owner : "\"\"");
 
@@ -545,7 +545,7 @@ static void gen_clientid4(clientid4 *id)
 
 	do {
 		if (G_UNLIKELY(loop == 0)) {
-			syslog(LOG_ERR, "gen_clientid: 1,000,000 collisions");
+			applog(LOG_ERR, "gen_clientid: 1,000,000 collisions");
 			*id = 0;
 			return;
 		}
@@ -682,7 +682,7 @@ static void clientid_timer(int fd, short events, void *userdata)
 	}
 
 	if (debugging)
-		syslog(LOG_INFO, "timeout, %s CID:%Lx", msg, id_short);
+		applog(LOG_INFO, "timeout, %s CID:%Lx", msg, id_short);
 }
 
 static int clientid_new(struct nfs_cxn *cxn,
@@ -758,7 +758,7 @@ static void client_cancel_id(struct nfs_clientid *clid, bool expired)
 	}
 
 	if (debugging)
-		syslog(LOG_INFO,
+		applog(LOG_INFO,
 		       "%s %u openfile recs associated with CID:%Lx",
 		       expired ? "expired" : "cancelled",
 		       trashed, (unsigned long long) clid->id_short);
@@ -822,7 +822,7 @@ static void cli_clear_pending(const struct blob *key)
 	}
 
 	if (debugging && cleared)
-		syslog(LOG_DEBUG, "cleared %u unconfirmed entries", cleared);
+		applog(LOG_DEBUG, "cleared %u unconfirmed entries", cleared);
 }
 
 static void clientid_promote(struct nfs_clientid *old_clid,
@@ -929,12 +929,12 @@ out:
 		uint64_t u;
 
 		memcpy(&u, client_verf, 8);
-		syslog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
+		applog(LOG_INFO, "op SETCLIENTID (ID:%.*s "
 		       "VERF:%Lx)",
 		       client.len,
 		       client.val,
 		       (unsigned long long) u);
-		syslog(LOG_INFO, "   SETCLIENTID ("
+		applog(LOG_INFO, "   SETCLIENTID ("
 		       "PROG:%u NET:%s ADDR:%s CBID:%u)",
 		       callback.cb_program,
 		       callback.cb_location.r_netid,
@@ -953,7 +953,7 @@ out:
 			uint64_t u;
 
 			memcpy(&u, &clid->confirm_verf, 8);
-			syslog(LOG_INFO, "   SETCLIENTID -> (CLID:%Lx "
+			applog(LOG_INFO, "   SETCLIENTID -> (CLID:%Lx "
 				"VERF:%Lx)",
 				(unsigned long long) clid->id_short,
 				(unsigned long long) u);
@@ -986,7 +986,7 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		uint64_t u;
 
 		memcpy(&u, confirm_verf, 8);
-		syslog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lx VERF:%Lx)",
+		applog(LOG_INFO, "op SETCLIENTID_CONFIRM (ID:%Lx VERF:%Lx)",
 		       (unsigned long long) id_short,
 		       (unsigned long long) u);
 	}
@@ -1032,14 +1032,14 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		clientid_promote(confirmed, new_clid);
 
 		if (debugging)
-			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM -> cb update");
+			applog(LOG_INFO, "   SETCLIENTID_CONFIRM -> cb update");
 		goto out;
 	}
 
 	/* check for replay that DRC missed */
 	else if (confirmed && !new_clid) {
 		if (debugging)
-			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM -> replay");
+			applog(LOG_INFO, "   SETCLIENTID_CONFIRM -> replay");
 		goto out;
 	}
 
@@ -1048,7 +1048,7 @@ nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 		client_cancel(&new_clid->id);		/* remove state */
 		clientid_promote(NULL, new_clid);
 		if (debugging)
-			syslog(LOG_INFO, "   SETCLIENTID_CONFIRM -> confirm");
+			applog(LOG_INFO, "   SETCLIENTID_CONFIRM -> confirm");
 	}
 
 	else {
@@ -1075,7 +1075,7 @@ nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
 	id = CR64();
 
 	if (debugging)
-		syslog(LOG_INFO, "op RENEW (CID:%Lx)",
+		applog(LOG_INFO, "op RENEW (CID:%Lx)",
 			(unsigned long long) id);
 
 	status = clientid_touch(id);

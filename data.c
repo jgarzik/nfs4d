@@ -56,7 +56,7 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 	count = CR32();
 
 	if (debugging)
-		syslog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%x)",
+		applog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%x)",
 		       (unsigned long long) offset, count);
 
 	/* obtain and validate inode */
@@ -143,7 +143,7 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	srv.stats.write_bytes += data.len;
 
 	if (debugging)
-		syslog(LOG_INFO, "op WRITE (IDSEQ:%u ID:%x OFS:%Lu ST:%s LEN:%x)",
+		applog(LOG_INFO, "op WRITE (IDSEQ:%u ID:%x OFS:%Lu ST:%s LEN:%x)",
 		       sid.seqid, sid.id,
 		       (unsigned long long) offset,
 		       name_stable_how4[stable],
@@ -170,7 +170,7 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* we only support writing to regular files */
 	if (ino->type != NF4REG) {
 		if (debugging)
-			syslog(LOG_INFO, "trying to write to file of type %s",
+			applog(LOG_INFO, "trying to write to file of type %s",
 			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
@@ -320,7 +320,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	srv.stats.read_bytes += count;
 
 	if (debugging)
-		syslog(LOG_INFO, "op READ (IDSEQ:%u ID:%x OFS:%Lu LEN:%x)",
+		applog(LOG_INFO, "op READ (IDSEQ:%u ID:%x OFS:%Lu LEN:%x)",
 		       sid.seqid, sid.id,
 		       (unsigned long long) offset, count);
 
@@ -336,7 +336,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* we only support reading from regular files */
 	if (ino->type != NF4REG) {
 		if (debugging)
-			syslog(LOG_INFO, "trying to read to file of type %s",
+			applog(LOG_INFO, "trying to read to file of type %s",
 			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
@@ -358,12 +358,12 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		read_size = 0;
 		eof = true;
 		if (debugging > 1)
-			syslog(LOG_INFO, "        (read_size 0, EOF)");
+			applog(LOG_INFO, "        (read_size 0, EOF)");
 		goto out;
 	}
 	if (count == 0) {
 		if (debugging > 1)
-			syslog(LOG_INFO, "        (count 0, skip work)");
+			applog(LOG_INFO, "        (count 0, skip work)");
 		goto out;
 	}
 
@@ -374,7 +374,7 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 		read_size = RPC_WRITE_BUFSZ;
 
 	if (debugging > 1)
-		syslog(LOG_INFO, "        (read_size %llu)",
+		applog(LOG_INFO, "        (read_size %llu)",
 			(unsigned long long) read_size);
 
 	next_wr = wr_alloc(0);
@@ -477,7 +477,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&owner);
 
 	if (debugging)
-		syslog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%Lx OCID:%Lx OWNER:%.*s)",
+		applog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%Lx OCID:%Lx OWNER:%.*s)",
 		       name_lock_type4[locktype],
 		       (unsigned long long) offset,
 		       (unsigned long long) length,
@@ -502,7 +502,7 @@ nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* we only support reading from regular files */
 	if (ino->type != NF4REG) {
 		if (debugging)
-			syslog(LOG_INFO, "trying to lock file of type %s",
+			applog(LOG_INFO, "trying to lock file of type %s",
 			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
@@ -558,7 +558,7 @@ static void print_lock_args(uint32_t prev_id_seq,
 	if (!debugging)
 		return;
 
-	syslog(LOG_INFO, "op LOCK (NEW:%s LSEQ:%u TYP:%s REC:%s OFS:%Lu LEN:%Lx)",
+	applog(LOG_INFO, "op LOCK (NEW:%s LSEQ:%u TYP:%s REC:%s OFS:%Lu LEN:%Lx)",
 	       new_lock ? "Y" : "N",
 	       lseqid,
 	       name_lock_type4[locktype],
@@ -567,14 +567,14 @@ static void print_lock_args(uint32_t prev_id_seq,
 	       (unsigned long long) length);
 
 	if (new_lock) {
-		syslog(LOG_INFO, "   LOCK (OSEQ:%u IDSEQ:%u ID:%x OCID:%Lx OWNER:%.*s)",
+		applog(LOG_INFO, "   LOCK (OSEQ:%u IDSEQ:%u ID:%x OCID:%Lx OWNER:%.*s)",
 		       open_seqid,
 		       prev_id_seq, prev_id,
 		       (unsigned long long) id_short,
 		       owner->len,
 		       owner->val);
 	} else {
-		syslog(LOG_INFO, "   LOCK (IDSEQ:%u ID:%x)",
+		applog(LOG_INFO, "   LOCK (IDSEQ:%u ID:%x)",
 		       prev_id_seq, prev_id);
 	}
 }
@@ -661,7 +661,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* we only support reading from regular files */
 	if (ino->type != NF4REG) {
 		if (debugging)
-			syslog(LOG_INFO, "trying to lock file of type %s",
+			applog(LOG_INFO, "trying to lock file of type %s",
 			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
@@ -782,7 +782,7 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	status = NFS4_OK;
 
 	if (debugging)
-		syslog(LOG_INFO, "   LOCK -> (SEQ:%u ID:%x)",
+		applog(LOG_INFO, "   LOCK -> (SEQ:%u ID:%x)",
 		       sid->seqid, lock_of->id);
 
 out:
@@ -836,7 +836,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	length = CR64();
 
 	if (debugging)
-		syslog(LOG_INFO, "op UNLOCK (TYP:%s SEQ:%u OFS:%Lu LEN:%Lx "
+		applog(LOG_INFO, "op UNLOCK (TYP:%s SEQ:%u OFS:%Lu LEN:%Lx "
 		       "IDSEQ:%u ID:%x)",
 		       name_lock_type4[locktype],
 		       seqid,
@@ -862,7 +862,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* we only support reading from regular files */
 	if (ino->type != NF4REG) {
 		if (debugging)
-			syslog(LOG_INFO, "trying to lock file of type %s",
+			applog(LOG_INFO, "trying to lock file of type %s",
 			       name_nfs_ftype4[ino->type]);
 		if (ino->type == NF4DIR)
 			status = NFS4ERR_ISDIR;
@@ -902,7 +902,7 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (debugging)
-		syslog(LOG_INFO, "   UNLOCK -> (SEQ:%u ID:%x)",
+		applog(LOG_INFO, "   UNLOCK -> (SEQ:%u ID:%x)",
 		       sid.seqid, sid.id);
 
 out:
@@ -936,7 +936,7 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&owner);
 
 	if (debugging)
-		syslog(LOG_INFO, "op RELEASE_LOCKOWNER (OCID:%Lx OWNER:%.*s)",
+		applog(LOG_INFO, "op RELEASE_LOCKOWNER (OCID:%Lx OWNER:%.*s)",
 		       (unsigned long long) id,
 		       owner.len,
 		       owner.val);

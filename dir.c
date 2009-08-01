@@ -162,7 +162,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, inum);
 
 	if (debugging) {
-		syslog(LOG_INFO, "op LOOKUP ('%.*s') -> %016llX",
+		applog(LOG_INFO, "op LOOKUP ('%.*s') -> %016llX",
 		       objname.len,
 		       objname.val,
 		       (unsigned long long) cxn->current_fh.inum);
@@ -172,7 +172,7 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 out:
 	if (!printed) {
 		if (debugging)
-			syslog(LOG_INFO, "op LOOKUP ('%.*s')",
+			applog(LOG_INFO, "op LOOKUP ('%.*s')",
 			       objname.len,
 			       objname.val);
 	}
@@ -194,7 +194,7 @@ nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_inode *ino = NULL;
 
 	if (debugging)
-		syslog(LOG_INFO, "op LOOKUPP");
+		applog(LOG_INFO, "op LOOKUPP");
 
 	status = dir_curfh(NULL, cxn, &ino, 0);
 	if (status != NFS4_OK)
@@ -263,7 +263,7 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&newname);
 
 	if (debugging)
-		syslog(LOG_INFO, "op LINK (%.*s)",
+		applog(LOG_INFO, "op LINK (%.*s)",
 		       newname.len,
 		       newname.val);
 
@@ -417,7 +417,7 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&target);
 
 	if (debugging)
-		syslog(LOG_INFO, "op REMOVE ('%.*s')",
+		applog(LOG_INFO, "op REMOVE ('%.*s')",
 		       target.len,
 		       target.val);
 
@@ -538,7 +538,7 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURBUF(&newname);
 
 	if (debugging)
-		syslog(LOG_INFO, "op RENAME (OLD:%.*s, NEW:%.*s)",
+		applog(LOG_INFO, "op RENAME (OLD:%.*s, NEW:%.*s)",
 		       oldname.len,
 		       oldname.val,
 		       newname.len,
@@ -756,7 +756,7 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 
 	ino = inode_getdec(txn, dirent, 0);
 	if (!ino) {
-		syslog(LOG_WARNING, "           WARNING: inode %016llX not found",
+		applog(LOG_WARNING, "           WARNING: inode %016llX not found",
 			(unsigned long long) dirent);
 		/* FIXME: return via rdattr-error */
 		ri->stop = true;
@@ -775,7 +775,7 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 		ri->hit_limit = true;
 		ri->stop = true;
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "           iter: hit dir limit");
+			applog(LOG_DEBUG, "           iter: hit dir limit");
 		goto out;
 	}
 
@@ -785,7 +785,7 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 		ri->hit_limit = true;
 		ri->stop = true;
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "           iter: hit max limit");
+			applog(LOG_DEBUG, "           iter: hit max limit");
 		goto out;
 	}
 
@@ -818,7 +818,7 @@ static bool readdir_iter(DB_TXN *txn, const struct fsdb_de_key *key,
 		ri->stop = true;
 
 	if (debugging)
-		syslog(LOG_DEBUG, "   READDIR ent: '%.*s' (INO:%016llX MAP:%Lx WRLEN:%u)",
+		applog(LOG_DEBUG, "   READDIR ent: '%.*s' (INO:%016llX MAP:%Lx WRLEN:%u)",
 			(int) name_len, key->name,
 			(unsigned long long) dirent,
 			(unsigned long long) bitmap_out, (*wr)->len);
@@ -865,7 +865,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	status_p = WRSKIP(4);
 
 	if (debugging) {
-		syslog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u MAP:%Lx)",
+		applog(LOG_INFO, "op READDIR (COOKIE:%Lu DIR:%u MAX:%u MAP:%Lx)",
 		       (unsigned long long) cookie,
 		       dircount,
 		       maxcount,
@@ -942,7 +942,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 		ri.val_follows = WRSKIP(4);
 
 		if (debugging)
-			syslog(LOG_DEBUG, "   READDIR: empty directory");
+			applog(LOG_DEBUG, "   READDIR: empty directory");
 
 		goto the_finale;
 	}
@@ -997,7 +997,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (!ri.n_results) {
 		if (debugging)
-			syslog(LOG_INFO, "           zero results, status %s",
+			applog(LOG_INFO, "           zero results, status %s",
 			       ri.status <= NFS4ERR_CB_PATH_DOWN ?
 			       		name_nfs4status[ri.status] : "n/a");
 

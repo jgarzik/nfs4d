@@ -96,11 +96,11 @@ static void print_open_args(struct nfs_open_args *args)
 	if (!debugging)
 		return;
 
-	syslog(LOG_INFO, "op OPEN ('%.*s')",
+	applog(LOG_INFO, "op OPEN ('%.*s')",
 	       args->u.file.len,
 	       args->u.file.val);
 
-	syslog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x CR:%s CLM:%s)",
+	applog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x CR:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
 	       args->share_deny,
@@ -110,7 +110,7 @@ static void print_open_args(struct nfs_open_args *args)
 	if (args->opentype == OPEN4_CREATE && args->how.mode == EXCLUSIVE4) {
 		uint64_t x;
 		memcpy(&x, args->how.createhow4_u.createverf, 8);
-		syslog(LOG_INFO, "   OPEN (MODE:EXCL VERF:%Lx)",
+		applog(LOG_INFO, "   OPEN (MODE:EXCL VERF:%Lx)",
 		       (unsigned long long) x);
 	}
 	else if (args->opentype == OPEN4_CREATE) {
@@ -122,7 +122,7 @@ static void print_open_args(struct nfs_open_args *args)
 		print_fattr(pfx, &args->attr);
 	}
 
-	syslog(LOG_INFO, "   OPEN (CID:%Lx OWNER:%.*s)",
+	applog(LOG_INFO, "   OPEN (CID:%Lx OWNER:%.*s)",
 	       (unsigned long long) args->clientid,
 	       args->owner.len,
 	       args->owner.val);
@@ -238,7 +238,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		recreating = true;
 
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "   OPEN unchecked: recreating");
+			applog(LOG_DEBUG, "   OPEN unchecked: recreating");
 	}
 
 	/*
@@ -254,7 +254,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		if (exclusive && debugging) {
 			uint64_t x;
 			memcpy(&x, ino->create_verf, 8);
-			syslog(LOG_DEBUG, "   OPEN (EXISTING VERF %Lx)",
+			applog(LOG_DEBUG, "   OPEN (EXISTING VERF %Lx)",
 			       (unsigned long long) x);
 		}
 
@@ -317,9 +317,9 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 				uint64_t x, y;
 				memcpy(&x, args->how.createhow4_u.createverf, 8);
 				memcpy(&y, ino->create_verf, 8);
-				syslog(LOG_DEBUG, "   OPEN (OLD VERF %Lx)",
+				applog(LOG_DEBUG, "   OPEN (OLD VERF %Lx)",
 					(unsigned long long) x);
-				syslog(LOG_DEBUG, "   OPEN (STORED VERF %Lx)",
+				applog(LOG_DEBUG, "   OPEN (STORED VERF %Lx)",
 					(unsigned long long) y);
 			}
 		}
@@ -414,7 +414,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, ino->inum);
 
 	if (debugging)
-		syslog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",
+		applog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",
 		       sid.seqid, of->id);
 
 out:
@@ -465,7 +465,7 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 	seqid = CR32();
 
 	if (debugging)
-		syslog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
+		applog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
 		       seqid, sid.seqid, sid.id);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);
@@ -536,7 +536,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	share_deny = CR32();
 
 	if (debugging)
-		syslog(LOG_INFO, "op OPEN_DOWNGRADE (SEQ:%u IDSEQ:%u ID:%x "
+		applog(LOG_INFO, "op OPEN_DOWNGRADE (SEQ:%u IDSEQ:%u ID:%x "
 		       "SHAC:%x SHDN:%x)",
 		       seqid, sid.seqid, sid.id,
 		       share_access, share_deny);
@@ -588,7 +588,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
 	if (debugging)
-		syslog(LOG_INFO, "   OPEN_DOWNGRADE -> (SEQ:%u ID:%x)",
+		applog(LOG_INFO, "   OPEN_DOWNGRADE -> (SEQ:%u ID:%x)",
 		       sid.seqid, of->id);
 
 out:
@@ -619,7 +619,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 	CURSID(&sid);
 
 	if (debugging)
-		syslog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
+		applog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
 		       seqid, sid.seqid, sid.id);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);

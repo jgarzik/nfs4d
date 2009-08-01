@@ -79,7 +79,7 @@ nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (debugging) {
-		syslog(LOG_INFO, "op GETFH -> %016llX",
+		applog(LOG_INFO, "op GETFH -> %016llX",
 		       (unsigned long long) cxn->current_fh.inum);
 		printed = true;
 	}
@@ -87,7 +87,7 @@ nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
 out:
 	if (!printed) {
 		if (debugging)
-			syslog(LOG_INFO, "op GETFH");
+			applog(LOG_INFO, "op GETFH");
 	}
 
 	WR32(status);
@@ -117,7 +117,7 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 		cxn->current_fh = fh;
 
 	if (debugging)
-		syslog(LOG_INFO, "op PUTFH (%016llX)",
+		applog(LOG_INFO, "op PUTFH (%016llX)",
 		       (unsigned long long) fh.inum);
 
 	WR32(status);
@@ -130,7 +130,7 @@ nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, INO_ROOT);
 
 	if (debugging)
-		syslog(LOG_INFO, "op PUTROOTFH -> %016llX",
+		applog(LOG_INFO, "op PUTROOTFH -> %016llX",
 		       (unsigned long long) cxn->current_fh.inum);
 
 	WR32(NFS4_OK);
@@ -143,7 +143,7 @@ nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, INO_ROOT);
 
 	if (debugging)
-		syslog(LOG_INFO, "op PUTPUBFH -> %016llX",
+		applog(LOG_INFO, "op PUTPUBFH -> %016llX",
 			(unsigned long long) cxn->current_fh.inum);
 
 	WR32(NFS4_OK);
@@ -164,7 +164,7 @@ nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 	cxn->current_fh = cxn->save_fh;
 
 	if (debugging) {
-		syslog(LOG_INFO, "op RESTOREFH -> %016llX",
+		applog(LOG_INFO, "op RESTOREFH -> %016llX",
 			(unsigned long long) cxn->current_fh.inum);
 		printed = true;
 	}
@@ -172,7 +172,7 @@ nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
 out:
 	if (!printed) {
 		if (debugging)
-			syslog(LOG_INFO, "op RESTOREFH");
+			applog(LOG_INFO, "op RESTOREFH");
 	}
 
 	WR32(status);
@@ -193,7 +193,7 @@ nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 	cxn->save_fh = cxn->current_fh;
 
 	if (debugging) {
-		syslog(LOG_INFO, "op SAVEFH (SAVE:%016llX)",
+		applog(LOG_INFO, "op SAVEFH (SAVE:%016llX)",
 			(unsigned long long) cxn->save_fh.inum);
 		printed = true;
 	}
@@ -201,7 +201,7 @@ nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
 out:
 	if (!printed) {
 		if (debugging)
-			syslog(LOG_INFO, "op SAVEFH");
+			applog(LOG_INFO, "op SAVEFH");
 	}
 
 	WR32(status);

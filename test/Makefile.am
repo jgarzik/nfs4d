@@ -1,17 +1,21 @@
 
 EXTRA_DIST =		\
+	prep-db		\
+	clean-db	\
 	start-daemon	\
 	stop-daemon	\
 	pid-exists
 
 TESTS =			\
+	prep-db		\
 	start-daemon	\
 	pid-exists	\
 	null		\
 	basic		\
 	getattr		\
 	getattr-statfs	\
-	stop-daemon
+	stop-daemon	\
+	clean-db
 
 noinst_PROGRAMS =	\
 	null		\

@@ -868,7 +868,7 @@ void print_fattr_bitmap(const char *pfx, uint64_t bitmap)
 
 #include "fattr.h"
 
-	syslog(LOG_INFO, buf);
+	applog(LOG_INFO, buf);
 }
 
 #undef FATTR_DEFINE

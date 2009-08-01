@@ -36,7 +36,7 @@ enum {
 
 static void db4syslog(const DB_ENV *dbenv, const char *errpfx, const char *msg)
 {
-	syslog(LOG_WARNING, "%s: %s", errpfx, msg);
+	applog(LOG_WARNING, "%s: %s", errpfx, msg);
 }
 
 static int dirent_cmp(DB *db, const DBT *dbt1, const DBT *dbt2)

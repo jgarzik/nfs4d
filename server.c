@@ -176,17 +176,17 @@ static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaq
 
 	switch (cred->oa_flavor) {
 	case AUTH_NONE:
-		syslog(LOG_INFO, "AUTH_NONE");
+		applog(LOG_INFO, "AUTH_NONE");
 		cxn->auth.type = auth_none;
 
 		if (debugging > 1)
-			syslog(LOG_INFO, "RPC CRED None (len %d)",
+			applog(LOG_INFO, "RPC CRED None (len %d)",
 				cred->oa_length);
 		break;
 
 	case AUTH_SYS:
 		if (!cred->oa_base || (cred->oa_length < 16)) {
-			syslog(LOG_INFO, "AUTH_SYS null");
+			applog(LOG_INFO, "AUTH_SYS null");
 			status = NFS4ERR_DENIED;
 			goto err_out;
 		}
@@ -197,14 +197,14 @@ static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaq
 		v = ntohl(*p++);			/* machinename len */
 
 		if (v < 1) {
-			syslog(LOG_INFO, "AUTH_SYS machinename null");
+			applog(LOG_INFO, "AUTH_SYS machinename null");
 			status = NFS4ERR_DENIED;
 			goto err_out;
 		}
 
 		ql = XDR_QUADLEN(v);
 		if (cred->oa_length < ((ql + 4) * 4)) {
-			syslog(LOG_INFO, "AUTH_SYS null");
+			applog(LOG_INFO, "AUTH_SYS null");
 			status = NFS4ERR_DENIED;
 			goto err_out;
 		}
@@ -224,14 +224,14 @@ static nfsstat4 cli_init(const char *host, struct opaque_auth *cred, struct opaq
 		cxn->auth.type = auth_unix;
 
 		if (debugging > 1)
-			syslog(LOG_INFO, "RPC CRED Unix (uid %d gid %d len %d)",
+			applog(LOG_INFO, "RPC CRED Unix (uid %d gid %d len %d)",
 				cxn->auth.u.up.uid,
 				cxn->auth.u.up.gid,
 				cred->oa_length);
 		break;
 
 	default:
-		syslog(LOG_INFO, "AUTH unknown");
+		applog(LOG_INFO, "AUTH unknown");
 		status = NFS4ERR_DENIED;
 		goto err_out;
 	}
@@ -253,7 +253,7 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 	char *linktext = NULL;
 
 	if (debugging)
-		syslog(LOG_INFO, "op READLINK");
+		applog(LOG_INFO, "op READLINK");
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
@@ -268,7 +268,7 @@ static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
 	linktext = ino->linktext;
 
 	if (debugging)
-		syslog(LOG_INFO, "   READLINK -> '%s'", linktext);
+		applog(LOG_INFO, "   READLINK -> '%s'", linktext);
 
 out:
 	WR32(status);
@@ -290,7 +290,7 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 	int rc;
 
 	if (debugging)
-		syslog(LOG_INFO, "op SECINFO");
+		applog(LOG_INFO, "op SECINFO");
 
 	CURBUF(&name);				/* component name */
 
@@ -546,7 +546,7 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_DELEGRETURN:
 	case OP_OPENATTR:
 		if (debugging)
-			syslog(LOG_INFO, "compound op %s",
+			applog(LOG_INFO, "compound op %s",
 			       (op > 39) ?  "<n/a>" : arg_str[op]);
 
 		srv.stats.op_notsupp++;
@@ -567,7 +567,7 @@ int nfsproc_null(const char *host, struct opaque_auth *cred, struct opaque_auth 
 		  struct rpc_write **wr)
 {
 	if (debugging)
-		syslog(LOG_ERR, "NULL proc invoked");
+		applog(LOG_ERR, "NULL proc invoked");
 
 	return 0;
 }
@@ -623,7 +623,7 @@ int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_a
 
 out:
 	if (debugging || (i > 500))
-		syslog(LOG_INFO, "compound end (%u args, %u results, status %s)",
+		applog(LOG_INFO, "compound end (%u args, %u results, status %s)",
 		       n_args, results,
 		       name_nfs4status[status]);
 

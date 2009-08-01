@@ -1,0 +1,14 @@
+#!/bin/sh
+
+DATADIR=data
+
+mkdir -p $DATADIR/data $DATADIR/metadata
+
+if [ ! -d $DATADIR ]
+then
+	rm -rf $DATADIR
+	echo "test database dir not found."
+	exit 1
+fi
+
+exit 0

@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
@@ -30,7 +31,11 @@
 #include <time.h>
 #include "server.h"
 
+#define PROGRAM_NAME	"nfs4d"
+
 struct timeval current_time = { 0, 0 };
+
+bool use_syslog = false;
 
 #ifdef HAVE_SRAND48_R
 static struct drand48_data rng;
@@ -48,6 +53,27 @@ const char *name_nfs_ftype4[] = {
 	[NF4NAMEDATTR] = "NF4NAMEDATTR",
 };
 
+void applog(int prio, const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	if (use_syslog) {
+		vsyslog(prio, fmt, ap);
+	} else {
+		char *f;
+		int len;
+		int pid;
+
+		pid = getpid() & 0xFFFFFFFF;
+		len = sizeof(PROGRAM_NAME "[0123456789]: ") + strlen(fmt) + 2;
+		f = alloca(len);
+		sprintf(f, PROGRAM_NAME "[%u]: %s\n", pid, fmt);
+		vfprintf(stderr, f, ap);	/* atomic write to stderr */
+	}
+	va_end(ap);
+}
+
 int write_pid_file(const char *pid_fn)
 {
 	char str[32], *s;
@@ -63,7 +89,7 @@ int write_pid_file(const char *pid_fn)
 	fd = open(pid_fn, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		err = errno;
-		syslog(LOG_ERR, "Cannot open PID file %s: %s",
+		applog(LOG_ERR, "Cannot open PID file %s: %s",
 		       pid_fn, strerror(err));
 		return -err;
 	}
@@ -75,10 +101,10 @@ int write_pid_file(const char *pid_fn)
 	if (fcntl(fd, F_SETLK, &lock) != 0) {
 		err = errno;
 		if (err == EAGAIN) {
-			syslog(LOG_ERR, "PID file %s is already locked",
+			applog(LOG_ERR, "PID file %s is already locked",
 			       pid_fn);
 		} else {
-			syslog(LOG_ERR, "Cannot lock PID file %s: %s",
+			applog(LOG_ERR, "Cannot lock PID file %s: %s",
 			       pid_fn, strerror(err));
 		}
 		close(fd);
@@ -92,7 +118,7 @@ int write_pid_file(const char *pid_fn)
 		ssize_t rc = write(fd, s, bytes);
 		if (rc < 0) {
 			err = errno;
-			syslog(LOG_ERR, "PID number write failed: %s",
+			applog(LOG_ERR, "PID number write failed: %s",
 			       strerror(err));
 			goto err_out;
 		}
@@ -104,7 +130,7 @@ int write_pid_file(const char *pid_fn)
 	/* make sure file data is written to disk */
 	if (fsync(fd) < 0) {
 		err = errno;
-		syslog(LOG_ERR, "PID file fsync failed: %s", strerror(err));
+		applog(LOG_ERR, "PID file fsync failed: %s", strerror(err));
 		goto err_out;
 	}
 
@@ -119,12 +145,12 @@ err_out:
 
 void syslogerr(const char *prefix)
 {
-	syslog(LOG_ERR, "%s: %s", prefix, strerror(errno));
+	applog(LOG_ERR, "%s: %s", prefix, strerror(errno));
 }
 
 void syslogerr2(const char *pfx1, const char *pfx2)
 {
-	syslog(LOG_ERR, "%s(%s): %s", pfx1, pfx2, strerror(errno));
+	applog(LOG_ERR, "%s(%s): %s", pfx1, pfx2, strerror(errno));
 }
 
 int fsetflags(const char *prefix, int fd, int or_flags)
@@ -134,7 +160,7 @@ int fsetflags(const char *prefix, int fd, int or_flags)
 	/* get current flags */
 	old_flags = fcntl(fd, F_GETFL);
 	if (old_flags < 0) {
-		syslog(LOG_ERR, "%s F_GETFL: %s", prefix, strerror(errno));
+		applog(LOG_ERR, "%s F_GETFL: %s", prefix, strerror(errno));
 		return -errno;
 	}
 
@@ -145,7 +171,7 @@ int fsetflags(const char *prefix, int fd, int or_flags)
 	/* set new flags */
 	if (flags != old_flags)
 		if (fcntl(fd, F_SETFL, flags) < 0) {
-			syslog(LOG_ERR, "%s F_SETFL: %s", prefix, strerror(errno));
+			applog(LOG_ERR, "%s F_SETFL: %s", prefix, strerror(errno));
 			rc = -errno;
 		}
 

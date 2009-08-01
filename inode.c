@@ -248,7 +248,7 @@ int inode_unlink(DB_TXN *txn, struct nfs_inode *ino)
 	char datapfx[4];
 
 	if (!ino || !inum || (ino->inum == INO_ROOT)) {
-		syslog(LOG_ERR, "BUG: null in inode_unlink");
+		applog(LOG_ERR, "BUG: null in inode_unlink");
 		return -EINVAL;
 	}
 
@@ -317,7 +317,7 @@ enum nfsstat4 inode_apply_attrs(DB_TXN *txn, struct nfs_inode *ino,
 		char datapfx[4];
 
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "   apply SIZE %llu",
+			applog(LOG_DEBUG, "   apply SIZE %llu",
 				(unsigned long long) attr->size);
 
 		/* only permit size attribute manip on files */
@@ -394,7 +394,7 @@ size_done:
 		bitmap_set |= (1ULL << FATTR4_MODE);
 
 		if (debugging > 1)
-			syslog(LOG_DEBUG, "   apply MODE %o", ino->mode);
+			applog(LOG_DEBUG, "   apply MODE %o", ino->mode);
 	}
 	if ((attr->bitmap & (1ULL << FATTR4_OWNER)) &&
 	    (attr->owner.len)) {
@@ -402,7 +402,7 @@ size_done:
 					    attr->owner.len);
 		if (!ostr) {
 			if (debugging)
-				syslog(LOG_DEBUG,
+				applog(LOG_DEBUG,
 				       "   SETATTR DENIED owner \"%.*s\"",
 				       attr->owner.len,
 				       attr->owner.val);
@@ -420,7 +420,7 @@ size_done:
 					    attr->owner_group.len);
 		if (!ostr) {
 			if (debugging)
-				syslog(LOG_DEBUG,
+				applog(LOG_DEBUG,
 				       "   SETATTR DENIED group \"%.*s\"",
 				       attr->owner_group.len,
 				       attr->owner_group.val);
@@ -485,20 +485,20 @@ static void print_create_args(uint32_t objtype, const struct nfs_buf *objname,
 	switch (objtype) {
 	case NF4BLK:
 	case NF4CHR:
-		syslog(LOG_INFO, "op CREATE (%s, '%.*s', %u %u)",
+		applog(LOG_INFO, "op CREATE (%s, '%.*s', %u %u)",
 		       name_nfs_ftype4[objtype],
 		       objname->len, objname->val,
 		       specdata[0],
 		       specdata[1]);
 		break;
 	case NF4LNK:
-		syslog(LOG_INFO, "op CREATE (%s, '%.*s', '%.*s')",
+		applog(LOG_INFO, "op CREATE (%s, '%.*s', '%.*s')",
 		       name_nfs_ftype4[objtype],
 		       objname->len, objname->val,
 		       linkdata->len, linkdata->val);
 		break;
 	default:
-		syslog(LOG_INFO, "op CREATE (%s, '%.*s')",
+		applog(LOG_INFO, "op CREATE (%s, '%.*s')",
 		       name_nfs_ftype4[objtype],
 		       objname->len, objname->val);
 		break;
@@ -577,7 +577,7 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	fh_set(&cxn->current_fh, new_ino->inum);
 
 	if (debugging)
-		syslog(LOG_INFO, "   CREATE -> %016llX",
+		applog(LOG_INFO, "   CREATE -> %016llX",
 			(unsigned long long) cxn->current_fh.inum);
 
 out:
@@ -654,7 +654,7 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 
 out:
 	if (debugging && !printed)
-		syslog(LOG_INFO, "op GETATTR");
+		applog(LOG_INFO, "op GETATTR");
 
 	*status_p = htonl(status);
 	inode_free(ino);
@@ -688,7 +688,7 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	if (debugging) {
-		syslog(LOG_INFO, "op SETATTR (ID:%x)", sid.id);
+		applog(LOG_INFO, "op SETATTR (ID:%x)", sid.id);
 		print_fattr("   SETATTR", &attr);
 	}
 
@@ -745,7 +745,7 @@ unsigned int inode_access(const struct nfs_cxn *cxn,
 	group = cxn_getgroup(cxn);
 	if (!user || !group) {
 		if (debugging)
-			syslog(LOG_INFO, "invalid cxn%s%s",
+			applog(LOG_INFO, "invalid cxn%s%s",
 			       user ? "" : " user",
 			       group ? "" : " group");
 		goto out;
@@ -800,7 +800,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 	arg_access = CR32();
 
 	if (debugging)
-		syslog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
+		applog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
@@ -820,7 +820,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 	resok.supported &= resok.access;
 
 	if (debugging)
-		syslog(LOG_INFO, "   ACCESS -> (ACC:%x SUP:%x)",
+		applog(LOG_INFO, "   ACCESS -> (ACC:%x SUP:%x)",
 		       resok.access,
 		       resok.supported);
 
@@ -971,7 +971,7 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	if (debugging) {
 		printed = true;
-		syslog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
+		applog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
 		print_fattr("   [N]VERIFY", &fattr);
 	}
 
@@ -1006,7 +1006,7 @@ out_free:
 	fattr_free(&fattr);
 out:
 	if (!printed && debugging)
-		syslog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
+		applog(LOG_DEBUG, "op %sVERIFY", nverify ? "N" : "");
 
 	WR32(status);
 	inode_free(ino);
