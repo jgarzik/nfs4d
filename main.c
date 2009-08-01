@@ -1170,7 +1170,8 @@ static void tcp_srv_event(int fd, short events, void *userdata)
 	}
 
 	/* pretty-print incoming cxn info */
-	getnameinfo((struct sockaddr *) &cxn->addr, sizeof(struct sockaddr_in6),
+	memset(host, 0, sizeof(host));
+	getnameinfo((struct sockaddr *) &cxn->addr, addrlen,
 		    host, sizeof(host), NULL, 0, NI_NUMERICHOST);
 	host[sizeof(host) - 1] = 0;
 	syslog(LOG_INFO, "client %s connected", host);
@@ -1212,7 +1213,7 @@ static void fsdb_checkpoint(int fd, short events, void *userdata)
 
 static int net_open(void)
 {
-	int ipv6_found;
+	int ipv6_found = 0;
 	int rc;
 	struct addrinfo hints, *res, *res0;
 	char port_str[32];
@@ -1232,6 +1233,7 @@ static int net_open(void)
 		goto err_addr;
 	}
 
+#ifdef __linux__
 	/*
 	 * We rely on getaddrinfo to discover if the box supports IPv6.
 	 * Much easier to sanitize its output than to try to figure what
@@ -1242,11 +1244,11 @@ static int net_open(void)
 	 * may bind to 0.0.0.0 by accident (depending on order getaddrinfo
 	 * returns them), then bind(::0) fails and we only listen to IPv4.
 	 */
-	ipv6_found = 0;
 	for (res = res0; res; res = res->ai_next) {
 		if (res->ai_family == PF_INET6)
 			ipv6_found = 1;
 	}
+#endif /* __linux__ */
 
 	for (res = res0; res; res = res->ai_next) {
 		struct server_socket *sock;
