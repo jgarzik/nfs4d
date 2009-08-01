@@ -11,4 +11,6 @@ then
 	exit 1
 fi
 
+../nfs4dba -D $PWD/data/data -M $PWD/data/metadata -I
+
 exit 0
