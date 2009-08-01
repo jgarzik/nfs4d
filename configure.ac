@@ -47,8 +47,10 @@ AC_CHECK_LIB(db-4.7, db_create, DB4_LIBS=-ldb-4.7,
 	AC_CHECK_LIB(db-4.6, db_create, DB4_LIBS=-ldb-4.6,
 	AC_CHECK_LIB(db-4.5, db_create, DB4_LIBS=-ldb-4.5,
 	AC_CHECK_LIB(db-4.4, db_create, DB4_LIBS=-ldb-4.4,
-	AC_CHECK_LIB(db-4.3, db_create, DB4_LIBS=-ldb-4.3, exit 1)))))
-AC_CHECK_LIB(event, event_base_new, EVENT_LIBS=-levent, exit 1)
+	AC_CHECK_LIB(db-4.3, db_create, DB4_LIBS=-ldb-4.3,
+	[AC_MSG_ERROR([Missing required libdb 4.x])])))))
+AC_CHECK_LIB(event, event_base_new, EVENT_LIBS=-levent,
+  [AC_MSG_ERROR([Missing required libevent])])
 AC_CHECK_LIB(argp, argp_parse, ARGP_LIBS=-largp)
 
 dnl -------------------------------------
@@ -64,7 +66,7 @@ dnl --------------------------
 dnl autoconf output generation
 dnl --------------------------
 
-AM_PATH_GLIB_2_0(2.0.0)
+AM_PATH_GLIB_2_0(2.0.0, , exit 1)
 
 dnl AC_SUBST(GSSRPC_LIBS)
 AC_SUBST(DB4_LIBS)
