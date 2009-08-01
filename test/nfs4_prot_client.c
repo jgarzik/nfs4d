@@ -8,6 +8,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include "nfs4_prot.h"
 
 
@@ -175,14 +177,19 @@ void
 nfs4_program_4(char *host)
 {
 	CLIENT *clnt;
+	struct sockaddr_in sa;
+	int sock = RPC_ANYSOCK;
 
-#ifndef	DEBUG
-	clnt = clnt_create (host, NFS4_PROGRAM, NFS_V4, "tcp");
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(2049);
+	inet_pton(AF_INET, "127.0.0.1", &(sa.sin_addr));
+
+	clnt = clnttcp_create (&sa, NFS4_PROGRAM, NFS_V4, &sock, 0, 0);
 	if (clnt == NULL) {
 		clnt_pcreateerror (host);
 		exit (1);
 	}
-#endif	/* DEBUG */
 
 	clnt->cl_auth = authunix_create_default();
 
@@ -191,9 +198,7 @@ nfs4_program_4(char *host)
 #if 0
 out:
 #endif
-#ifndef	DEBUG
 	clnt_destroy (clnt);
-#endif	 /* DEBUG */
 }
 
 
@@ -208,13 +213,11 @@ nfs4_callback_1(char *host)
 	CB_COMPOUND4args  cb_compound_1_arg;
 #endif
 
-#ifndef	DEBUG
 	clnt = clnt_create (host, NFS4_CALLBACK, NFS_CB, "udp");
 	if (clnt == NULL) {
 		clnt_pcreateerror (host);
 		exit (1);
 	}
-#endif	/* DEBUG */
 
 	clnt->cl_auth = authunix_create_default();
 
@@ -222,9 +225,8 @@ nfs4_callback_1(char *host)
 	if (result_1 == (void *) NULL) {
 		clnt_perror (clnt, "call failed");
 	}
-#ifndef	DEBUG
+
 	clnt_destroy (clnt);
-#endif	 /* DEBUG */
 }
 
 
