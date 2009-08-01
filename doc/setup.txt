@@ -8,6 +8,8 @@ nfs4d uses the GNU autotools build system.  The basic are
 	make
 	make install
 
+If building from the git repo, you first must run "./autogen.sh"
+
 See INSTALL for more information.
 
 
