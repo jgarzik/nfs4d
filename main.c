@@ -36,6 +36,8 @@
 #include <netdb.h>
 #include <syslog.h>
 #include <event.h>
+#include <rpc/rpc.h>
+#include <rpc/pmap_clnt.h>
 #include "server.h"
 
 struct rpc_cxn;
@@ -73,6 +75,7 @@ static char *opt_metadata = "/tmp/metadata/";
 static char *pid_fn = "nfs4d.pid";
 static char *stats_fn = "nfs4d.stats";
 static bool pid_opened;
+static bool pmap_registered;
 static unsigned int opt_nfs_port = 2049;
 static GHashTable *request_cache;
 static struct event garbage_timer;
@@ -1371,13 +1374,22 @@ static int init_server(void)
 	evtimer_set(&srv.chkpt_timer, fsdb_checkpoint, NULL);
 	add_chkpt_timer();
 
+	if (pmap_set(NFS4_PROGRAM, NFS_V4, IPPROTO_TCP, opt_nfs_port))
+		pmap_registered = true;
+	else
+		applog(LOG_WARNING, "Failed to register with portmapper; "
+			"continuing anyway, but you may see \"RPC: program "
+			"not registered\" with some applications");
+
 	rc = net_open();
 	if (rc)
-		goto err_out_fsdb;
+		goto err_out_pmap;
 
 	return 0;
 
-err_out_fsdb:
+err_out_pmap:
+	if (pmap_registered && !pmap_unset(NFS4_PROGRAM, NFS_V4))
+		applog(LOG_WARNING, "Failed to unregister with rpcbind/portmapper during error handling");
 	fsdb_close(&srv.fsdb);
 err_out:
 	unlink(pid_fn);
@@ -1703,6 +1715,9 @@ int main (int argc, char *argv[])
 	}
 
 	applog(LOG_INFO, "shutting down");
+
+	if (pmap_registered && !pmap_unset(NFS4_PROGRAM, NFS_V4))
+		applog(LOG_WARNING, "Failed to unregister with rpcbind/portmapper during shutdown");
 
 	fsdb_close(&srv.fsdb);
 
