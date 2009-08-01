@@ -30,6 +30,8 @@
 #include "fsdb.h"
 #include "nfscommon.h"
 
+#define PFX "nfs4dba: "
+
 enum pgmmodes {
 	mode_none,
 	mode_init_fs,
@@ -373,7 +375,7 @@ static int mk_datadir(int v)
 	if (!ddir) {
 		ddir = malloc(strlen(opt_data_path) + 32);
 		if (!ddir) {
-			fprintf(stderr, "out of memory\n");
+			fprintf(stderr, PFX "out of memory\n");
 			return 1;
 		}
 	}
@@ -426,11 +428,11 @@ static int init_fs(void)
 
 	rc = fsdb_inode_put(&fsdb, NULL, ino, ino_size, 0);
 	if (rc) {
-		fprintf(stderr, "error storing root inode\n");
+		fprintf(stderr, PFX "error storing root inode\n");
 		return 1;
 	}
 
-	fprintf(stderr, "root inode stored\n");
+	fprintf(stderr, PFX "root inode stored\n");
 
 	for (i = 0; i <= 0xff; i++) {
 		rc = mk_datadir(i);
@@ -438,7 +440,7 @@ static int init_fs(void)
 			return rc;
 	}
 
-	fprintf(stderr, "data directories created\n");
+	fprintf(stderr, PFX "data directories created\n");
 
 	return 0;
 }
@@ -450,7 +452,7 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		if (atoi(arg) >= 0 && atoi(arg) <= 2)
 			debugging = atoi(arg);
 		else {
-			fprintf(stderr, "invalid debug level %s (valid: 0-2)\n",
+			fprintf(stderr, PFX "invalid debug level %s (valid: 0-2)\n",
 				arg);
 			argp_usage(state);
 		}
@@ -501,7 +503,7 @@ int main (int argc, char *argv[])
 
 	aprc = argp_parse(&argp, argc, argv, 0, NULL, NULL);
 	if (aprc) {
-		fprintf(stderr, "argp_parse failed: %s\n", strerror(aprc));
+		fprintf(stderr, PFX "argp_parse failed: %s\n", strerror(aprc));
 		return 1;
 	}
 
