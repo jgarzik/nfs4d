@@ -1,0 +1,50 @@
+
+This document describes how to generate a new nfs4d release.  It is not
+likely useful to you, unless you are a nfs4d maintainer.
+
+1) verify that project builds and passes tests
+
+	$ make distcheck
+
+2) remove "git" suffix from version, in configure.ac
+
+	$ vi configure.ac
+
+3) review 'git log' since last release.  Add short list of summarized
+   changes to NEWS.
+
+	$ vi NEWS
+
+4) commit changes to NEWS and configure.ac, regenerate local configure,
+   with a commit message along the lines of "Release version 0.3"
+
+	$ git commit -a
+	$ ./autogen.sh
+
+5) tag release, with just-committed (in configure.ac) version number:
+
+	$ git tag v0.3
+
+6) create tarball for distribution
+
+	$ make distcheck
+
+7) upload tarball to master.kernel.org, directory
+   /pub/software/network/distsrv
+
+	$ scp nfs4d-0.3.tar.gz \
+	  master.kernel.org:/pub/software/network/distsrv
+
+8) Adjust configure.ac to next upcoming version;
+   add "git" suffix, e.g. "0.4git" follows release "0.3".  Commit
+   change, with a release message along the lines of
+   "Bump version to 0.4git"
+
+	$ vi configure.ac
+	$ git commit -a
+
+9) Push git repo changes to master
+
+	$ git push --force --all \
+	  master.kernel.org:/pub/scm/daemon/nfs/nfs4d.git
+
