@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "nfs4_prot.h"
+#include "nfstest.h"
 
 
 static const char *arg_str[] = {
@@ -182,7 +183,7 @@ nfs4_program_4(char *host)
 
 	memset(&sa, 0, sizeof(sa));
 	sa.sin_family = AF_INET;
-	sa.sin_port = htons(2049);
+	sa.sin_port = htons(NFS_TEST_PORT);
 	inet_pton(AF_INET, "127.0.0.1", &(sa.sin_addr));
 
 	clnt = clnttcp_create (&sa, NFS4_PROGRAM, NFS_V4, &sock, 0, 0);

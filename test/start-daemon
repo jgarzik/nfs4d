@@ -6,7 +6,8 @@ then
 	exit 1
 fi
 
-../nfs4d -D $PWD/data/data -M $PWD/data/metadata -P $PWD/nfs4d.pid -E
+../nfs4d -D $PWD/data/data -M $PWD/data/metadata -P $PWD/nfs4d.pid	\
+	-E -b localhost.localdomain:22049
 
 sleep 2
 
