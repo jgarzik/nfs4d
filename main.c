@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/statfs.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -632,6 +633,21 @@ uint64_t srv_space_used(void)
 	ttl = current_time.tv_sec + SRV_SPACE_USED_TTL;
 
 	return total;
+}
+
+uint64_t srv_space_free(void)
+{
+	uint64_t data_free;
+	struct statfs st;
+
+	if (statfs(opt_data_path, &st) < 0) {
+		syslogerr("statfs(data path)");
+		return 0;
+	}
+
+	data_free = (uint64_t)st.f_bfree * (uint64_t)st.f_bsize;
+
+	return data_free;
 }
 
 static void gc_timer_add(void)

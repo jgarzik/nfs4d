@@ -804,7 +804,7 @@ static void fattr_fill_fs(struct nfs_fattr_set *attr)
 #endif
 
 	attr->space_avail =
-	attr->space_free = 4ULL * 1024 * 1024 * 1024;
+	attr->space_free = srv_space_free();
 	attr->space_used = srv_space_used();
 	attr->space_total = attr->space_used + attr->space_free;
 }
