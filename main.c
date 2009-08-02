@@ -82,7 +82,7 @@ static GHashTable *request_cache;
 static struct event garbage_timer;
 
 static const char doc[] =
-"nfs4-ram - NFS4 server daemon";
+"nfs4d - NFSv4 filesystem server daemon";
 
 typedef bool (*cxn_evt_func)(struct rpc_cxn *, short);
 typedef bool (*cxn_write_func)(struct rpc_cxn *, struct rpc_cxn_write *, bool);
