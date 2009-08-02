@@ -17,6 +17,14 @@ Official source code repository
 	git://git.kernel.org/pub/scm/daemon/nfs/nfs4d.git
 
 
+Download directory
+------------------
+	http://www.kernel.org/pub/software/network/distsrv/nfs4d/
+		or
+	ftp://ftp.kernel.org/pub/software/network/distsrv/nfs4d/
+
+
+
 Dependencies
 ------------
 	GLib 2.0.0 or later
