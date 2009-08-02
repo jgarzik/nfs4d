@@ -77,6 +77,7 @@ static char *stats_fn = "nfs4d.stats";
 static bool pid_opened;
 static bool pmap_registered;
 static unsigned int opt_nfs_port = 2049;
+static char *opt_nfs_host;		/* NULL == INADDR_ANY */
 static GHashTable *request_cache;
 static struct event garbage_timer;
 
@@ -155,32 +156,33 @@ static void stats_dump(void);
 
 static struct argp_option options[] = {
 	{ "metadata", 'M', "DIRECTORY", 0,
-	  "Metadata directory" },
+	  "Directory for storing db4 database containing file metadata." },
 	{ "data", 'D', "DIRECTORY", 0,
-	  "Data directory" },
+	  "Directory for storing raw file data." },
 
-	{ "port", 'p', "PORT", 0,
-	  "Bind to TCP port PORT (def: 2049)" },
+	{ "bind", 'b', "HOST:PORT", 0,
+	  "Locally bind(2) to TCP HOST:PORT.  The wildcard character * "
+	  "represents all local ports, i.e. INADDR_ANY.  (def: *:2049)" },
 	{ "pid", 'P', "FILE", 0,
-	  "Write daemon process id to FILE (def: nfs4d.pid, in current dir)" },
+	  "Write daemon process id to FILE. (def: nfs4d.pid, in current dir)" },
 
 	{ "debug", 'd', "LEVEL", 0,
-	  "Enable debug output (def. 0 = no debug, 2 = maximum debug output)" },
+	  "Enable debug output. (def. 0 = no debug, 2 = maximum debug output)" },
 
 	{ "stderr", 'E', NULL, 0,
-	  "Switch the log to standard error" },
+	  "Send log output to standard error." },
 
 	{ "foreground", 'f', NULL, 0,
-	  "Run daemon in foreground (def: chdir to /, detach, run in background)" },
+	  "Run daemon in foreground. (def: detach, run in background)" },
 
 	{ "localdomain", 'O', "DOMAIN", 0,
-	  "Local domain (def: gethostname; used with user/group ids, required by NFS)" },
+	  "Local authentication domain. (def: gethostname; used with user/group ids, required by NFSv4)" },
 
 	{ "stats", 'S', "FILE", 0,
-	  "Statistics dumped to FILE, for each SIGUSR1 (def: nfs4d.stats, in current directory)" },
+	  "Statistics dumped to FILE, for each SIGUSR1. (def: nfs4d.stats, in current directory)" },
 
 	{ "no-sync", 'N', NULL, 0,
-	  "Disable synchronous log flushing.  Increases performance, decreases durability" },
+	  "Disable synchronous log flushing.  Increases performance, decreases durability." },
 
 	{ }
 };
@@ -1231,7 +1233,7 @@ static int net_open(void)
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_PASSIVE;
 
-	rc = getaddrinfo(NULL, port_str, &hints, &res0);
+	rc = getaddrinfo(opt_nfs_host, port_str, &hints, &res0);
 	if (rc) {
 		applog(LOG_ERR, "getaddrinfo(*:%s) failed: %s",
 		       port_str, gai_strerror(rc));
@@ -1400,6 +1402,31 @@ err_out:
 static error_t parse_opt (int key, char *arg, struct argp_state *state)
 {
 	switch (key) {
+	case 'b': {
+		int port;
+		char *portstr;
+		size_t hostlen;
+
+		portstr = strrchr(arg, ':');
+		if (!portstr || portstr[1] == 0)
+			argp_usage(state);
+
+		hostlen = portstr - arg;
+		portstr++;
+		port = atoi(portstr);
+		if (port < 1 || port > 65535)
+			argp_usage(state);
+			
+		free(opt_nfs_host);
+		opt_nfs_host = strndup(arg, hostlen);
+		opt_nfs_port = port;
+
+		if (!strcmp(opt_nfs_host, "*")) {
+			free(opt_nfs_host);
+			opt_nfs_host = NULL;
+		}
+		break;
+		}
 	case 'd':
 		if (atoi(arg) >= 0 && atoi(arg) <= 2)
 			debugging = atoi(arg);
@@ -1428,14 +1455,6 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 		break;
 	case 'N':
 		opt_txn_nosync = true;
-		break;
-	case 'p':
-		if (atoi(arg) > 0 && atoi(arg) < 65536)
-			opt_nfs_port = atoi(arg);
-		else {
-			fprintf(stderr, "invalid NFS port %s\n", arg);
-			argp_usage(state);
-		}
 		break;
 
 	case 'P':
