@@ -1675,9 +1675,12 @@ static void stats_dump(void)
 		       stats_fn,
 		       (unsigned long) strlen(stats_str),
 		       strerror(errno));
+		free(stats_str);
 		close(fd);
 		return;
 	}
+
+	free(stats_str);
 
 	if (close(fd) < 0)
 		applog(LOG_ERR, "close(%s): %s", stats_fn, strerror(errno));
