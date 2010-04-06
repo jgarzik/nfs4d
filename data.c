@@ -222,14 +222,14 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	p = data.val;
 	pending = data.len;
 	while (pending > 0) {
-		ssize_t rc = write(fd, p, pending);
-		if (rc < 0) {
+		ssize_t wrc = write(fd, p, pending);
+		if (wrc < 0) {
 			syslogerr2("write", fdpath);
 			goto err_io_fd;
 		}
 
-		pending -= rc;
-		p += rc;
+		pending -= wrc;
+		p += wrc;
 	}
 
 	/* sync to storage, if requested */

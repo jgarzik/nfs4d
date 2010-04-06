@@ -1156,8 +1156,8 @@ static void tcp_srv_event(int fd, short events, void *userdata)
 	cxn = calloc(1, sizeof(*cxn));
 	if (!cxn) {
 		struct sockaddr_in6 a;
-		int fd = accept(sock->fd, (struct sockaddr *) &a, &addrlen);
-		close(fd);
+		int sfd = accept(sock->fd, (struct sockaddr *) &a, &addrlen);
+		close(sfd);
 		return;
 	}
 
@@ -1504,13 +1504,13 @@ static error_t parse_opt (int key, char *arg, struct argp_state *state)
 	return 0;
 }
 
-static void term_signal(int signal)
+static void term_signal(int signo)
 {
 	server_running = false;
 	event_loopbreak();
 }
 
-static void stats_signal(int signal)
+static void stats_signal(int signo)
 {
 	dump_stats = true;
 	event_loopbreak();

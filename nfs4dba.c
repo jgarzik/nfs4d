@@ -131,7 +131,7 @@ static void dump_inode(FILE *f, const struct nfs_inode *ino)
 static void inode_iter(const struct fsdb_inode *ino)
 {
 	const void *p;
-	const char *user = "", *group = "", *mime = "", *link = "";
+	const char *user = "", *group = "", *mime = "", *link_txt = "";
 	int user_len, group_len, mime_len, link_len;
 
 	user_len = GUINT16_FROM_LE(ino->user_len);
@@ -155,7 +155,7 @@ static void inode_iter(const struct fsdb_inode *ino)
 		p += mime_len;
 	}
 	if (link_len) {
-		link = p;
+		link_txt = p;
 		p += link_len;
 	}
 
@@ -200,7 +200,7 @@ static void inode_iter(const struct fsdb_inode *ino)
 	mime_len,
 	mime,
 	link_len,
-	link);
+	link_txt);
 }
 
 static int show_inodes(void)
