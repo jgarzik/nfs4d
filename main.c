@@ -1021,7 +1021,7 @@ static bool cxn_evt_dispose(struct rpc_cxn *cxn, short events)
 
 static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, short events)
 {
-	uint32_t next_frag;
+	uint32_t next_frag, *tmp32;
 	ssize_t rrc;
 	void *mem;
 
@@ -1042,7 +1042,8 @@ static bool cxn_evt_get_hdr(struct rpc_cxn *cxn, short events)
 	if (cxn->hdr_used < sizeof(cxn->hdr))
 		return false;		/* read more data */
 
-	next_frag = ntohl(*(uint32_t *)cxn->hdr);
+	tmp32 = (uint32_t *) &cxn->hdr[0];
+	next_frag = ntohl(*tmp32);
 	if (next_frag & HDR_FRAG_END) {
 		cxn->last_frag = true;
 		next_frag &= ~HDR_FRAG_END;
