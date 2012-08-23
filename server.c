@@ -380,7 +380,34 @@ static const char *arg_str[] = {
 	"VERIFY",
 	"WRITE",
 	"RELEASE_LOCKOWNER",
+	"BACKCHANNEL_CTL",
+	"BIND_CONN_TO_SESSION",
+	"EXCHANGE_ID",
+	"CREATE_SESSION",
+	"DESTROY_SESSION",
+	"FREE_STATEID",
+	"GET_DIR_DELEGATION",
+	"GETDEVICEINFO",
+	"GETDEVICELIST",
+	"LAYOUTCOMMIT",
+	"LAYOUTGET",
+	"LAYOUTRETURN",
+	"SECINFO_NO_NAME",
+	"SEQUENCE",
+	"SET_SSV",
+	"TEST_STATEID",
+	"WANT_DELEGATION",
+	"DESTROY_CLIENTID",
+	"RECLAIM_COMPLETE",
 };
+
+static const char *argstr(uint32_t op)
+{
+	if (op >= ARRAY_SIZE(arg_str))
+		return "<unknown>";
+	
+	return arg_str[op];
+}
 
 static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		       struct list_head *writes, struct rpc_write **wr)
@@ -434,6 +461,8 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 		break;
 
 	default:
+		if (debugging)
+			applog(LOG_INFO, "unknown op %s", argstr(op));
 		WR32(NFS4ERR_OP_ILLEGAL);	/* write resop */
 		break;
 	}
@@ -546,8 +575,7 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	case OP_DELEGRETURN:
 	case OP_OPENATTR:
 		if (debugging)
-			applog(LOG_INFO, "compound op %s",
-			       (op > 39) ?  "<n/a>" : arg_str[op]);
+			applog(LOG_INFO, "compound op %s", argstr(op));
 
 		srv.stats.op_notsupp++;
 		WR32(NFS4ERR_NOTSUPP);		/* op status */
@@ -595,7 +623,7 @@ int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_a
 		status = NFS4ERR_INVAL;
 		goto out;
 	}
-	if (minor != 0) {
+	if (minor != 1) {
 		status = NFS4ERR_MINOR_VERS_MISMATCH;
 		goto out;
 	}

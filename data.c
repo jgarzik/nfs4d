@@ -597,6 +597,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_openfile *of = NULL, *lock_of = NULL;
 	struct nfs_access ac = { NULL, };
 
+	(void) new_lock_of;	/* silence set-but-not-used warning */
+
 	cxn->drc_mask |= drc_lock;
 
 	if (cur->len < 28) {

@@ -602,26 +602,26 @@ static int copy_cb_client4(cb_client4 *dest, const cb_client4 *src)
 
 	dest->cb_program = src->cb_program;
 
-	dest->cb_location.r_netid = strdup(src->cb_location.r_netid);
-	if (!dest->cb_location.r_netid)
+	dest->cb_location.na_r_netid = strdup(src->cb_location.na_r_netid);
+	if (!dest->cb_location.na_r_netid)
 		goto err_out;
 
-	dest->cb_location.r_addr = strdup(src->cb_location.r_addr);
-	if (!dest->cb_location.r_addr)
+	dest->cb_location.na_r_addr = strdup(src->cb_location.na_r_addr);
+	if (!dest->cb_location.na_r_addr)
 		goto err_out_1;
 
 	return 0;
 
 err_out_1:
-	free(dest->cb_location.r_netid);
+	free(dest->cb_location.na_r_netid);
 err_out:
 	return rc;
 }
 
 static void free_cb_client4(cb_client4 *cbc)
 {
-	free(cbc->cb_location.r_netid);
-	free(cbc->cb_location.r_addr);
+	free(cbc->cb_location.na_r_netid);
+	free(cbc->cb_location.na_r_addr);
 }
 
 static void clientid_free(struct nfs_clientid *clid)
@@ -730,6 +730,7 @@ static int clientid_new(struct nfs_cxn *cxn,
 	clid->callback_ident = cb_ident;
 
 	short_clid = (unsigned long) clid->id_short;
+	(void) short_clid;	/* silence set-but-not-used warning */
 
 	*clid_out = clid;
 	return 0;
@@ -885,10 +886,10 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 	callback.cb_program = CR32();	/* cb_program */
 	CURBUF(&tmpstr);		/* r_netid */
 	if (tmpstr.len)
-		callback.cb_location.r_netid = g_strndup(tmpstr.val, tmpstr.len);
+		callback.cb_location.na_r_netid = g_strndup(tmpstr.val, tmpstr.len);
 	CURBUF(&tmpstr);		/* r_addr */
 	if (tmpstr.len)
-		callback.cb_location.r_addr = g_strndup(tmpstr.val, tmpstr.len);
+		callback.cb_location.na_r_addr = g_strndup(tmpstr.val, tmpstr.len);
 	cb_ident = CR32();		/* callback_ident */
 
 	/* look up client id */
@@ -938,8 +939,8 @@ out:
 		applog(LOG_INFO, "   SETCLIENTID ("
 		       "PROG:%u NET:%s ADDR:%s CBID:%u)",
 		       callback.cb_program,
-		       callback.cb_location.r_netid,
-		       callback.cb_location.r_addr,
+		       callback.cb_location.na_r_netid,
+		       callback.cb_location.na_r_addr,
 		       cb_ident);
 	}
 
@@ -961,12 +962,12 @@ out:
 		}
 	}
 	else if (status == NFS4ERR_CLID_INUSE) {
-		WRSTR(confirmed->callback.cb_location.r_netid);
-		WRSTR(confirmed->callback.cb_location.r_addr);
+		WRSTR(confirmed->callback.cb_location.na_r_netid);
+		WRSTR(confirmed->callback.cb_location.na_r_addr);
 	}
 
-	free(callback.cb_location.r_netid);
-	free(callback.cb_location.r_addr);
+	free(callback.cb_location.na_r_netid);
+	free(callback.cb_location.na_r_addr);
 	return status;
 }
 

@@ -44,6 +44,8 @@ struct server_socket;
 #define HOST_NAME_MAX	64
 #endif
 
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+
 #define XDR_QUADLEN(l)		(((l) + 3) >> 2)
 
 #define CUR_SKIP(count)		cur_skip(cur, (count))
