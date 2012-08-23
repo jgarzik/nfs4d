@@ -52,6 +52,8 @@ AC_CHECK_LIB(db-4.7, db_create, DB4_LIBS=-ldb-4.7)
 AC_CHECK_LIB(db-4.8, db_create, DB4_LIBS=-ldb-4.8)
 AC_CHECK_LIB(db-4.9, db_create, DB4_LIBS=-ldb-4.9)
 AC_CHECK_LIB(db-5.0, db_create, DB4_LIBS=-ldb-5.0)
+AC_CHECK_LIB(db-5.1, db_create, DB4_LIBS=-ldb-5.1)
+AC_CHECK_LIB(db-5.2, db_create, DB4_LIBS=-ldb-5.2)
 
 if test "x$DB4_LIBS" = x; then
 	AC_MSG_ERROR([Missing required libdb 4.x])
