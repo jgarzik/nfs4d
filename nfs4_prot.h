@@ -3084,20 +3084,20 @@ typedef struct CB_COMPOUND4res CB_COMPOUND4res;
 
 #if defined(__STDC__) || defined(__cplusplus)
 #define NFSPROC4_NULL 0
-extern  void * nfsproc4_null_4(void *, CLIENT *);
-extern  void * nfsproc4_null_4_svc(void *, struct svc_req *);
+extern  enum clnt_stat nfsproc4_null_4(void *, void *, CLIENT *);
+extern  bool_t nfsproc4_null_4_svc(void *, void *, struct svc_req *);
 #define NFSPROC4_COMPOUND 1
-extern  COMPOUND4res * nfsproc4_compound_4(COMPOUND4args *, CLIENT *);
-extern  COMPOUND4res * nfsproc4_compound_4_svc(COMPOUND4args *, struct svc_req *);
+extern  enum clnt_stat nfsproc4_compound_4(COMPOUND4args *, COMPOUND4res *, CLIENT *);
+extern  bool_t nfsproc4_compound_4_svc(COMPOUND4args *, COMPOUND4res *, struct svc_req *);
 extern int nfs4_program_4_freeresult (SVCXPRT *, xdrproc_t, caddr_t);
 
 #else /* K&R C */
 #define NFSPROC4_NULL 0
-extern  void * nfsproc4_null_4();
-extern  void * nfsproc4_null_4_svc();
+extern  enum clnt_stat nfsproc4_null_4();
+extern  bool_t nfsproc4_null_4_svc();
 #define NFSPROC4_COMPOUND 1
-extern  COMPOUND4res * nfsproc4_compound_4();
-extern  COMPOUND4res * nfsproc4_compound_4_svc();
+extern  enum clnt_stat nfsproc4_compound_4();
+extern  bool_t nfsproc4_compound_4_svc();
 extern int nfs4_program_4_freeresult ();
 #endif /* K&R C */
 
@@ -3106,20 +3106,20 @@ extern int nfs4_program_4_freeresult ();
 
 #if defined(__STDC__) || defined(__cplusplus)
 #define CB_NULL 0
-extern  void * cb_null_1(void *, CLIENT *);
-extern  void * cb_null_1_svc(void *, struct svc_req *);
+extern  enum clnt_stat cb_null_1(void *, void *, CLIENT *);
+extern  bool_t cb_null_1_svc(void *, void *, struct svc_req *);
 #define CB_COMPOUND 1
-extern  CB_COMPOUND4res * cb_compound_1(CB_COMPOUND4args *, CLIENT *);
-extern  CB_COMPOUND4res * cb_compound_1_svc(CB_COMPOUND4args *, struct svc_req *);
+extern  enum clnt_stat cb_compound_1(CB_COMPOUND4args *, CB_COMPOUND4res *, CLIENT *);
+extern  bool_t cb_compound_1_svc(CB_COMPOUND4args *, CB_COMPOUND4res *, struct svc_req *);
 extern int nfs4_callback_1_freeresult (SVCXPRT *, xdrproc_t, caddr_t);
 
 #else /* K&R C */
 #define CB_NULL 0
-extern  void * cb_null_1();
-extern  void * cb_null_1_svc();
+extern  enum clnt_stat cb_null_1();
+extern  bool_t cb_null_1_svc();
 #define CB_COMPOUND 1
-extern  CB_COMPOUND4res * cb_compound_1();
-extern  CB_COMPOUND4res * cb_compound_1_svc();
+extern  enum clnt_stat cb_compound_1();
+extern  bool_t cb_compound_1_svc();
 extern int nfs4_callback_1_freeresult ();
 #endif /* K&R C */
 
