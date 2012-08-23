@@ -68,6 +68,8 @@ void inode_free(struct nfs_inode *ino)
 {
 	nfsino_t inum;
 
+	(void) inum;		/* silence set-but-not-used warning */
+
 	if (!ino)
 		return;
 
