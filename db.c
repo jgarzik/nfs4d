@@ -814,7 +814,7 @@ static bool fsdb_sess_decode(const void *data, size_t size,
 	return xdr_rc;
 }
 
-int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_session_id id,
+int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id id,
 		 int flags, fsdb_session *sess_out)
 {
 	DB *sessions = fsdb->sessions;
@@ -823,7 +823,7 @@ int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_session_id id,
 	bool xdr_rc;
 
 	memset(&pkey, 0, sizeof(pkey));
-	pkey.data = &id[0];
+	pkey.data = (char *) &id[0];
 	pkey.size = sizeof(id);
 
 	memset(&pval, 0, sizeof(pval));
@@ -881,7 +881,7 @@ out:
 	return rc;
 }
 
-int fsdb_sess_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_session_id id,
+int fsdb_sess_del(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id id,
 		 int flags)
 {
 	DB *sessions = fsdb->sessions;
@@ -889,7 +889,7 @@ int fsdb_sess_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_session_id id,
 	int rc;
 
 	memset(&pkey, 0, sizeof(pkey));
-	pkey.data = &id[0];
+	pkey.data = (char *) &id[0];
 	pkey.size = sizeof(id);
 
 	memset(&pval, 0, sizeof(pval));

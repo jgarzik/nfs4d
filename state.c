@@ -799,3 +799,38 @@ out:
 	*status_p = htonl(status);
 	return status;
 }
+
+nfsstat4 nfs_op_sequence(struct nfs_cxn *cxn, const SEQUENCE4args *args,
+			 struct list_head *writes, struct rpc_write **wr)
+{
+	uint32_t *status_p;
+	nfsstat4 status = NFS4_OK;
+
+	if (debugging)
+		applog(LOG_INFO, "op SEQUENCE");
+
+	status_p = WRSKIP(4);			/* ending status */
+
+	int rc = fsdb_sess_get(&srv.fsdb, NULL, args->sa_sessionid,
+			       0, &cxn->sess);
+	if (rc) {
+		if (rc == DB_NOTFOUND)
+			status = NFS4ERR_BADSESSION;
+		else
+			status = NFS4ERR_IO;
+		goto out;
+	}
+
+	/* write successful result response */
+	WRMEM(&cxn->sess.id, sizeof(cxn->sess.id)); /* sr_sessionid */
+	WR32(args->sa_sequenceid);		/* sr_sequenceid */
+	WR32(0);				/* sr_slotid */
+	WR32(0);				/* sr_highest_slotid */
+	WR32(0);				/* sr_target_highest_slotid */
+	WR32(0);				/* sr_status_flags */
+
+out:
+	*status_p = htonl(status);
+	return status;
+}
+

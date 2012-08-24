@@ -1004,7 +1004,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, const READDIR4args *args,
 		if (debugging)
 			applog(LOG_INFO, "           zero results, status %s",
 			       ri.status <= NFS4ERR_CB_PATH_DOWN ?
-			       		name_nfs4status[ri.status] : "n/a");
+			       		status2str(ri.status) : "n/a");
 
 		if (ri.status == NFS4_OK) {
 			WRMEM(&srv.instance_verf, sizeof(verifier4));	/* cookieverf */

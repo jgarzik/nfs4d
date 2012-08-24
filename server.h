@@ -366,6 +366,8 @@ struct nfs_cxn {
 
 	struct cxn_auth		auth;		/* RPC creds */
 
+	fsdb_session		sess;
+
 	int			drc_mask;
 };
 
@@ -728,7 +730,7 @@ extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 
 /* server.c */
-extern const char *name_nfs4status[];
+extern const char *status2str(nfsstat4 status);
 extern char *cxn_getuser(const struct nfs_cxn *cxn);
 extern char *cxn_getgroup(const struct nfs_cxn *cxn);
 
@@ -755,6 +757,8 @@ extern uint32_t gen_stateid(void);
 extern nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_create_session(struct nfs_cxn *cxn, const CREATE_SESSION4args *,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_sequence(struct nfs_cxn *cxn, const SEQUENCE4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
 
