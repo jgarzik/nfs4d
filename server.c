@@ -494,6 +494,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_CREATE:
 		srv.stats.op_create++;
 		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, writes, wr);
+	case OP_CREATE_SESSION:
+		srv.stats.op_create_session++;
+		return nfs_op_create_session(cxn, &arg->nfs_argop4_u.opcreate_session, writes, wr);
 	case OP_EXCHANGE_ID:
 		srv.stats.op_exchange_id++;
 		return nfs_op_exchange_id(cxn, &arg->nfs_argop4_u.opexchange_id, writes, wr);

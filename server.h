@@ -473,6 +473,7 @@ struct nfs_server_stats {
 	unsigned long		op_close;
 	unsigned long		op_commit;
 	unsigned long		op_create;
+	unsigned long		op_create_session;
 	unsigned long		op_exchange_id;
 	unsigned long		op_getattr;
 	unsigned long		op_getfh;
@@ -752,6 +753,8 @@ extern void client_free(gpointer data);
 extern void openfile_free(gpointer data);
 extern uint32_t gen_stateid(void);
 extern nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_create_session(struct nfs_cxn *cxn, const CREATE_SESSION4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
 

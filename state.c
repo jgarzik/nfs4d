@@ -684,3 +684,118 @@ out:
 	return status;
 }
 
+nfsstat4 nfs_op_create_session(struct nfs_cxn *cxn,
+			       const CREATE_SESSION4args *args,
+			       struct list_head *writes, struct rpc_write **wr)
+{
+	uint32_t *status_p;
+	nfsstat4 status = NFS4_OK;
+	bool ok_commit = false;
+	DB_TXN *txn = NULL;
+	DB_ENV *dbenv = srv.fsdb.env;
+	fsdb_client cli = {};
+	fsdb_session sess = {};
+
+	if (debugging)
+		applog(LOG_INFO, "op CREATE_SESSION");
+
+	status_p = WRSKIP(4);			/* ending status */
+
+	int rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	/* lookup the given clientid in db */
+	rc = fsdb_cli_get(&srv.fsdb, txn, args->csa_clientid, 0, &cli);
+	if (rc) {
+		if (rc == DB_NOTFOUND)
+			status = NFS4ERR_STALE_CLIENTID;
+		else
+			status = NFS4ERR_IO;
+		goto out_txn;
+	}
+
+	/* validate sequenceid matches expectations */
+	if (args->csa_sequence != cli.sequence_id) {
+		status = NFS4ERR_SEQ_MISORDERED;
+		goto out_txn;
+	}
+
+	/* confirm client record, if necessary */
+	if (!(cli.flags & EXCHGID4_FLAG_CONFIRMED_R)) {
+		cli.flags |= EXCHGID4_FLAG_CONFIRMED_R;
+		rc = fsdb_cli_put(&srv.fsdb, txn, 0, &cli);
+		if (rc) {
+			status = NFS4ERR_IO;
+			goto out_txn;
+		}
+	}
+
+	/*
+	 * create new session record
+	 */
+	sess.client = cli.id;
+	sess.flags = args->csa_flags;
+
+	/*
+	 * Attempt to store in database, with random session id.
+	 * Continue trying with random session ids until a unique
+	 * one is found.
+	 */
+	unsigned int store_tries = 50000;
+	while (store_tries-- > 0) {
+		nrand32(&sess.id, 4);
+
+		rc = fsdb_sess_put(&srv.fsdb, txn, DB_NOOVERWRITE, &sess);
+		if (rc == 0)
+			break;
+		if (rc != DB_KEYEXIST) {
+			status = NFS4ERR_IO;
+			goto out_txn;
+		}
+	}
+	if (rc) {	/* highly unlikely! */
+		status = NFS4ERR_SERVERFAULT;
+		goto out_txn;
+	}
+
+	/* write successful result response */
+	WRMEM(&sess.id, sizeof(sess.id));	/* csr_sessionid */
+	WR32(args->csa_sequence);		/* csr_sequence */
+	WR32(sess.flags);			/* csr_flags */
+
+	unsigned int i;			/* csr_{fore,back}_chan_attrs */
+	for (i = 0; i < 2; i++) {
+		WR32(0);			/* ca_headerpadsize */
+		WR32(1024 * 1024);		/* ca_maxrequestsize */
+		WR32(1024 * 1024);		/* ca_maxresponsesize */
+		WR32(1024 * 1024);		/* ca_maxresponsesize_cached */
+		WR32(1000);			/* ca_maxoperations */
+		WR32(1000);			/* ca_maxrequests */
+		WR32(0);			/* ca_rdma_ird */
+	}
+
+	ok_commit = true;
+
+out_txn:
+	if (ok_commit) {
+		rc = txn->commit(txn, 0);
+		if (rc) {
+			dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+			status = NFS4ERR_IO;
+		}
+	} else {
+		if (txn->abort(txn))
+			dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	}
+
+out:
+	fsdb_cli_free(&cli, false);
+	fsdb_sess_free(&sess, false);
+
+	*status_p = htonl(status);
+	return status;
+}

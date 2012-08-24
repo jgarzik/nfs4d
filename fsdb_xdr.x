@@ -26,10 +26,12 @@ typedef unsigned int		uint32_t;
 typedef hyper			int64_t;
 typedef unsigned hyper		uint64_t;
 
-const NFS_VERIFIER_SIZE	= 8;
-const NFS_OPAQUE_LIMIT	= 1024;
+const NFS_VERIFIER_SIZE		= 8;
+const NFS_OPAQUE_LIMIT		= 1024;
+const NFS_SESSIONID_SIZE	= 16;
 
 typedef uint64_t	fsdb_client_id;
+typedef char		fsdb_session_id[NFS_SESSIONID_SIZE];
 
 struct fsdb_client {
 	fsdb_client_id	id;
@@ -37,5 +39,11 @@ struct fsdb_client {
 	uint32_t	sequence_id;
 	opaque		verifier[NFS_VERIFIER_SIZE];
 	opaque		owner<NFS_OPAQUE_LIMIT>;
+};
+
+struct fsdb_session {
+	fsdb_session_id	id;
+	fsdb_client_id	client;
+	uint32_t	flags;
 };
 

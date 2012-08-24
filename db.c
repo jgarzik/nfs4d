@@ -33,6 +33,8 @@ enum {
 	FSDB_PGSZ_CLIENTS		= 512,
 	FSDB_PGSZ_CLIENT_OWNERS		= 512,
 	FSDB_PGSZ_SESSIONS		= 512,
+
+	FSDB_XDR_OUTBUF_SZ		= 4096,
 };
 
 static int fsdb_clients_getkey(DB *secondary,
@@ -726,11 +728,11 @@ int fsdb_cli_put(struct fsdb *fsdb, DB_TXN *txn, int flags,
 	XDR xdrs;
 	void *outbuf;
 
-	outbuf = malloc(4096);
+	outbuf = malloc(FSDB_XDR_OUTBUF_SZ);
 	if (!outbuf)
 		return -ENOMEM;
 
-	xdrmem_create(&xdrs, outbuf, 4096, XDR_ENCODE);
+	xdrmem_create(&xdrs, outbuf, FSDB_XDR_OUTBUF_SZ, XDR_ENCODE);
 
 	if (!xdr_fsdb_client(&xdrs, (fsdb_client *) cli))
 		goto out;
@@ -776,6 +778,126 @@ int fsdb_cli_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 	if (rc) {
 		 if (rc != DB_NOTFOUND)
 		 	clients->err(clients, rc, "clients->del");
+		 return rc;
+	}
+
+	return 0;
+}
+
+void fsdb_sess_free(fsdb_session *sess, bool free_struct)
+{
+	xdr_free((xdrproc_t) xdr_fsdb_session, (char *) sess);
+
+	if (free_struct)
+		free(sess);
+}
+
+static bool fsdb_sess_decode(const void *data, size_t size,
+			    fsdb_session *sess_out)
+{
+	bool xdr_rc;
+	XDR xdrs;
+
+	memset(sess_out, 0, sizeof(*sess_out));
+
+	xdrmem_create(&xdrs, (void *) data, size, XDR_DECODE);
+
+	xdr_rc = xdr_fsdb_session(&xdrs, sess_out);
+
+	if (!xdr_rc) {
+		fsdb_sess_free(sess_out, false);
+		memset(sess_out, 0, sizeof(*sess_out));
+	}
+
+	xdr_destroy(&xdrs);
+
+	return xdr_rc;
+}
+
+int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_session_id id,
+		 int flags, fsdb_session *sess_out)
+{
+	DB *sessions = fsdb->sessions;
+	DBT pkey, pval;
+	int rc;
+	bool xdr_rc;
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = &id[0];
+	pkey.size = sizeof(id);
+
+	memset(&pval, 0, sizeof(pval));
+
+	rc = sessions->get(sessions, txn, &pkey, &pval, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	sessions->err(sessions, rc, "sessions->get");
+		 return rc;
+	}
+
+	xdr_rc = fsdb_sess_decode(pval.data, pval.size, sess_out);
+
+	return xdr_rc ? 0 : -1;
+}
+
+int fsdb_sess_put(struct fsdb *fsdb, DB_TXN *txn, int flags,
+		  const fsdb_session *sess)
+{
+	DB *sessions = fsdb->sessions;
+	DBT pkey, pval;
+	int rc = -1;
+	XDR xdrs;
+	void *outbuf;
+
+	outbuf = malloc(FSDB_XDR_OUTBUF_SZ);
+	if (!outbuf)
+		return -ENOMEM;
+
+	xdrmem_create(&xdrs, outbuf, FSDB_XDR_OUTBUF_SZ, XDR_ENCODE);
+
+	if (!xdr_fsdb_session(&xdrs, (fsdb_session *) sess))
+		goto out;
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = (char *) &sess->id[0];
+	pkey.size = sizeof(sess->id);
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = outbuf;
+	pval.size = xdr_getpos(&xdrs);
+
+	rc = sessions->put(sessions, txn, &pkey, &pval, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	sessions->err(sessions, rc, "sessions->put");
+		 goto out;
+	}
+
+	rc = 0;
+
+out:
+	xdr_destroy(&xdrs);
+	free(outbuf);
+	return rc;
+}
+
+int fsdb_sess_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_session_id id,
+		 int flags)
+{
+	DB *sessions = fsdb->sessions;
+	DBT pkey, pval;
+	int rc;
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = &id[0];
+	pkey.size = sizeof(id);
+
+	memset(&pval, 0, sizeof(pval));
+
+	rc = sessions->del(sessions, txn, &pkey, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	sessions->err(sessions, rc, "sessions->del");
 		 return rc;
 	}
 

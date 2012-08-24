@@ -57,6 +57,16 @@ xdr_fsdb_client_id (XDR *xdrs, fsdb_client_id *objp)
 }
 
 bool_t
+xdr_fsdb_session_id (XDR *xdrs, fsdb_session_id objp)
+{
+
+	 if (!xdr_vector (xdrs, (char *)objp, NFS_SESSIONID_SIZE,
+		sizeof (char), (xdrproc_t) xdr_char))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
 xdr_fsdb_client (XDR *xdrs, fsdb_client *objp)
 {
 
@@ -69,6 +79,19 @@ xdr_fsdb_client (XDR *xdrs, fsdb_client *objp)
 	 if (!xdr_opaque (xdrs, objp->verifier, NFS_VERIFIER_SIZE))
 		 return FALSE;
 	 if (!xdr_bytes (xdrs, (char **)&objp->owner.owner_val, (u_int *) &objp->owner.owner_len, NFS_OPAQUE_LIMIT))
+		 return FALSE;
+	return TRUE;
+}
+
+bool_t
+xdr_fsdb_session (XDR *xdrs, fsdb_session *objp)
+{
+
+	 if (!xdr_fsdb_session_id (xdrs, objp->id))
+		 return FALSE;
+	 if (!xdr_fsdb_client_id (xdrs, &objp->client))
+		 return FALSE;
+	 if (!xdr_uint32_t (xdrs, &objp->flags))
 		 return FALSE;
 	return TRUE;
 }
