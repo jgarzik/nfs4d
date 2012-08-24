@@ -493,6 +493,7 @@ struct nfs_server_stats {
 	unsigned long		op_restorefh;
 	unsigned long		op_savefh;
 	unsigned long		op_secinfo;
+	unsigned long		op_sequence;
 	unsigned long		op_setattr;
 	unsigned long		op_setclientid;
 	unsigned long		op_setclientid_confirm;

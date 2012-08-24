@@ -410,7 +410,8 @@ static const char *argstr(uint32_t op)
 	return arg_str[op];
 }
 
-static nfsstat4 nfs_op(struct nfs_cxn *cxn, nfs_argop4 *arg,
+static nfsstat4 nfs_op(struct nfs_cxn *cxn,
+		       unsigned int arg_pos, nfs_argop4 *arg,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	uint32_t op;
@@ -419,9 +420,13 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, nfs_argop4 *arg,
 
 	switch (op) {
 	case OP_ACCESS:
+	case OP_BIND_CONN_TO_SESSION:
 	case OP_CLOSE:
 	case OP_COMMIT:
 	case OP_CREATE:
+	case OP_CREATE_SESSION:
+	case OP_DESTROY_SESSION:
+	case OP_EXCHANGE_ID:
 	case OP_GETATTR:
 	case OP_GETFH:
 	case OP_LINK:
@@ -445,6 +450,7 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, nfs_argop4 *arg,
 	case OP_RESTOREFH:
 	case OP_SAVEFH:
 	case OP_SECINFO:
+	case OP_SEQUENCE:
 	case OP_SETATTR:
 	case OP_SETCLIENTID:
 	case OP_SETCLIENTID_CONFIRM:
@@ -463,6 +469,21 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, nfs_argop4 *arg,
 			applog(LOG_INFO, "unknown op %s", argstr(op));
 		WR32(NFS4ERR_OP_ILLEGAL);	/* write resop */
 		break;
+	}
+
+	if (arg_pos == 0) {
+		switch (op) {
+		case OP_SEQUENCE:
+		case OP_BIND_CONN_TO_SESSION:
+		case OP_EXCHANGE_ID:
+		case OP_CREATE_SESSION:
+		case OP_DESTROY_SESSION:
+			break;
+
+		default:
+			WR32(NFS4ERR_OP_NOT_IN_SESSION);
+			return NFS4ERR_OP_NOT_IN_SESSION;
+		}
 	}
 
 	switch (op) {
@@ -553,6 +574,18 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, nfs_argop4 *arg,
 	case OP_SECINFO:
 		srv.stats.op_secinfo++;
 		return nfs_op_secinfo(cxn, &arg->nfs_argop4_u.opsecinfo, writes, wr);
+	case OP_SEQUENCE:
+		srv.stats.op_sequence++;
+		if (arg_pos != 0) {
+			WR32(NFS4ERR_SEQUENCE_POS);
+			return NFS4ERR_SEQUENCE_POS;
+		}
+
+		srv.stats.op_notsupp++;
+		WR32(NFS4ERR_NOTSUPP);		/* op status */
+		return NFS4ERR_NOTSUPP;		/* compound status */
+		//return nfs_op_seqence(cxn, &arg->nfs_argop4_u.opsequence, writes, wr);
+
 	case OP_SETATTR:
 		srv.stats.op_setattr++;
 		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, writes, wr);
@@ -655,7 +688,8 @@ int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_a
 	for (i = 0; i < n_args; i++) {
 		results++;	/* even failed operations have results */
 
-		status = nfs_op(cxn, &args.argarray.argarray_val[i],writes, wr);
+		status = nfs_op(cxn, i,
+				&args.argarray.argarray_val[i],writes, wr);
 		if (status != NFS4_OK)
 			break;
 	}
