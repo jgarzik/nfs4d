@@ -355,7 +355,7 @@ out_abort:
 
 static void print_client(fsdb_client *cli)
 {
-	printf("%016llx\t%08x\t%08x\t%*s\n",
+	printf("%016llx\t%08x\t%08x\t%.*s\n",
 		(unsigned long long) cli->id,
 		cli->flags,
 		cli->sequence_id,

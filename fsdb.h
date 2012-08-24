@@ -151,11 +151,11 @@ extern int fsdb_cli_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 
 extern void fsdb_sess_free(fsdb_session *sess, bool free_struct);
 extern bool fsdb_sess_decode(const void *data, size_t size, fsdb_session *sess_out);
-extern int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id id,
+extern int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id *id,
 		 int flags, fsdb_session *sess_out);
 extern int fsdb_sess_put(struct fsdb *fsdb, DB_TXN *txn, int flags,
 		  const fsdb_session *sess);
-extern int fsdb_sess_del(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id id,
+extern int fsdb_sess_del(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id *id,
 		 int flags);
 
 #endif /* __FSDB_H__ */

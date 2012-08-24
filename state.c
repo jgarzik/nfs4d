@@ -573,7 +573,10 @@ nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 	DB_ENV *dbenv = srv.fsdb.env;
 
 	if (debugging)
-		applog(LOG_INFO, "op EXCHANGE_ID");
+		applog(LOG_INFO, "op EXCHANGE_ID (%.*s, %x)",
+			args->eia_clientowner.co_ownerid.co_ownerid_len,
+			args->eia_clientowner.co_ownerid.co_ownerid_val,
+			args->eia_flags);
 
 	status_p = WRSKIP(4);			/* ending status */
 
@@ -653,6 +656,12 @@ nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 	const char *my_server_owner = "127.0.0.1";
 	const char *my_server_scope = "n/a";
 
+	if (debugging)
+		applog(LOG_INFO, "   clientid %016llx, seq %x, flg %x",
+			(unsigned long long) cli.id,
+			cli.sequence_id,
+			cli.flags);
+
 	/* write successful result response */
 	WR64(cli.id);
 	WR32(cli.sequence_id);
@@ -697,7 +706,10 @@ nfsstat4 nfs_op_create_session(struct nfs_cxn *cxn,
 	fsdb_session sess = {};
 
 	if (debugging)
-		applog(LOG_INFO, "op CREATE_SESSION");
+		applog(LOG_INFO, "op CREATE_SESSION (clid %016llx, seq %x, flg %x)",
+			args->csa_clientid,
+			args->csa_sequence,
+			args->csa_flags);
 
 	status_p = WRSKIP(4);			/* ending status */
 
@@ -762,6 +774,14 @@ nfsstat4 nfs_op_create_session(struct nfs_cxn *cxn,
 		goto out_txn;
 	}
 
+	if (debugging) {
+		char hexbuf[32 + 1];
+		applog(LOG_INFO, "   sess id %s, seq %x, flg %x",
+			hexstr(hexbuf, &sess.id[0], sizeof(sess.id)),
+			args->csa_sequence,
+			sess.flags);
+	}
+
 	/* write successful result response */
 	WRMEM(&sess.id, sizeof(sess.id));	/* csr_sessionid */
 	WR32(args->csa_sequence);		/* csr_sequence */
@@ -806,12 +826,19 @@ nfsstat4 nfs_op_sequence(struct nfs_cxn *cxn, const SEQUENCE4args *args,
 	uint32_t *status_p;
 	nfsstat4 status = NFS4_OK;
 
-	if (debugging)
-		applog(LOG_INFO, "op SEQUENCE");
+	if (debugging) {
+		char hexbuf[32 + 1];
+		applog(LOG_INFO, "op SEQUENCE (sess %s, seq %x, slo %x, hslo %x, cache %s",
+			hexstr(hexbuf, args->sa_sessionid, sizeof(args->sa_sessionid)),
+			args->sa_sequenceid,
+			args->sa_slotid,
+			args->sa_highest_slotid,
+			args->sa_cachethis ? "Y" : "N");
+	}
 
 	status_p = WRSKIP(4);			/* ending status */
 
-	int rc = fsdb_sess_get(&srv.fsdb, NULL, args->sa_sessionid,
+	int rc = fsdb_sess_get(&srv.fsdb, NULL, &args->sa_sessionid,
 			       0, &cxn->sess);
 	if (rc) {
 		if (rc == DB_NOTFOUND)
