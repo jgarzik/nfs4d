@@ -34,6 +34,7 @@ typedef uint64_t	fsdb_client_id;
 struct fsdb_client {
 	fsdb_client_id	id;
 	uint32_t	flags;
+	uint32_t	sequence_id;
 	opaque		verifier[NFS_VERIFIER_SIZE];
 	opaque		owner<NFS_OPAQUE_LIMIT>;
 };

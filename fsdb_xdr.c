@@ -39,6 +39,7 @@ xdr_int64_t (XDR *xdrs, int64_t *objp)
 bool_t
 xdr_uint64_t (XDR *xdrs, uint64_t *objp)
 {
+	register int32_t *buf;
 
 	 if (!xdr_u_quad_t (xdrs, objp))
 		 return FALSE;
@@ -62,6 +63,8 @@ xdr_fsdb_client (XDR *xdrs, fsdb_client *objp)
 	 if (!xdr_fsdb_client_id (xdrs, &objp->id))
 		 return FALSE;
 	 if (!xdr_uint32_t (xdrs, &objp->flags))
+		 return FALSE;
+	 if (!xdr_uint32_t (xdrs, &objp->sequence_id))
 		 return FALSE;
 	 if (!xdr_opaque (xdrs, objp->verifier, NFS_VERIFIER_SIZE))
 		 return FALSE;
