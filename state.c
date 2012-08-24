@@ -747,7 +747,7 @@ nfsstat4 nfs_op_create_session(struct nfs_cxn *cxn,
 	 */
 	unsigned int store_tries = 50000;
 	while (store_tries-- > 0) {
-		nrand32(&sess.id, 4);
+		nrand32(&sess.id, 2);
 
 		rc = fsdb_sess_put(&srv.fsdb, txn, DB_NOOVERWRITE, &sess);
 		if (rc == 0)
