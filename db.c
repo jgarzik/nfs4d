@@ -614,20 +614,6 @@ void fsdb_cli_free(fsdb_client *cli, bool free_struct)
 		free(cli);
 }
 
-static void *memdup(void *p, size_t sz)
-{
-	if (!p || !sz)
-		return NULL;
-
-	void *new_p = malloc(sz);
-	if (!new_p)
-		return NULL;
-	
-	memcpy(new_p, p, sz);
-
-	return new_p;
-}
-
 static bool fsdb_cli_decode(const void *data, size_t size,
 			    fsdb_client *cli_out)
 {

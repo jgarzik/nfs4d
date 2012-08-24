@@ -296,3 +296,18 @@ off_t lseek64(int fd, off_t offset, int whence)
 	return lseek(fd, offset, whence);
 }
 #endif
+
+void *memdup(void *p, size_t sz)
+{
+	if (!p || !sz)
+		return NULL;
+
+	void *new_p = malloc(sz);
+	if (!new_p)
+		return NULL;
+	
+	memcpy(new_p, p, sz);
+
+	return new_p;
+}
+
