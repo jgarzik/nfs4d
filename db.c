@@ -29,9 +29,9 @@
 
 enum {
 	FSDB_PGSZ_INODES		= 4096,	/* inodes db4 page size */
-	FSDB_PGSZ_USERGROUP		= 4096,	/* user/group db4 page size */
-	FSDB_PGSZ_UG_IDX		= 4096,	/* u/g idx db4 page size */
 	FSDB_PGSZ_DIRENT		= 4096,	/* dir entry db4 page size */
+	FSDB_PGSZ_CLIENTS		= 512,
+	FSDB_PGSZ_SESSIONS		= 512,
 };
 
 static void db4syslog(const DB_ENV *dbenv, const char *errpfx, const char *msg)
@@ -212,8 +212,22 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	if (rc)
 		goto err_out_inodes;
 
+	rc = open_db(dbenv, &fsdb->clients, "clients", FSDB_PGSZ_CLIENTS,
+		     DB_HASH, flags, NULL);
+	if (rc)
+		goto err_out_dirent;
+
+	rc = open_db(dbenv, &fsdb->sessions, "sessions", FSDB_PGSZ_SESSIONS,
+		     DB_HASH, flags, NULL);
+	if (rc)
+		goto err_out_clients;
+
 	return 0;
 
+err_out_clients:
+	fsdb->clients->close(fsdb->clients, 0);
+err_out_dirent:
+	fsdb->dirent->close(fsdb->dirent, 0);
 err_out_inodes:
 	fsdb->inodes->close(fsdb->inodes, 0);
 err_out:
@@ -223,6 +237,8 @@ err_out:
 
 void fsdb_close(struct fsdb *fsdb)
 {
+	fsdb->sessions->close(fsdb->sessions, 0);
+	fsdb->clients->close(fsdb->clients, 0);
 	fsdb->dirent->close(fsdb->dirent, 0);
 	fsdb->inodes->close(fsdb->inodes, 0);
 	fsdb->env->close(fsdb->env, 0);
