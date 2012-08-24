@@ -1078,3 +1078,15 @@ nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, const RENEW4args *args,
 	return status;
 }
 
+nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
+			     struct list_head *writes, struct rpc_write **wr)
+{
+	nfsstat4 status = NFS4ERR_NOTSUPP;
+
+	if (debugging)
+		applog(LOG_INFO, "op EXCHANGE_ID");
+
+	WR32(status);
+	return status;
+}
+

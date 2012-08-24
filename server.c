@@ -499,6 +499,9 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_CREATE:
 		srv.stats.op_create++;
 		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, writes, wr);
+	case OP_EXCHANGE_ID:
+		srv.stats.op_exchange_id++;
+		return nfs_op_exchange_id(cxn, &arg->nfs_argop4_u.opexchange_id, writes, wr);
 	case OP_GETATTR:
 		srv.stats.op_getattr++;
 		return nfs_op_getattr(cxn, &arg->nfs_argop4_u.opgetattr, writes, wr);
@@ -606,13 +609,15 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_DELEGRETURN:
 	case OP_OPENATTR:
 		if (debugging)
-			applog(LOG_INFO, "compound op %s", argstr(op));
+			applog(LOG_INFO, "unsupported op %s", argstr(op));
 
 		srv.stats.op_notsupp++;
 		WR32(NFS4ERR_NOTSUPP);		/* op status */
 		return NFS4ERR_NOTSUPP;		/* compound status */
 
 	default:
+		if (debugging)
+			applog(LOG_INFO, "illegal or unsupported op %s", argstr(op));
 		srv.stats.op_illegal++;
 		WR32(NFS4ERR_OP_ILLEGAL);	/* op status */
 		return NFS4ERR_OP_ILLEGAL;	/* compound status */

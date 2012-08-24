@@ -468,6 +468,7 @@ struct nfs_server_stats {
 	unsigned long		op_close;
 	unsigned long		op_commit;
 	unsigned long		op_create;
+	unsigned long		op_exchange_id;
 	unsigned long		op_getattr;
 	unsigned long		op_getfh;
 	unsigned long		op_link;
@@ -754,6 +755,8 @@ extern nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, const RENEW4args *,
 extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, const SETCLIENTID4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, const SETCLIENTID_CONFIRM4args *,
+			     struct list_head *writes, struct rpc_write **wr);
+extern nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
 
