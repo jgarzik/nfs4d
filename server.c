@@ -437,7 +437,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_LOOKUPP:
 	case OP_NVERIFY:
 	case OP_OPEN:
-	case OP_OPEN_CONFIRM:
 	case OP_OPEN_DOWNGRADE:
 	case OP_PUTFH:
 	case OP_PUTPUBFH:
@@ -452,14 +451,10 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_SECINFO:
 	case OP_SEQUENCE:
 	case OP_SETATTR:
-	case OP_SETCLIENTID:
-	case OP_SETCLIENTID_CONFIRM:
 	case OP_VERIFY:
 	case OP_WRITE:
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
-	case OP_RENEW:
-	case OP_RELEASE_LOCKOWNER:
 	case OP_OPENATTR:
 		WR32(op);			/* write resop */
 		break;
@@ -532,9 +527,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_OPEN:
 		srv.stats.op_open++;
 		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, writes, wr);
-	case OP_OPEN_CONFIRM:
-		srv.stats.op_open_confirm++;
-		return nfs_op_open_confirm(cxn, &arg->nfs_argop4_u.opopen_confirm, writes, wr);
 	case OP_OPEN_DOWNGRADE:
 		srv.stats.op_open_downgrade++;
 		return nfs_op_open_downgrade(cxn, &arg->nfs_argop4_u.opopen_downgrade, writes, wr);
@@ -556,18 +548,12 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_READLINK:
 		srv.stats.op_readlink++;
 		return nfs_op_readlink(cxn, writes, wr);
-	case OP_RELEASE_LOCKOWNER:
-		srv.stats.op_release_lockowner++;
-		return nfs_op_release_lockowner(cxn, &arg->nfs_argop4_u.oprelease_lockowner, writes, wr);
 	case OP_REMOVE:
 		srv.stats.op_remove++;
 		return nfs_op_remove(cxn, &arg->nfs_argop4_u.opremove, writes, wr);
 	case OP_RENAME:
 		srv.stats.op_rename++;
 		return nfs_op_rename(cxn, &arg->nfs_argop4_u.oprename, writes, wr);
-	case OP_RENEW:
-		srv.stats.op_renew++;
-		return nfs_op_renew(cxn, &arg->nfs_argop4_u.oprenew, writes, wr);
 	case OP_RESTOREFH:
 		srv.stats.op_restorefh++;
 		return nfs_op_restorefh(cxn, writes, wr);
@@ -592,12 +578,6 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn,
 	case OP_SETATTR:
 		srv.stats.op_setattr++;
 		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, writes, wr);
-	case OP_SETCLIENTID:
-		srv.stats.op_setclientid++;
-		return nfs_op_setclientid(cxn, &arg->nfs_argop4_u.opsetclientid, writes, wr);
-	case OP_SETCLIENTID_CONFIRM:
-		srv.stats.op_setclientid_confirm++;
-		return nfs_op_setclientid_confirm(cxn, &arg->nfs_argop4_u.opsetclientid_confirm, writes, wr);
 	case OP_VERIFY:
 		srv.stats.op_verify++;
 		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, writes, wr, false);

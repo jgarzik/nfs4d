@@ -593,8 +593,6 @@ extern nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, const LOCKT4args *,
 		       struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, const LOCKU4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, const RELEASE_LOCKOWNER4args *,
-		       struct list_head *writes, struct rpc_write **wr);
 
 /* dir.c */
 extern nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, const LOOKUP4args *,
@@ -718,8 +716,6 @@ extern void *wr_map(struct list_head *writes, struct rpc_write **wr_io,
 /* open.c */
 extern nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *,
 			    struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, const OPEN_CONFIRM4args *,
-			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, const OPEN_DOWNGRADE4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *,
@@ -750,12 +746,6 @@ extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void openfile_free(gpointer data);
 extern uint32_t gen_stateid(void);
-extern nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, const RENEW4args *,
-			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, const SETCLIENTID4args *,
-			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, const SETCLIENTID_CONFIRM4args *,
-			     struct list_head *writes, struct rpc_write **wr);
 extern nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
