@@ -595,3 +595,109 @@ int fsdb_inode_getdec(struct fsdb *fsdb, DB_TXN *txn, nfsino_t inum, int flags,
 	return 0;
 }
 
+void fsdb_cli_free(fsdb_client *cli, bool free_struct)
+{
+	xdr_free((xdrproc_t) xdr_fsdb_client, (char *) cli);
+
+	if (free_struct)
+		free(cli);
+}
+
+int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
+		 int flags, fsdb_client *cli_out)
+{
+	DB *clients = fsdb->clients;
+	DBT pkey, pval;
+	int rc;
+	bool xdr_rc;
+	uint64_t id_be = GUINT64_TO_BE(id);
+	XDR xdrs;
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = &id_be;
+	pkey.size = sizeof(id_be);
+
+	memset(&pval, 0, sizeof(pval));
+
+	rc = clients->get(clients, txn, &pkey, &pval, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	clients->err(clients, rc, "clients->get");
+		 return rc;
+	}
+
+	xdrmem_create(&xdrs, pval.data, pval.size, XDR_DECODE);
+
+	xdr_rc = xdr_fsdb_client(&xdrs, cli_out);
+
+	xdr_destroy(&xdrs);
+
+	return xdr_rc ? 0 : -1;
+}
+
+int fsdb_cli_put(struct fsdb *fsdb, DB_TXN *txn, int flags,
+		 const fsdb_client *cli)
+{
+	DB *clients = fsdb->clients;
+	DBT pkey, pval;
+	int rc = -1;
+	uint64_t id_be = GUINT64_TO_BE(cli->id);
+	XDR xdrs;
+	void *outbuf;
+
+	outbuf = malloc(4096);
+	if (!outbuf)
+		return -ENOMEM;
+
+	xdrmem_create(&xdrs, outbuf, 4096, XDR_ENCODE);
+
+	if (!xdr_fsdb_client(&xdrs, (fsdb_client *) cli))
+		goto out;
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = &id_be;
+	pkey.size = sizeof(id_be);
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = outbuf;
+	pval.size = xdr_getpos(&xdrs);
+
+	rc = clients->put(clients, txn, &pkey, &pval, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	clients->err(clients, rc, "clients->put");
+		 goto out;
+	}
+
+	rc = 0;
+
+out:
+	xdr_destroy(&xdrs);
+	free(outbuf);
+	return rc;
+}
+
+int fsdb_cli_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
+		 int flags)
+{
+	DB *clients = fsdb->clients;
+	DBT pkey, pval;
+	int rc;
+	uint64_t id_be = GUINT64_TO_BE(id);
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = &id_be;
+	pkey.size = sizeof(id_be);
+
+	memset(&pval, 0, sizeof(pval));
+
+	rc = clients->del(clients, txn, &pkey, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	clients->err(clients, rc, "clients->del");
+		 return rc;
+	}
+
+	return 0;
+}
+

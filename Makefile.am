@@ -10,7 +10,7 @@ noinst_LIBRARIES= libnfscommon.a
 
 sbin_PROGRAMS	= nfs4d nfs4dba
 
-libnfscommon_a_SOURCES = util.c db.c nfs4_xdr.c
+libnfscommon_a_SOURCES = util.c db.c fsdb_xdr.h fsdb_xdr.c nfs4_xdr.c
 
 nfs4d_SOURCES	= nfscommon.h elist.h nfs4_prot.h server.h fattr.h fsdb.h \
 		  main.c server.c			\

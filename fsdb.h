@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <db.h>
 #include "nfs4_prot.h"
+#include "fsdb_xdr.h"
 
 struct nfs_inode;
 struct nfs_buf;
@@ -134,5 +135,13 @@ static inline nfsino_t inum_encode(nfsino_t inum)
 	return GUINT32_TO_LE(inum);
 #endif /* NFSD_INO64 */
 }
+
+extern void fsdb_cli_free(fsdb_client *cli, bool free_struct);
+extern int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
+		 int flags, fsdb_client *cli_out);
+extern int fsdb_cli_put(struct fsdb *fsdb, DB_TXN *txn, int flags,
+		 const fsdb_client *cli);
+extern int fsdb_cli_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
+		 int flags);
 
 #endif /* __FSDB_H__ */
