@@ -35,6 +35,9 @@ enum {
 	FSDB_PGSZ_SESSIONS		= 512,
 };
 
+static int fsdb_clients_getkey(DB *secondary,
+			       const DBT *pkey, const DBT *pdata, DBT *skey);
+
 static void db4syslog(const DB_ENV *dbenv, const char *errpfx, const char *msg)
 {
 	applog(LOG_WARNING, "%s: %s", errpfx, msg);
@@ -228,8 +231,16 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	if (rc)
 		goto err_out_sessions;
 
+	rc = fsdb->clients->associate(fsdb->clients, NULL,
+				      fsdb->client_owners,
+				      fsdb_clients_getkey, 0);
+	if (rc)
+		goto err_out_client_owners;
+
 	return 0;
 
+err_out_client_owners:
+	fsdb->client_owners->close(fsdb->client_owners, 0);
 err_out_sessions:
 	fsdb->sessions->close(fsdb->sessions, 0);
 err_out_clients:
@@ -603,6 +614,67 @@ void fsdb_cli_free(fsdb_client *cli, bool free_struct)
 		free(cli);
 }
 
+static void *memdup(void *p, size_t sz)
+{
+	if (!p || !sz)
+		return NULL;
+
+	void *new_p = malloc(sz);
+	if (!new_p)
+		return NULL;
+	
+	memcpy(new_p, p, sz);
+
+	return new_p;
+}
+
+static bool fsdb_cli_decode(const void *data, size_t size,
+			    fsdb_client *cli_out)
+{
+	bool xdr_rc;
+	XDR xdrs;
+
+	memset(cli_out, 0, sizeof(*cli_out));
+
+	xdrmem_create(&xdrs, (void *) data, size, XDR_DECODE);
+
+	xdr_rc = xdr_fsdb_client(&xdrs, cli_out);
+
+	if (!xdr_rc) {
+		fsdb_cli_free(cli_out, false);
+		memset(cli_out, 0, sizeof(*cli_out));
+	}
+
+	xdr_destroy(&xdrs);
+
+	return xdr_rc;
+}
+
+static int fsdb_clients_getkey(DB *secondary,
+			       const DBT *pkey, const DBT *pdata, DBT *skey)
+{
+	fsdb_client cli;
+	int rc = 0;
+
+	/* TODO: calc and return pointer directly into pdata->data, 
+	 * rather than less efficient alloc+copy
+	 */
+
+	if (!fsdb_cli_decode(pdata->data, pdata->size, &cli))
+		return EIO;
+
+	memset(skey, 0, sizeof(DBT));
+	skey->data = memdup(cli.owner.owner_val, cli.owner.owner_len);
+	skey->size = cli.owner.owner_len;
+	skey->flags = DB_DBT_APPMALLOC;
+	if (!skey->data)
+		rc = ENOMEM;
+
+	fsdb_cli_free(&cli, false);
+
+	return rc;
+}
+
 int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 		 int flags, fsdb_client *cli_out)
 {
@@ -611,7 +683,6 @@ int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 	int rc;
 	bool xdr_rc;
 	uint64_t id_be = GUINT64_TO_BE(id);
-	XDR xdrs;
 
 	memset(&pkey, 0, sizeof(pkey));
 	pkey.data = &id_be;
@@ -626,11 +697,7 @@ int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 		 return rc;
 	}
 
-	xdrmem_create(&xdrs, pval.data, pval.size, XDR_DECODE);
-
-	xdr_rc = xdr_fsdb_client(&xdrs, cli_out);
-
-	xdr_destroy(&xdrs);
+	xdr_rc = fsdb_cli_decode(pval.data, pval.size, cli_out);
 
 	return xdr_rc ? 0 : -1;
 }
