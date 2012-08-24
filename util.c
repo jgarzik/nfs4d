@@ -311,3 +311,17 @@ void *memdup(void *p, size_t sz)
 	return new_p;
 }
 
+char *hexstr(char *str, const char *buf, size_t sz)
+{
+	char *ret_str = str;
+	str[0] = 0;
+
+	unsigned int i;
+	for (i = 0; i < sz; i++) {
+		sprintf(str, "%02x", buf[i]);
+		str += 2;
+	}
+
+	return ret_str;
+}
+

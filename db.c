@@ -616,8 +616,7 @@ void fsdb_cli_free(fsdb_client *cli, bool free_struct)
 		free(cli);
 }
 
-static bool fsdb_cli_decode(const void *data, size_t size,
-			    fsdb_client *cli_out)
+bool fsdb_cli_decode(const void *data, size_t size, fsdb_client *cli_out)
 {
 	bool xdr_rc;
 	XDR xdrs;
@@ -792,8 +791,7 @@ void fsdb_sess_free(fsdb_session *sess, bool free_struct)
 		free(sess);
 }
 
-static bool fsdb_sess_decode(const void *data, size_t size,
-			    fsdb_session *sess_out)
+bool fsdb_sess_decode(const void *data, size_t size, fsdb_session *sess_out)
 {
 	bool xdr_rc;
 	XDR xdrs;

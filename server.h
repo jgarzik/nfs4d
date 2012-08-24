@@ -779,10 +779,6 @@ extern nfsstat4 openfile_lookup(struct nfs_stateid *,
 extern void openfile_trash(struct nfs_openfile *, bool);
 
 
-/* util.c */
-extern void *memdup(void *p, size_t sz);
-
-
 static inline struct refbuf *refbuf_ref(struct refbuf *rb)
 {
 	rb->refcnt++;

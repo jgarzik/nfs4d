@@ -138,6 +138,7 @@ static inline nfsino_t inum_encode(nfsino_t inum)
 }
 
 extern void fsdb_cli_free(fsdb_client *cli, bool free_struct);
+extern bool fsdb_cli_decode(const void *data, size_t size, fsdb_client *cli_out);
 extern int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 		 int flags, fsdb_client *cli_out);
 extern int fsdb_cli_get_byowner(struct fsdb *fsdb, DB_TXN *txn,
@@ -149,6 +150,7 @@ extern int fsdb_cli_del(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 		 int flags);
 
 extern void fsdb_sess_free(fsdb_session *sess, bool free_struct);
+extern bool fsdb_sess_decode(const void *data, size_t size, fsdb_session *sess_out);
 extern int fsdb_sess_get(struct fsdb *fsdb, DB_TXN *txn, const fsdb_session_id id,
 		 int flags, fsdb_session *sess_out);
 extern int fsdb_sess_put(struct fsdb *fsdb, DB_TXN *txn, int flags,

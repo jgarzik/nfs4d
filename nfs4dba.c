@@ -353,6 +353,175 @@ out_abort:
 	goto out;
 }
 
+static void print_client(fsdb_client *cli)
+{
+	printf("%016llx\t%08x\t%08x\t%*s\n",
+		(unsigned long long) cli->id,
+		cli->flags,
+		cli->sequence_id,
+		cli->owner.owner_len,
+		cli->owner.owner_val);
+}
+
+static int show_clients(void)
+{
+	DB_TXN *txn = NULL;
+	DB *clients = fsdb.clients;
+	DB_ENV *dbenv = fsdb.env;
+	DBT pkey, pval;
+	DBC *curs = NULL;
+	char valbuf[4096];
+	int rc;
+
+	printf("ID\t\t\tflags\t\tseqid\t\towner\n");
+
+	/* open transaction */
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	/* otherwise, loop through each clients attached to ino->inum */
+	rc = clients->cursor(clients, txn, &curs, 0);
+	if (rc) {
+		clients->err(clients, rc, "clients->cursor");
+		goto out_abort;
+	}
+
+	memset(&pkey, 0, sizeof(pkey));
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = &valbuf[0];
+	pval.ulen = sizeof(valbuf);
+	pval.flags = DB_DBT_USERMEM;
+
+	while (1) {
+		fsdb_client cli;
+
+		rc = curs->get(curs, &pkey, &pval, DB_NEXT);
+		if (rc) {
+			if (rc != DB_NOTFOUND)
+				clients->err(clients, rc, "readdir curs->get");
+			break;
+		}
+
+		memset(&cli, 0, sizeof(cli));
+
+		if (fsdb_cli_decode(pval.data, pval.size, &cli))
+			print_client(&cli);
+		else
+			printf("bad client\n");
+
+		fsdb_cli_free(&cli, false);
+	}
+
+	rc = curs->close(curs);
+	if (rc) {
+		clients->err(clients, rc, "clients->cursor close");
+		goto out_abort;
+	}
+
+	/* close transaction */
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		goto out;
+	}
+
+out:
+	return 0;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
+}
+
+static void print_session(fsdb_session *sess)
+{
+	char nbuf[32 + 1];
+	printf("%s\t%016llx\t%08x\n",
+		hexstr(nbuf, sess->id, sizeof(sess->id)),
+		(unsigned long long) sess->client,
+		sess->flags);
+}
+
+static int show_sessions(void)
+{
+	DB_TXN *txn = NULL;
+	DB *sessions = fsdb.sessions;
+	DB_ENV *dbenv = fsdb.env;
+	DBT pkey, pval;
+	DBC *curs = NULL;
+	char valbuf[4096];
+	int rc;
+
+	printf("ID\t\t\t\t\tClient-ID\t\tflags\n");
+
+	/* open transaction */
+	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	/* otherwise, loop through each sessions attached to ino->inum */
+	rc = sessions->cursor(sessions, txn, &curs, 0);
+	if (rc) {
+		sessions->err(sessions, rc, "sessions->cursor");
+		goto out_abort;
+	}
+
+	memset(&pkey, 0, sizeof(pkey));
+
+	memset(&pval, 0, sizeof(pval));
+	pval.data = &valbuf[0];
+	pval.ulen = sizeof(valbuf);
+	pval.flags = DB_DBT_USERMEM;
+
+	while (1) {
+		fsdb_session sess;
+
+		rc = curs->get(curs, &pkey, &pval, DB_NEXT);
+		if (rc) {
+			if (rc != DB_NOTFOUND)
+				sessions->err(sessions, rc, "readdir curs->get");
+			break;
+		}
+
+		memset(&sess, 0, sizeof(sess));
+
+		if (fsdb_sess_decode(pval.data, pval.size, &sess))
+			print_session(&sess);
+		else
+			printf("bad session\n");
+
+		fsdb_sess_free(&sess, false);
+	}
+
+	rc = curs->close(curs);
+	if (rc) {
+		sessions->err(sessions, rc, "sessions->cursor close");
+		goto out_abort;
+	}
+
+	/* close transaction */
+	rc = txn->commit(txn, 0);
+	if (rc) {
+		dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+		goto out;
+	}
+
+out:
+	return 0;
+
+out_abort:
+	if (txn->abort(txn))
+		dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	goto out;
+}
+
 static int show_db(void)
 {
 	int rc;
@@ -361,7 +530,21 @@ static int show_db(void)
 	if (rc)
 		return 1;
 
+	printf("\n");
+
 	rc = show_dirs();
+	if (rc)
+		return 1;
+
+	printf("\n");
+
+	rc = show_clients();
+	if (rc)
+		return 1;
+
+	printf("\n");
+
+	rc = show_sessions();
 	if (rc)
 		return 1;
 
