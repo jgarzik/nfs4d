@@ -85,8 +85,9 @@ struct fsdb {
 	DB_ENV		*env;			/* db4 env ptr */
 	DB		*inodes;		/* inodes */
 	DB		*dirent;		/* dir entries */
-	DB		*clients;
-	DB		*sessions;
+	DB		*clients;		/* clid -> client */
+	DB		*client_owners;		/* ownerid -> client */
+	DB		*sessions;		/* sessid -> session */
 };
 
 

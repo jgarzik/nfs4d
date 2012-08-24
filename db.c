@@ -31,6 +31,7 @@ enum {
 	FSDB_PGSZ_INODES		= 4096,	/* inodes db4 page size */
 	FSDB_PGSZ_DIRENT		= 4096,	/* dir entry db4 page size */
 	FSDB_PGSZ_CLIENTS		= 512,
+	FSDB_PGSZ_CLIENT_OWNERS		= 512,
 	FSDB_PGSZ_SESSIONS		= 512,
 };
 
@@ -222,8 +223,15 @@ int fsdb_open(struct fsdb *fsdb, unsigned int env_flags, unsigned int flags,
 	if (rc)
 		goto err_out_clients;
 
+	rc = open_db(dbenv, &fsdb->client_owners, "client_owners",
+		     FSDB_PGSZ_CLIENT_OWNERS, DB_HASH, flags, NULL);
+	if (rc)
+		goto err_out_sessions;
+
 	return 0;
 
+err_out_sessions:
+	fsdb->sessions->close(fsdb->sessions, 0);
 err_out_clients:
 	fsdb->clients->close(fsdb->clients, 0);
 err_out_dirent:
@@ -237,6 +245,7 @@ err_out:
 
 void fsdb_close(struct fsdb *fsdb)
 {
+	fsdb->client_owners->close(fsdb->client_owners, 0);
 	fsdb->sessions->close(fsdb->sessions, 0);
 	fsdb->clients->close(fsdb->clients, 0);
 	fsdb->dirent->close(fsdb->dirent, 0);
