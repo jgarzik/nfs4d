@@ -565,12 +565,122 @@ void cli_owner_add(struct nfs_owner *owner)
 nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 			     struct list_head *writes, struct rpc_write **wr)
 {
-	nfsstat4 status = NFS4ERR_NOTSUPP;
+	uint32_t *status_p;
+	nfsstat4 status = NFS4_OK;
+	fsdb_client cli = {};
+	bool ok_commit = false;
+	DB_TXN *txn = NULL;
+	DB_ENV *dbenv = srv.fsdb.env;
 
 	if (debugging)
 		applog(LOG_INFO, "op EXCHANGE_ID");
 
-	WR32(status);
+	status_p = WRSKIP(4);			/* ending status */
+
+	/* we only support SP4_NONE */
+	if (args->eia_state_protect.spa_how != SP4_NONE) {
+		status = NFS4ERR_NOTSUPP;
+		goto out;
+	}
+
+	/* EXCHGID4_FLAG_CONFIRMED_R prohibited in eia_flags */
+	if (args->eia_flags & EXCHGID4_FLAG_CONFIRMED_R) {
+		status = NFS4ERR_INVAL;
+		goto out;
+	}
+
+	int rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+	if (rc) {
+		status = NFS4ERR_IO;
+		dbenv->err(dbenv, rc, "DB_ENV->txn_begin");
+		goto out;
+	}
+
+	/* look for client record in database, based on eia_clientowner */
+	const client_owner4 *owner = &args->eia_clientowner;
+	struct nfs_constbuf obuf = { owner->co_ownerid.co_ownerid_len,
+				     owner->co_ownerid.co_ownerid_val };
+	rc = fsdb_cli_get_byowner(&srv.fsdb, txn, &obuf, 0, &cli);
+	if (rc && rc != DB_NOTFOUND) {
+		status = NFS4ERR_IO;
+		goto out_txn;
+	}
+
+	bool have_owner = (rc == 0);
+
+	/* client present; trash-locks and metadata-update modes unsupported */
+	if (have_owner) {
+		status = NFS4ERR_NOTSUPP;
+		goto out_txn;
+	}
+
+	/*
+	 * create new client record
+	 */
+	
+	cli.flags = args->eia_flags;
+	memcpy(cli.verifier, owner->co_verifier, sizeof(cli.verifier));
+	cli.owner.owner_len = owner->co_ownerid.co_ownerid_len;
+	cli.owner.owner_val = memdup(owner->co_ownerid.co_ownerid_val,
+				     owner->co_ownerid.co_ownerid_len);
+	if (!cli.owner.owner_val) {
+		status = NFS4ERR_SERVERFAULT;
+		goto out_txn;
+	}
+
+	/*
+	 * Attempt to store in database, with random client id.
+	 * Continue trying with random client ids until a unique
+	 * one is found.
+	 */
+	unsigned int store_tries = 50000;
+	while (store_tries-- > 0) {
+		nrand32(&cli.id, 2);
+
+		rc = fsdb_cli_put(&srv.fsdb, txn, DB_NOOVERWRITE, &cli);
+		if (rc == 0)
+			break;
+		if (rc != DB_KEYEXIST) {
+			status = NFS4ERR_IO;
+			goto out_txn;
+		}
+	}
+	if (rc) {	/* highly unlikely! */
+		status = NFS4ERR_SERVERFAULT;
+		goto out_txn;
+	}
+
+	const char *my_server_owner = "127.0.0.1";
+	const char *my_server_scope = "n/a";
+
+	/* write successful result response */
+	WR64(cli.id);
+	WR32(cli.sequence_id);
+	WR32(cli.flags);
+	WR32(SP4_NONE);			/* eir_state_protect */
+	WR64(0);			/* eir_server_owner.so_minor_id */
+	WRSTR(my_server_owner);		/* eir_server_owner.so_major_id */
+	WRSTR(my_server_scope);		/* eir_server_scope */
+	WR32(0);			/* eir_server_impl_id size */
+
+	ok_commit = true;
+
+out_txn:
+	if (ok_commit) {
+		rc = txn->commit(txn, 0);
+		if (rc) {
+			dbenv->err(dbenv, rc, "DB_ENV->txn_commit");
+			status = NFS4ERR_IO;
+		}
+	} else {
+		if (txn->abort(txn))
+			dbenv->err(dbenv, rc, "DB_ENV->txn_abort");
+	}
+
+out:
+	fsdb_cli_free(&cli, false);
+
+	*status_p = htonl(status);
 	return status;
 }
 

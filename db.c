@@ -688,6 +688,34 @@ int fsdb_cli_get(struct fsdb *fsdb, DB_TXN *txn, fsdb_client_id id,
 	return xdr_rc ? 0 : -1;
 }
 
+int fsdb_cli_get_byowner(struct fsdb *fsdb, DB_TXN *txn,
+			 struct nfs_constbuf *owner,
+			 int flags, fsdb_client *cli_out)
+{
+	DB *client_owners = fsdb->client_owners;
+	DBT pkey, pval;
+	int rc;
+	bool xdr_rc;
+
+	memset(&pkey, 0, sizeof(pkey));
+	pkey.data = (char *) owner->val;
+	pkey.size = owner->len;
+
+	memset(&pval, 0, sizeof(pval));
+
+	rc = client_owners->get(client_owners, txn, &pkey, &pval, flags);
+	if (rc) {
+		 if (rc != DB_NOTFOUND)
+		 	client_owners->err(client_owners, rc,
+					   "client_owners->get");
+		 return rc;
+	}
+
+	xdr_rc = fsdb_cli_decode(pval.data, pval.size, cli_out);
+
+	return xdr_rc ? 0 : -1;
+}
+
 int fsdb_cli_put(struct fsdb *fsdb, DB_TXN *txn, int flags,
 		 const fsdb_client *cli)
 {

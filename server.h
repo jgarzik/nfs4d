@@ -248,6 +248,11 @@ struct nfs_buf {
 	char			*val;
 };
 
+struct nfs_constbuf {
+	unsigned int		len;
+	const char		*val;
+};
+
 struct nfs_stateid {
 	uint32_t		seqid;
 	uint32_t		id;
