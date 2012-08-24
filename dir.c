@@ -105,7 +105,7 @@ nfsstat4 dir_lookup(DB_TXN *txn, const struct nfs_inode *dir_ino,
 	return NFS4_OK;
 }
 
-nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, const LOOKUP4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -117,7 +117,8 @@ nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
 	DB_ENV *dbenv = srv.fsdb.env;
 	int rc;
 
-	CURBUF(&objname);
+	objname.len = args->objname.utf8string_len;
+	objname.val = args->objname.utf8string_val;
 
 	if (!objname.len) {
 		status = NFS4ERR_INVAL;
@@ -187,7 +188,7 @@ out_abort:
 	goto out;
 }
 
-nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -249,7 +250,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_link(struct nfs_cxn *cxn, const LINK4args *args,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status;
@@ -260,7 +261,8 @@ nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
 	DB_ENV *dbenv = srv.fsdb.env;
 	int rc;
 
-	CURBUF(&newname);
+	newname.len = args->newname.utf8string_len;
+	newname.val = args->newname.utf8string_val;
 
 	if (debugging)
 		applog(LOG_INFO, "op LINK (%.*s)",
@@ -402,7 +404,7 @@ static bool dir_is_empty(DB_TXN *txn, const struct nfs_inode *ino)
 	return true;
 }
 
-nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, const REMOVE4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -414,7 +416,8 @@ nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
 	int rc;
 	nfsino_t de_inum;
 
-	CURBUF(&target);
+	target.len = args->target.utf8string_len;
+	target.val = args->target.utf8string_val;
 
 	if (debugging)
 		applog(LOG_INFO, "op REMOVE ('%.*s')",
@@ -520,7 +523,7 @@ out_abort:
 	goto out;
 }
 
-nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, const RENAME4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -534,8 +537,10 @@ nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
 	int rc;
 	nfsino_t old_dirent, new_dirent;
 
-	CURBUF(&oldname);
-	CURBUF(&newname);
+	oldname.len = args->oldname.utf8string_len;
+	oldname.val = args->oldname.utf8string_val;
+	newname.len = args->newname.utf8string_len;
+	newname.val = args->newname.utf8string_val;
 
 	if (debugging)
 		applog(LOG_INFO, "op RENAME (OLD:%.*s, NEW:%.*s)",
@@ -836,7 +841,7 @@ out:
 	return false;
 }
 
-nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, const READDIR4args *args,
 		        struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -844,7 +849,7 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t dircount, maxcount, *status_p;
 	struct readdir_info ri;
 	uint64_t cookie, attr_request;
-	verifier4 *cookie_verf;
+	const verifier4 *cookie_verf;
 	DB_TXN *txn = NULL;
 	DB *dirent = srv.fsdb.dirent;
 	DB_ENV *dbenv = srv.fsdb.env;
@@ -856,11 +861,11 @@ nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint64_t dirent_inum, db_de;
 	struct fsdb_de_key *rkey;
 
-	cookie = CR64();
-	cookie_verf = CURMEM(sizeof(verifier4));
-	dircount = CR32();
-	maxcount = CR32();
-	attr_request = CURMAP();
+	cookie = args->cookie;
+	cookie_verf = &args->cookieverf;
+	dircount = args->dircount;
+	maxcount = args->maxcount;
+	attr_request = bitmap4_decode(&args->attr_request);
 
 	status_p = WRSKIP(4);
 

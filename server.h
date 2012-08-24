@@ -221,8 +221,8 @@ struct blob {
 };
 
 struct curbuf {
-	char		*buf_start;
-	char		*buf;
+	const char	*buf_start;
+	const char	*buf;
 
 	unsigned int	len_total;
 	unsigned int	len;
@@ -325,33 +325,6 @@ struct nfs_fattr_set {
 	nfstime4			time_modify_set;
 
 	fattr4_mounted_on_fileid	mounted_on_fileid;
-};
-
-struct nfs_open_args {
-	seqid4			seqid;
-
-	uint32_t		share_access;
-	uint32_t		share_deny;
-
-	clientid4		clientid;
-	struct nfs_buf		owner;
-
-	opentype4		opentype;
-	createhow4		how;
-	struct nfs_fattr_set	attr;
-
-	open_claim_type4	claim;
-	union {
-		struct nfs_buf		file;
-		open_delegation_type4	delegate_type;
-
-		struct {
-			struct nfs_stateid delegate_stateid;
-			struct nfs_buf	file;
-		} delegate_cur_info;
-
-		struct nfs_buf		file_delegate_prev;
-	} u;
 };
 
 enum cxn_auth_type {
@@ -606,33 +579,33 @@ extern struct nfs_server srv;
 extern int debugging;
 
 /* data.c */
-extern nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, const COMMIT4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_write(struct nfs_cxn *cxn, const WRITE4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_read(struct nfs_cxn *cxn, const READ4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, const LOCK4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, const LOCKT4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, const LOCKU4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, const RELEASE_LOCKOWNER4args *,
 		       struct list_head *writes, struct rpc_write **wr);
 
 /* dir.c */
-extern nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_lookup(struct nfs_cxn *cxn, const LOOKUP4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_lookupp(struct nfs_cxn *cxn,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_link(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_link(struct nfs_cxn *cxn, const LINK4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_remove(struct nfs_cxn *cxn, const REMOVE4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_rename(struct nfs_cxn *cxn, const RENAME4args *,
 		       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_readdir(struct nfs_cxn *cxn, const READDIR4args *,
 		       struct list_head *writes, struct rpc_write **wr);
 extern enum nfsstat4 dir_add(DB_TXN *txn, struct nfs_inode *dir_ino,
 		      const struct nfs_buf *name_in,
@@ -645,7 +618,7 @@ extern nfsstat4 dir_lookup(DB_TXN *txn, const struct nfs_inode *dir_ino,
 void nfs_readdir_free(READDIR4res *res);
 
 /* fattr.c */
-extern nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr);
+extern nfsstat4 copy_attr(struct nfs_fattr_set *attr, const fattr4 *attr4);
 extern nfsstat4 wr_fattr(const struct nfs_fattr_set *attr, uint64_t *bitmap_out,
 		     struct list_head *writes, struct rpc_write **wr);
 extern bool fattr_decode(fattr4 *raw, struct nfs_fattr_set *attr);
@@ -656,17 +629,17 @@ extern void print_fattr(const char *pfx, const struct nfs_fattr_set *attr);
 extern void print_fattr_bitmap(const char *pfx, uint64_t bitmap);
 
 /* fh.c */
-extern nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, const PUTFH4args *,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn,
 			     struct list_head *writes, struct rpc_write **wr);
 
 /* id.c */
@@ -674,15 +647,15 @@ extern char *id_lookup_name(enum id_type type, const char *name, size_t name_len
 extern char *id_lookup(enum id_type type, unsigned int id);
 
 /* inode.c */
-extern nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_access(struct nfs_cxn *cxn, const ACCESS4args *,
 			      struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, const GETATTR4args *,
 			       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, const SETATTR4args *,
 			       struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_create(struct nfs_cxn *cxn, const CREATE4args *,
 			      struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, const VERIFY4args *,
 			      struct list_head *writes, struct rpc_write **wr,
 			      bool nverify);
 extern void inode_openfile_add(struct nfs_inode *ino, struct nfs_openfile *of);
@@ -714,11 +687,11 @@ extern uint64_t srv_space_used(void);
 extern uint64_t srv_space_free(void);
 extern void syslogerr(const char *prefix);
 extern void syslogerr2(const char *pfx1, const char *pfx2);
-extern void *cur_skip(struct curbuf *cur, unsigned int n);
+extern const void *cur_skip(struct curbuf *cur, unsigned int n);
 extern uint32_t cur_read32(struct curbuf *cur);
 extern uint64_t cur_read64(struct curbuf *cur);
 extern uint64_t cur_readmap(struct curbuf *cur);
-extern void *cur_readmem(struct curbuf *cur, unsigned int n);
+extern const void *cur_readmem(struct curbuf *cur, unsigned int n);
 extern void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb);
 extern void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid);
 extern void wr_free(struct rpc_write *wr);
@@ -741,13 +714,13 @@ extern void *wr_map(struct list_head *writes, struct rpc_write **wr_io,
 			uint64_t bitmap);
 
 /* open.c */
-extern nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *,
 			    struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, const OPEN_CONFIRM4args *,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, const OPEN_DOWNGRADE4args *,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 
 /* server.c */
@@ -775,11 +748,11 @@ extern nfsstat4 clientid_test(clientid4 id);
 extern void client_free(gpointer data);
 extern void openfile_free(gpointer data);
 extern uint32_t gen_stateid(void);
-extern nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, const RENEW4args *,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, const SETCLIENTID4args *,
 			     struct list_head *writes, struct rpc_write **wr);
-extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+extern nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, const SETCLIENTID_CONFIRM4args *,
 			     struct list_head *writes, struct rpc_write **wr);
 extern void rand_verifier(verifier4 *verf);
 
@@ -852,6 +825,28 @@ static inline bool fh_equal(struct nfs_fh a, struct nfs_fh b)
 static inline void fh_set(struct nfs_fh *fh, nfsino_t inum)
 {
 	fh->inum = inum;
+}
+
+static inline uint64_t bitmap4_decode(const bitmap4 *map)
+{
+	uint64_t v = 0;
+
+	if (map->bitmap4_len > 0)
+		v |= map->bitmap4_val[0];
+	if (map->bitmap4_len > 1)
+		v |= (((uint64_t)map->bitmap4_val[1]) << 32ULL);
+
+	return v;
+}
+
+static inline void copy_sid(struct nfs_stateid *sid, const stateid4 *sid4)
+{
+	sid->seqid = sid4->seqid;
+
+	/* FIXME: endian */
+	memcpy(&sid->id, &sid4->other[0], sizeof(sid->id));
+	memcpy(&sid->server_verf, &sid4->other[4], sizeof(sid->server_verf));
+	memcpy(&sid->server_magic, &sid4->other[8], sizeof(sid->server_magic));
 }
 
 #endif /* __SERVER_H__ */

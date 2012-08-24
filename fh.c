@@ -67,7 +67,7 @@ static int nfs_fh_decode(DB_TXN *txn, const struct nfs_buf *fh_in,
 	return 1;
 }
 
-nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_getfh(struct nfs_cxn *cxn,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -96,7 +96,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, const PUTFH4args *args,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -106,7 +106,8 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	memset(&fh, 0, sizeof(fh));
 
-	CURBUF(&nb);			/* opaque filehandle */
+	nb.len = args->object.nfs_fh4_len;
+	nb.val = args->object.nfs_fh4_val;
 
 	rc = nfs_fh_decode(NULL, &nb, &fh);
 	if (rc == 0)
@@ -124,7 +125,7 @@ nfsstat4 nfs_op_putfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	return status;
 }
 
-nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	fh_set(&cxn->current_fh, INO_ROOT);
@@ -137,7 +138,7 @@ nfsstat4 nfs_op_putrootfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	return NFS4_OK;
 }
 
-nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	fh_set(&cxn->current_fh, INO_ROOT);
@@ -150,7 +151,7 @@ nfsstat4 nfs_op_putpubfh(struct nfs_cxn *cxn, struct curbuf *cur,
 	return NFS4_OK;
 }
 
-nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_restorefh(struct nfs_cxn *cxn,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -179,7 +180,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_savefh(struct nfs_cxn *cxn,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;

@@ -40,7 +40,7 @@ static const char *name_lock_type4[] = {
 	[WRITEW_LT]		= "WRITEW_LT",
 };
 
-nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, const COMMIT4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -52,8 +52,8 @@ nfsstat4 nfs_op_commit(struct nfs_cxn *cxn, struct curbuf *cur,
 	char datapfx[4];
 
 	/* read COMMIT args */
-	offset = CR64();
-	count = CR32();
+	offset = args->offset;
+	count = args->count;
 
 	if (debugging)
 		applog(LOG_INFO, "op COMMIT (OFS:%Lu LEN:%x)",
@@ -110,14 +110,14 @@ err_io:
 	goto out;
 }
 
-nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_write(struct nfs_cxn *cxn, const WRITE4args *args,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
 	struct nfs_inode *ino = NULL;
 	uint64_t new_size, offset;
-	uint32_t stable;
+	stable_how4 stable;
 	struct nfs_buf data;
 	struct nfs_access ac = { NULL, };
 	uint64_t old_size;
@@ -130,15 +130,11 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, struct curbuf *cur,
 	int rc;
 	char datapfx[4];
 
-	if (cur->len < 32) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	CURSID(&sid);
-	offset = CR64();
-	stable = CR32();
-	CURBUF(&data);
+	copy_sid(&sid, &args->stateid);
+	offset = args->offset;
+	stable = args->stable;
+	data.len = args->data.data_len;
+	data.val = args->data.data_val;
 
 	srv.stats.write_bytes += data.len;
 
@@ -293,7 +289,7 @@ out_abort:
 	goto out;
 }
 
-nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_read(struct nfs_cxn *cxn, const READ4args *args,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -308,14 +304,9 @@ nfsstat4 nfs_op_read(struct nfs_cxn *cxn, struct curbuf *cur,
 	char *fdpath;
 	char datapfx[4];
 
-	if (cur->len < 28) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	CURSID(&sid);
-	offset = CR64();
-	count = CR32();
+	copy_sid(&sid, &args->stateid);
+	offset = args->offset;
+	count = args->count;
 
 	srv.stats.read_bytes += count;
 
@@ -449,32 +440,25 @@ err_out_data:
 	goto out;
 }
 
-nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_testlock(struct nfs_cxn *cxn, const LOCKT4args *args,
 		         struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_inode *ino = NULL;
-	uint32_t locktype;
+	nfs_lock_type4 locktype;
 	uint64_t offset, length;
 	clientid4 owner_id;
 	struct nfs_buf owner;
 	struct nfs_access ac = { NULL, };
 	struct nfs_owner *o = NULL;
 
-	/* easy check for incomplete args (our routines will return
-	 * zeroes if overflow occurs, so this is just nice)
-	 */
-	if (cur->len < 28) {
-		WR32(NFS4ERR_BADXDR);
-		return NFS4ERR_BADXDR;
-	}
-
 	/* read LOCKT args */
-	locktype = CR32();
-	offset = CR64();
-	length = CR64();
-	owner_id = CR64();
-	CURBUF(&owner);
+	locktype = args->locktype;
+	offset = args->offset;
+	length = args->length;
+	owner_id = args->owner.clientid;
+	owner.len = args->owner.owner.owner_len;
+	owner.val = args->owner.owner.owner_val;
 
 	if (debugging)
 		applog(LOG_INFO, "op TESTLOCK (TYP:%s OFS:%Lu LEN:%Lx OCID:%Lx OWNER:%.*s)",
@@ -579,7 +563,7 @@ static void print_lock_args(uint32_t prev_id_seq,
 	}
 }
 
-nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, const LOCK4args *args,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -588,7 +572,8 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t prev_id;
 	struct nfs_stateid *sid, lock_sid, open_sid, tmp_sid;
 	bool reclaim, new_lock, new_lock_of = false;
-	uint32_t locktype, lock_seqid, open_seqid = 0;
+	uint32_t lock_seqid, open_seqid = 0;
+	nfs_lock_type4 locktype;
 	uint64_t offset, length, id_short = 0;
 	struct nfs_buf owner;
 	struct nfs_lock *lock_ent;
@@ -601,30 +586,30 @@ nfsstat4 nfs_op_lock(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_lock;
 
-	if (cur->len < 28) {
-		WR32(NFS4ERR_BADXDR);
-		return NFS4ERR_BADXDR;
-	}
-
 	memset(&lock_sid, 0, sizeof(lock_sid));
 	memset(&open_sid, 0, sizeof(open_sid));
 	memset(&owner, 0, sizeof(owner));
 
-	locktype = CR32();
-	reclaim = CR32();
-	offset = CR64();
-	length = CR64();
-	new_lock = CR32();
+	locktype = args->locktype;
+	reclaim = args->reclaim;
+	offset = args->offset;
+	length = args->length;
+	new_lock = args->locker.new_lock_owner;
 
 	if (new_lock) {
-		open_seqid = CR32();
-		CURSID(&open_sid);
-		lock_seqid = CR32();
-		id_short = CR64();
-		CURBUF(&owner);
+		const open_to_lock_owner4 *o_owner =
+			&args->locker.locker4_u.open_owner;
+
+		open_seqid = o_owner->open_seqid;
+		copy_sid(&open_sid, &o_owner->open_stateid);
+		lock_seqid = o_owner->lock_seqid;
+		id_short = o_owner->lock_owner.clientid;
+		owner.len = o_owner->lock_owner.owner.owner_len;
+		owner.val = o_owner->lock_owner.owner.owner_val;
 	} else {
-		CURSID(&lock_sid);
-		lock_seqid = CR32();
+		copy_sid(&lock_sid,
+			 &args->locker.locker4_u.lock_owner.lock_stateid);
+		lock_seqid = args->locker.locker4_u.lock_owner.lock_seqid;
 	}
 
 	if (new_lock)
@@ -808,13 +793,14 @@ err_out:
 	goto out;
 }
 
-nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, const LOCKU4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
 	struct nfs_inode *ino = NULL;
-	uint32_t locktype, seqid;
+	nfs_lock_type4 locktype;
+	uint32_t seqid;
 	uint64_t offset, length;
 	struct nfs_lock *lock_ent, *iter;
 	struct nfs_openfile *lock_of;
@@ -822,20 +808,12 @@ nfsstat4 nfs_op_unlock(struct nfs_cxn *cxn, struct curbuf *cur,
 	/* indicate this RPC message should be cached in DRC */
 	cxn->drc_mask |= drc_unlock;
 
-	/* easy check for incomplete args (our routines will return
-	 * zeroes if overflow occurs, so this is just nice)
-	 */
-	if (cur->len < 40) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
 	/* read LOCKU arguments */
-	locktype = CR32();
-	seqid = CR32();
-	CURSID(&sid);
-	offset = CR64();
-	length = CR64();
+	locktype = args->locktype;
+	seqid = args->seqid;
+	copy_sid(&sid, &args->lock_stateid);
+	offset = args->offset;
+	length = args->length;
 
 	if (debugging)
 		applog(LOG_INFO, "op UNLOCK (TYP:%s SEQ:%u OFS:%Lu LEN:%Lx "
@@ -915,7 +893,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, const RELEASE_LOCKOWNER4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -925,17 +903,10 @@ nfsstat4 nfs_op_release_lockowner(struct nfs_cxn *cxn, struct curbuf *cur,
 	struct nfs_openfile *tmp_of, *iter;
 	bool found = false;
 
-	/* easy check for incomplete args (our routines will return
-	 * zeroes if overflow occurs, so this is just nice)
-	 */
-	if (cur->len < 12) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
 	/* read RELEASE_LOCKOWNER arguments */
-	id = CR64();
-	CURBUF(&owner);
+	id = args->lock_owner.clientid;
+	owner.len = args->lock_owner.owner.owner_len;
+	owner.val = args->lock_owner.owner.owner_val;
 
 	if (debugging)
 		applog(LOG_INFO, "op RELEASE_LOCKOWNER (OCID:%Lx OWNER:%.*s)",

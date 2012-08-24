@@ -30,118 +30,56 @@ static const char *name_open_claim_type4[] = {
 	[CLAIM_DELEGATE_PREV] = "DELEGATE_PREV",
 };
 
-static nfsstat4 cur_open(struct curbuf *cur, struct nfs_open_args *args)
-{
-	if (cur->len < (6 * 4))
-		return NFS4ERR_BADXDR;
-
-	args->seqid = CR32();
-	args->share_access = CR32();
-	args->share_deny = CR32();
-	args->clientid = CR64();
-	CURBUF(&args->owner);
-
-	args->opentype = CR32();
-	if (args->opentype == OPEN4_CREATE) {
-		createhow4 *how = &args->how;
-		how->mode = CR32();
-		if (how->mode == EXCLUSIVE4) {
-			if (cur->len < 8)
-				return NFS4ERR_BADXDR;
-
-			memcpy(&how->createhow4_u.createverf,
-			       CURMEM(sizeof(verifier4)),
-			       sizeof(verifier4));
-		} else if ((how->mode == UNCHECKED4) ||
-			   (how->mode == GUARDED4)) {
-			nfsstat4 status;
-
-			status = cur_readattr(cur, &args->attr);
-			if (status != NFS4_OK)
-				return status;
-		} else
-			return NFS4ERR_BADXDR;
-	} else if (args->opentype != OPEN4_NOCREATE)
-		return NFS4ERR_BADXDR;
-
-	args->claim = CR32();
-	switch (args->claim) {
-	case CLAIM_NULL:
-		CURBUF(&args->u.file);
-		break;
-
-	case CLAIM_PREVIOUS:
-		args->u.delegate_type = CR32();
-		break;
-
-	case CLAIM_DELEGATE_CUR:
-		if (cur->len < 20)
-			return NFS4ERR_BADXDR;
-		CURSID(&args->u.delegate_cur_info.delegate_stateid);
-		CURBUF(&args->u.delegate_cur_info.file);
-		break;
-
-	case CLAIM_DELEGATE_PREV:
-		CURBUF(&args->u.file_delegate_prev);
-		break;
-	default:
-		return NFS4ERR_BADXDR;
-	}
-
-	return NFS4_OK;
-}
-
-static void print_open_args(struct nfs_open_args *args)
+static void print_open_args(const OPEN4args *args)
 {
 	if (!debugging)
 		return;
 
-	applog(LOG_INFO, "op OPEN ('%.*s')",
-	       args->u.file.len,
-	       args->u.file.val);
+	applog(LOG_INFO, "op OPEN");
 
 	applog(LOG_INFO, "   OPEN (SEQ:%u SHAC:%x SHDN:%x CR:%s CLM:%s)",
 	       args->seqid,
 	       args->share_access,
 	       args->share_deny,
-	       args->opentype == OPEN4_CREATE ? "YES" : "NO",
-	       name_open_claim_type4[args->claim]);
+	       args->openhow.opentype == OPEN4_CREATE ? "YES" : "NO",
+	       name_open_claim_type4[args->claim.claim]);
 
-	if (args->opentype == OPEN4_CREATE && args->how.mode == EXCLUSIVE4) {
+	if (args->openhow.opentype == OPEN4_CREATE && args->openhow.openflag4_u.how.mode == EXCLUSIVE4) {
 		uint64_t x;
-		memcpy(&x, args->how.createhow4_u.createverf, 8);
+		memcpy(&x, args->openhow.openflag4_u.how.createhow4_u.createverf, 8);
 		applog(LOG_INFO, "   OPEN (MODE:EXCL VERF:%Lx)",
 		       (unsigned long long) x);
 	}
-	else if (args->opentype == OPEN4_CREATE) {
+	else if (args->openhow.opentype == OPEN4_CREATE) {
 		const char *pfx;
-		if (args->how.mode == GUARDED4)
+		if (args->openhow.openflag4_u.how.mode == GUARDED4)
 			pfx = "   OPEN (MODE:GUARD)";
 		else
 			pfx = "   OPEN (MODE:UNCHK)";
-		print_fattr(pfx, &args->attr);
+		(void)pfx;
+		//print_fattr(pfx, &args->attr);
 	}
 
-	applog(LOG_INFO, "   OPEN (CID:%Lx OWNER:%.*s)",
-	       (unsigned long long) args->clientid,
-	       args->owner.len,
-	       args->owner.val);
+	applog(LOG_INFO, "   OPEN (CID:xx OWNER:%.*s)",
+	       //(unsigned long long) args->clientid,
+	       args->owner.owner.owner_len,
+	       args->owner.owner.owner_val);
 }
 
-nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 		     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status, lu_stat;
 	struct nfs_inode *dir_ino = NULL, *ino = NULL;
 	struct nfs_stateid sid;
 	bool creating, recreating = false;
-	struct nfs_open_args _args;
-	struct nfs_open_args *args = &_args;
 	uint64_t bitmap_set = 0;
 	change_info4 cinfo = { true, 0, 0 };
 	uint32_t open_flags = 0;
 	struct nfs_owner *open_owner = NULL;
 	struct nfs_openfile *of = NULL;
+	struct nfs_buf owner_name, u_file;
+	struct nfs_fattr_set args_attr = {};
 	bool new_owner = false, exclusive = false;
 	nfsino_t de_inum;
 	DB_TXN *txn;
@@ -150,13 +88,12 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_open;
 
-	memset(args, 0, sizeof(struct nfs_open_args));
-
-	status = cur_open(cur, args);
-	if (status != NFS4_OK)
-		goto out;
-
 	print_open_args(args);
+
+	owner_name.len = args->owner.owner.owner_len;
+	owner_name.val = args->owner.owner.owner_val;
+	u_file.len = args->claim.open_claim4_u.file.utf8string_len;
+	u_file.val = args->claim.open_claim4_u.file.utf8string_val;
 
 	/* open transaction */
 	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
@@ -166,7 +103,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto out;
 	}
 
-	status = owner_lookup_name(args->clientid, &args->owner, &open_owner);
+	status = owner_lookup_name(args->owner.clientid, &owner_name, &open_owner);
 	if (status != NFS4_OK)
 		goto err_out;
 
@@ -180,8 +117,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	}
 
 	/* for the moment, we only support CLAIM_NULL */
-	if (args->claim != CLAIM_NULL) {
-		if (args->claim == CLAIM_PREVIOUS)
+	if (args->claim.claim != CLAIM_NULL) {
+		if (args->claim.claim == CLAIM_PREVIOUS)
 			status = NFS4ERR_RECLAIM_BAD;
 		else
 			status = NFS4ERR_NOTSUPP;
@@ -194,7 +131,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		goto err_out;
 
 	/* lookup component name; get inode if exists */
-	lu_stat = dir_lookup(txn, dir_ino, &args->u.file, 0, &de_inum);
+	lu_stat = dir_lookup(txn, dir_ino, &u_file, 0, &de_inum);
 	switch (lu_stat) {
 	case NFS4ERR_NOENT:
 		break;
@@ -228,12 +165,15 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (of)
 		of->my_seq++;
 
-	creating = (args->opentype == OPEN4_CREATE);
-	if (creating)
-		exclusive = (args->how.mode == EXCLUSIVE4);
+	creating = (args->openhow.opentype == OPEN4_CREATE);
+	if (creating) {
+		copy_attr(&args_attr,
+		       &args->openhow.openflag4_u.how.createhow4_u.createattrs);
+		exclusive = (args->openhow.openflag4_u.how.mode == EXCLUSIVE4);
+	}
 
 	if (creating && ino &&
-	    (args->how.mode == UNCHECKED4)) {
+	    (args->openhow.openflag4_u.how.mode == UNCHECKED4)) {
 		creating = false;
 		recreating = true;
 
@@ -259,7 +199,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		}
 
 		if (exclusive &&
-		    !memcmp(&args->how.createhow4_u.createverf,
+		    !memcmp(&args->openhow.openflag4_u.how.createhow4_u.createverf,
 			    &ino->create_verf,
 			    sizeof(verifier4)))
 			match_verf = true;
@@ -285,8 +225,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 
 		ac.ino = ino;
 		ac.op = OP_OPEN;
-		ac.clientid = args->clientid;
-		ac.owner = &args->owner;
+		ac.clientid = args->owner.clientid;
+		ac.owner = &owner_name;
 		ac.share_access = args->share_access;
 		ac.share_deny = args->share_deny;
 		status = access_ok(&ac);
@@ -304,18 +244,18 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 			goto err_out;
 
 		status = inode_add(txn, dir_ino, ino,
-				   exclusive ? NULL : &args->attr,
-				   &args->u.file, &bitmap_set, &cinfo);
+				   exclusive ? NULL : &args_attr,
+				   &u_file, &bitmap_set, &cinfo);
 		if (status != NFS4_OK)
 			goto err_out;
 
 		if (exclusive) {
 			memcpy(&ino->create_verf,
-			       &args->how.createhow4_u.createverf,
+			       &args->openhow.openflag4_u.how.createhow4_u.createverf,
 			       sizeof(verifier4));
 			if (debugging) {
 				uint64_t x, y;
-				memcpy(&x, args->how.createhow4_u.createverf, 8);
+				memcpy(&x, args->openhow.openflag4_u.how.createhow4_u.createverf, 8);
 				memcpy(&y, ino->create_verf, 8);
 				applog(LOG_DEBUG, "   OPEN (OLD VERF %Lx)",
 					(unsigned long long) x);
@@ -345,24 +285,24 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 	 * if re-creating, only size attribute applies
 	 */
 	if (recreating && !exclusive) {
-		_args.attr.bitmap &= (1ULL << FATTR4_SIZE);
+		args_attr.bitmap &= (1ULL << FATTR4_SIZE);
 
 		status = NFS4_OK;
-		if (_args.attr.size == 0)
-			status = inode_apply_attrs(txn, ino, &args->attr,
+		if (args_attr.size == 0)
+			status = inode_apply_attrs(txn, ino, &args_attr,
 						   &bitmap_set, NULL, false);
 		if (status != NFS4_OK)
 			goto err_out;
 	}
 
 	if (!open_owner) {
-		open_owner = owner_new(nst_open, &args->owner);
+		open_owner = owner_new(nst_open, &owner_name);
 		if (!open_owner) {
 			status = NFS4ERR_RESOURCE;
 			goto err_out;
 		}
 
-		open_owner->cli = args->clientid;
+		open_owner->cli = args->owner.clientid;
 		open_owner->cli_next_seq = args->seqid + 1;
 
 		cli_owner_add(open_owner);
@@ -418,7 +358,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, struct curbuf *cur,
 		       sid.seqid, of->id);
 
 out:
-	fattr_free(&args->attr);
+	fattr_free(&args_attr);
 
 	WR32(status);
 	if (status == NFS4_OK) {
@@ -445,7 +385,7 @@ err_out_owner:
 	goto out;
 }
 
-nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, const OPEN_CONFIRM4args *args,
 			     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -456,13 +396,8 @@ nfsstat4 nfs_op_open_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_open;
 
-	if (cur->len < 20) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	CURSID(&sid);
-	seqid = CR32();
+	copy_sid(&sid, &args->open_stateid);
+	seqid = args->seqid;
 
 	if (debugging)
 		applog(LOG_INFO, "op OPEN_CONFIRM (SEQ:%u IDSEQ:%u ID:%x)",
@@ -514,7 +449,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, const OPEN_DOWNGRADE4args *args,
 			     struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -525,15 +460,10 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_open;
 
-	if (cur->len < 28) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	CURSID(&sid);
-	seqid = CR32();
-	share_access = CR32();
-	share_deny = CR32();
+	copy_sid(&sid, &args->open_stateid);
+	seqid = args->seqid;
+	share_access = args->share_access;
+	share_deny = args->share_deny;
 
 	if (debugging)
 		applog(LOG_INFO, "op OPEN_DOWNGRADE (SEQ:%u IDSEQ:%u ID:%x "
@@ -599,7 +529,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *args,
 		      struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -610,13 +540,8 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_close;
 
-	if (cur->len < 20) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	seqid = CR32();
-	CURSID(&sid);
+	seqid = args->seqid;
+	copy_sid(&sid, &args->open_stateid);
 
 	if (debugging)
 		applog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",

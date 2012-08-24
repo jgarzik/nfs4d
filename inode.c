@@ -509,7 +509,7 @@ static void print_create_args(uint32_t objtype, const struct nfs_buf *objname,
 	print_fattr("op CREATE attr", attr);
 }
 
-nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_create(struct nfs_cxn *cxn, const CREATE4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status;
@@ -523,15 +523,18 @@ nfsstat4 nfs_op_create(struct nfs_cxn *cxn, struct curbuf *cur,
 	DB_ENV *dbenv = srv.fsdb.env;
 	DB_TXN *txn;
 
-	objtype = CR32();				/* type */
+	objtype = args->objtype.type;
 	if (objtype == NF4BLK || objtype == NF4CHR) {
-		specdata[0] = CR32();			/* devdata */
-		specdata[1] = CR32();
-	} else if (objtype == NF4LNK)
-		CURBUF(&linkdata);			/* linkdata */
-	CURBUF(&objname);				/* objname */
+		specdata[0] = args->objtype.createtype4_u.devdata.specdata1;
+		specdata[1] = args->objtype.createtype4_u.devdata.specdata2;
+	} else if (objtype == NF4LNK) {
+		linkdata.val = args->objtype.createtype4_u.linkdata.utf8string_val;
+		linkdata.len = args->objtype.createtype4_u.linkdata.utf8string_len;
+	}
+	objname.val = args->objname.utf8string_val;
+	objname.len = args->objname.utf8string_len;
 
-	status = cur_readattr(cur, &attr);		/* createattrs */
+	status = copy_attr(&attr, &args->createattrs);
 	if (status != NFS4_OK)
 		goto out_noattr;
 
@@ -602,7 +605,7 @@ out_abort:
 	goto out;
 }
 
-nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, const GETATTR4args *args,
 		        struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -616,12 +619,7 @@ nfsstat4 nfs_op_getattr(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	status_p = WRSKIP(4);		/* ending status */
 
-	if (cur->len < 4) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	attrset.bitmap = CURMAP();
+	attrset.bitmap = bitmap4_decode(&args->attr_request);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
@@ -663,7 +661,7 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, const SETATTR4args *args,
 		        struct list_head *writes, struct rpc_write **wr)
 {
 	struct nfs_inode *ino = NULL;
@@ -675,14 +673,9 @@ nfsstat4 nfs_op_setattr(struct nfs_cxn *cxn, struct curbuf *cur,
 	DB_TXN *txn;
 	int rc;
 
-	if (cur->len < 20) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
+	copy_sid(&sid, &args->stateid);
 
-	CURSID(&sid);
-
-	status = cur_readattr(cur, &attr);
+	status = copy_attr(&attr, &args->obj_attributes);
 	if (status != NFS4_OK) {
 		if (attr.bitmap & fattr_read_only_mask)
 			status = NFS4ERR_INVAL;
@@ -786,7 +779,7 @@ out:
 	return rc;
 }
 
-nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_access(struct nfs_cxn *cxn, const ACCESS4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -794,12 +787,7 @@ nfsstat4 nfs_op_access(struct nfs_cxn *cxn, struct curbuf *cur,
 	uint32_t arg_access;
 	ACCESS4resok resok = { 0, 0 };
 
-	if (cur->len < sizeof(ACCESS4args)) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	arg_access = CR32();
+	arg_access = args->access;
 
 	if (debugging)
 		applog(LOG_INFO, "op ACCESS (0x%x)", arg_access);
@@ -957,7 +945,7 @@ static bool inode_attr_cmp(const struct nfs_inode *ino,
 	return true;
 }
 
-nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, const VERIFY4args *args,
 		       struct list_head *writes, struct rpc_write **wr,
 		       bool nverify)
 {
@@ -967,7 +955,7 @@ nfsstat4 nfs_op_verify(struct nfs_cxn *cxn, struct curbuf *cur,
 	bool match;
 	bool printed = false;
 
-	status = cur_readattr(cur, &fattr);
+	status = copy_attr(&fattr, &args->obj_attributes);
 	if (status != NFS4_OK)
 		goto out;
 

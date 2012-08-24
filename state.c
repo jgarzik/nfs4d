@@ -687,7 +687,7 @@ static void clientid_timer(int fd, short events, void *userdata)
 }
 
 static int clientid_new(struct nfs_cxn *cxn,
-			struct nfs_buf *id_long, verifier4 *client_verf,
+			struct nfs_buf *id_long, const verifier4 *client_verf,
 			uint32_t cb_ident, const cb_client4 *callback,
 			struct nfs_clientid **clid_out)
 {
@@ -863,14 +863,14 @@ static void client_search_iter(gpointer key, gpointer val, gpointer user_data)
 		csi->result = clid;
 }
 
-nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, const SETCLIENTID4args *args,
 			    struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	int rc;
 	struct nfs_clientid *clid = NULL;
-	struct nfs_buf client, tmpstr;
-	verifier4 *client_verf;
+	struct nfs_buf client;
+	const verifier4 *client_verf;
 	uint32_t cb_ident;
 	cb_client4 callback;
 	struct client_search_info csi;
@@ -878,19 +878,16 @@ nfsstat4 nfs_op_setclientid(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	cxn->drc_mask |= drc_setcid;
 
-	client_verf = CURMEM(sizeof(verifier4));
-	CURBUF(&client);
+	client_verf = &args->client.verifier;
+	client.len = args->client.id.id_len;
+	client.val = args->client.id.id_val;
 
 	memset(&callback, 0, sizeof(callback));
 
-	callback.cb_program = CR32();	/* cb_program */
-	CURBUF(&tmpstr);		/* r_netid */
-	if (tmpstr.len)
-		callback.cb_location.na_r_netid = g_strndup(tmpstr.val, tmpstr.len);
-	CURBUF(&tmpstr);		/* r_addr */
-	if (tmpstr.len)
-		callback.cb_location.na_r_addr = g_strndup(tmpstr.val, tmpstr.len);
-	cb_ident = CR32();		/* callback_ident */
+	callback.cb_program = args->callback.cb_program;
+	callback.cb_location.na_r_netid = strdup(args->callback.cb_location.na_r_netid);
+	callback.cb_location.na_r_addr = strdup(args->callback.cb_location.na_r_addr);
+	cb_ident = args->callback_ident;
 
 	/* look up client id */
 	csi.key.magic = BLOB_MAGIC;
@@ -971,18 +968,18 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_setclientid_confirm(struct nfs_cxn *cxn, const SETCLIENTID_CONFIRM4args *args,
 			    struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	struct nfs_clientid *new_clid, *tmp_clid, *confirmed;
-	verifier4 *confirm_verf;
+	const verifier4 *confirm_verf;
 	clientid4 id_short;
 
 	cxn->drc_mask |= drc_setcidconf;
 
-	id_short = CR64();
-	confirm_verf = CURMEM(sizeof(verifier4));
+	id_short = args->clientid;
+	confirm_verf = &args->setclientid_confirm;
 
 	if (debugging) {
 		uint64_t u;
@@ -1063,18 +1060,13 @@ out:
 	return status;
 }
 
-nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
+nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, const RENEW4args *args,
 			    struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
 	clientid4 id;
 
-	if (cur->len < 8) {
-		status = NFS4ERR_BADXDR;
-		goto out;
-	}
-
-	id = CR64();
+	id = args->clientid;
 
 	if (debugging)
 		applog(LOG_INFO, "op RENEW (CID:%Lx)",
@@ -1082,7 +1074,6 @@ nfsstat4 nfs_op_renew(struct nfs_cxn *cxn, struct curbuf *cur,
 
 	status = clientid_touch(id);
 
-out:
 	WR32(status);
 	return status;
 }

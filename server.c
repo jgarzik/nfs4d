@@ -245,7 +245,7 @@ err_out:
 	goto out;
 }
 
-static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn, struct curbuf *cur,
+static nfsstat4 nfs_op_readlink(struct nfs_cxn *cxn,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status = NFS4_OK;
@@ -278,7 +278,7 @@ out:
 	return status;
 }
 
-static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
+static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, const SECINFO4args *args,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	nfsstat4 status;
@@ -292,7 +292,8 @@ static nfsstat4 nfs_op_secinfo(struct nfs_cxn *cxn, struct curbuf *cur,
 	if (debugging)
 		applog(LOG_INFO, "op SECINFO");
 
-	CURBUF(&name);				/* component name */
+	name.len = args->name.utf8string_len;
+	name.val = args->name.utf8string_val;
 
 	if (!name.len || !g_utf8_validate(name.val, name.len, NULL)) {
 		status = NFS4ERR_INVAL;
@@ -409,15 +410,12 @@ static const char *argstr(uint32_t op)
 	return arg_str[op];
 }
 
-static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
+static nfsstat4 nfs_op(struct nfs_cxn *cxn, nfs_argop4 *arg,
 		       struct list_head *writes, struct rpc_write **wr)
 {
 	uint32_t op;
 
-	if (cur->len < 4)
-		return NFS4ERR_BADXDR;
-
-	op = CR32();			/* read argop */
+	op = arg->argop;
 
 	switch (op) {
 	case OP_ACCESS:
@@ -470,106 +468,106 @@ static nfsstat4 nfs_op(struct nfs_cxn *cxn, struct curbuf *cur,
 	switch (op) {
 	case OP_ACCESS:
 		srv.stats.op_access++;
-		return nfs_op_access(cxn, cur, writes, wr);
+		return nfs_op_access(cxn, &arg->nfs_argop4_u.opaccess, writes, wr);
 	case OP_CLOSE:
 		srv.stats.op_close++;
-		return nfs_op_close(cxn, cur, writes, wr);
+		return nfs_op_close(cxn, &arg->nfs_argop4_u.opclose, writes, wr);
 	case OP_COMMIT:
 		srv.stats.op_commit++;
-		return nfs_op_commit(cxn, cur, writes, wr);
+		return nfs_op_commit(cxn, &arg->nfs_argop4_u.opcommit, writes, wr);
 	case OP_CREATE:
 		srv.stats.op_create++;
-		return nfs_op_create(cxn, cur, writes, wr);
+		return nfs_op_create(cxn, &arg->nfs_argop4_u.opcreate, writes, wr);
 	case OP_GETATTR:
 		srv.stats.op_getattr++;
-		return nfs_op_getattr(cxn, cur, writes, wr);
+		return nfs_op_getattr(cxn, &arg->nfs_argop4_u.opgetattr, writes, wr);
 	case OP_GETFH:
 		srv.stats.op_getfh++;
-		return nfs_op_getfh(cxn, cur, writes, wr);
+		return nfs_op_getfh(cxn, writes, wr);
 	case OP_LINK:
 		srv.stats.op_link++;
-		return nfs_op_link(cxn, cur, writes, wr);
+		return nfs_op_link(cxn, &arg->nfs_argop4_u.oplink, writes, wr);
 	case OP_LOCK:
 		srv.stats.op_lock++;
-		return nfs_op_lock(cxn, cur, writes, wr);
+		return nfs_op_lock(cxn, &arg->nfs_argop4_u.oplock, writes, wr);
 	case OP_LOCKT:
 		srv.stats.op_testlock++;
-		return nfs_op_testlock(cxn, cur, writes, wr);
+		return nfs_op_testlock(cxn, &arg->nfs_argop4_u.oplockt, writes, wr);
 	case OP_LOCKU:
 		srv.stats.op_unlock++;
-		return nfs_op_unlock(cxn, cur, writes, wr);
+		return nfs_op_unlock(cxn, &arg->nfs_argop4_u.oplocku, writes, wr);
 	case OP_LOOKUP:
 		srv.stats.op_lookup++;
-		return nfs_op_lookup(cxn, cur, writes, wr);
+		return nfs_op_lookup(cxn, &arg->nfs_argop4_u.oplookup, writes, wr);
 	case OP_LOOKUPP:
 		srv.stats.op_lookupp++;
-		return nfs_op_lookupp(cxn, cur, writes, wr);
+		return nfs_op_lookupp(cxn, writes, wr);
 	case OP_NVERIFY:
 		srv.stats.op_nverify++;
-		return nfs_op_verify(cxn, cur, writes, wr, true);
+		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, writes, wr, true);
 	case OP_OPEN:
 		srv.stats.op_open++;
-		return nfs_op_open(cxn, cur, writes, wr);
+		return nfs_op_open(cxn, &arg->nfs_argop4_u.opopen, writes, wr);
 	case OP_OPEN_CONFIRM:
 		srv.stats.op_open_confirm++;
-		return nfs_op_open_confirm(cxn, cur, writes, wr);
+		return nfs_op_open_confirm(cxn, &arg->nfs_argop4_u.opopen_confirm, writes, wr);
 	case OP_OPEN_DOWNGRADE:
 		srv.stats.op_open_downgrade++;
-		return nfs_op_open_downgrade(cxn, cur, writes, wr);
+		return nfs_op_open_downgrade(cxn, &arg->nfs_argop4_u.opopen_downgrade, writes, wr);
 	case OP_PUTFH:
 		srv.stats.op_putfh++;
-		return nfs_op_putfh(cxn, cur, writes, wr);
+		return nfs_op_putfh(cxn, &arg->nfs_argop4_u.opputfh, writes, wr);
 	case OP_PUTPUBFH:
 		srv.stats.op_putpubfh++;
-		return nfs_op_putpubfh(cxn, cur, writes, wr);
+		return nfs_op_putpubfh(cxn, writes, wr);
 	case OP_PUTROOTFH:
 		srv.stats.op_putrootfh++;
-		return nfs_op_putrootfh(cxn, cur, writes, wr);
+		return nfs_op_putrootfh(cxn, writes, wr);
 	case OP_READ:
 		srv.stats.op_read++;
-		return nfs_op_read(cxn, cur, writes, wr);
+		return nfs_op_read(cxn, &arg->nfs_argop4_u.opread, writes, wr);
 	case OP_READDIR:
 		srv.stats.op_readdir++;
-		return nfs_op_readdir(cxn, cur, writes, wr);
+		return nfs_op_readdir(cxn, &arg->nfs_argop4_u.opreaddir, writes, wr);
 	case OP_READLINK:
 		srv.stats.op_readlink++;
-		return nfs_op_readlink(cxn, cur, writes, wr);
+		return nfs_op_readlink(cxn, writes, wr);
 	case OP_RELEASE_LOCKOWNER:
 		srv.stats.op_release_lockowner++;
-		return nfs_op_release_lockowner(cxn, cur, writes, wr);
+		return nfs_op_release_lockowner(cxn, &arg->nfs_argop4_u.oprelease_lockowner, writes, wr);
 	case OP_REMOVE:
 		srv.stats.op_remove++;
-		return nfs_op_remove(cxn, cur, writes, wr);
+		return nfs_op_remove(cxn, &arg->nfs_argop4_u.opremove, writes, wr);
 	case OP_RENAME:
 		srv.stats.op_rename++;
-		return nfs_op_rename(cxn, cur, writes, wr);
+		return nfs_op_rename(cxn, &arg->nfs_argop4_u.oprename, writes, wr);
 	case OP_RENEW:
 		srv.stats.op_renew++;
-		return nfs_op_renew(cxn, cur, writes, wr);
+		return nfs_op_renew(cxn, &arg->nfs_argop4_u.oprenew, writes, wr);
 	case OP_RESTOREFH:
 		srv.stats.op_restorefh++;
-		return nfs_op_restorefh(cxn, cur, writes, wr);
+		return nfs_op_restorefh(cxn, writes, wr);
 	case OP_SAVEFH:
 		srv.stats.op_savefh++;
-		return nfs_op_savefh(cxn, cur, writes, wr);
+		return nfs_op_savefh(cxn, writes, wr);
 	case OP_SECINFO:
 		srv.stats.op_secinfo++;
-		return nfs_op_secinfo(cxn, cur, writes, wr);
+		return nfs_op_secinfo(cxn, &arg->nfs_argop4_u.opsecinfo, writes, wr);
 	case OP_SETATTR:
 		srv.stats.op_setattr++;
-		return nfs_op_setattr(cxn, cur, writes, wr);
+		return nfs_op_setattr(cxn, &arg->nfs_argop4_u.opsetattr, writes, wr);
 	case OP_SETCLIENTID:
 		srv.stats.op_setclientid++;
-		return nfs_op_setclientid(cxn, cur, writes, wr);
+		return nfs_op_setclientid(cxn, &arg->nfs_argop4_u.opsetclientid, writes, wr);
 	case OP_SETCLIENTID_CONFIRM:
 		srv.stats.op_setclientid_confirm++;
-		return nfs_op_setclientid_confirm(cxn, cur, writes, wr);
+		return nfs_op_setclientid_confirm(cxn, &arg->nfs_argop4_u.opsetclientid_confirm, writes, wr);
 	case OP_VERIFY:
 		srv.stats.op_verify++;
-		return nfs_op_verify(cxn, cur, writes, wr, false);
+		return nfs_op_verify(cxn, &arg->nfs_argop4_u.opverify, writes, wr, false);
 	case OP_WRITE:
 		srv.stats.op_write++;
-		return nfs_op_write(cxn, cur, writes, wr);
+		return nfs_op_write(cxn, &arg->nfs_argop4_u.opwrite, writes, wr);
 
 	case OP_DELEGPURGE:
 	case OP_DELEGRETURN:
@@ -604,16 +602,29 @@ int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_a
 		      struct curbuf *cur, struct list_head *writes,
 		      struct rpc_write **wr)
 {
-	struct nfs_buf tag;
-	uint32_t *stat_p, *result_p, n_args, minor;
+	struct nfs_buf tag = {};
+	uint32_t *stat_p = NULL, *result_p = NULL, n_args = 0, minor;
 	nfsstat4 status = NFS4_OK;
 	unsigned int i = 0, results = 0;
 	struct nfs_cxn *cxn = NULL;
 	int drc_mask = 0;
+	XDR xdrs = {};
+	COMPOUND4args args = {};
 
-	CURBUF(&tag);			/* COMPOUND tag */
-	minor = CR32();			/* minor version */
-	n_args = CR32();		/* arg array size */
+	xdrmem_create(&xdrs, (char *) cur->buf, cur->len, XDR_DECODE);
+
+	if (!xdr_COMPOUND4args(&xdrs, &args)) {
+		status = NFS4ERR_BADXDR;
+		stat_p = WRSKIP(4);		/* COMPOUND result status */
+		WRBUF(&tag);			/* tag */
+		result_p = WRSKIP(4);		/* result array size */
+		goto out;
+	}
+
+	tag.val = args.tag.utf8string_val;
+	tag.len = args.tag.utf8string_len;
+	minor = args.minorversion;
+	n_args = args.argarray.argarray_len;
 
 	stat_p = WRSKIP(4);		/* COMPOUND result status */
 	WRBUF(&tag);			/* tag */
@@ -644,7 +655,7 @@ int nfsproc_compound(const char *host, struct opaque_auth *cred, struct opaque_a
 	for (i = 0; i < n_args; i++) {
 		results++;	/* even failed operations have results */
 
-		status = nfs_op(cxn, cur, writes, wr);
+		status = nfs_op(cxn, &args.argarray.argarray_val[i],writes, wr);
 		if (status != NFS4_OK)
 			break;
 	}
@@ -667,6 +678,9 @@ out:
 
 	*stat_p = htonl(status);
 	*result_p = htonl(results);
+
+	xdr_free((xdrproc_t) xdr_COMPOUND4args, (char *) &args);
+	xdr_destroy(&xdrs);
 
 	return drc_mask;
 }

@@ -255,20 +255,19 @@ unsigned int fattr_size(const struct nfs_fattr_set *attr)
 	return total;
 }
 
-nfsstat4 cur_readattr(struct curbuf *cur, struct nfs_fattr_set *attr)
+nfsstat4 copy_attr(struct nfs_fattr_set *attr, const fattr4 *attr4)
 {
 	uint64_t bitmap;
-	uint32_t attr_len;
 	nfsstat4 status = NFS4_OK;
 	unsigned int start_len, end_len;
+	const void *val_p = attr4->attr_vals.attrlist4_val;
+	unsigned int attr_len = attr4->attr_vals.attrlist4_len;
+	struct curbuf _cur = { val_p, val_p, attr_len, attr_len };
+	struct curbuf *cur = &_cur;
 
 	memset(attr, 0, sizeof(*attr));
 
-	attr->bitmap = bitmap = CURMAP();
-	attr_len = CR32();	/* attribute buffer length */
-
-	if (bitmap && (attr_len < 4))
-		return NFS4ERR_BADXDR;
+	attr->bitmap = bitmap = bitmap4_decode(&attr4->attrmask);
 
 	if (bitmap & ~fattr_supported_mask)
 		return NFS4ERR_ATTRNOTSUPP;

@@ -246,9 +246,9 @@ static void refbuf_unref(struct refbuf *rb)
 	}
 }
 
-void *cur_skip(struct curbuf *cur, unsigned int n)
+const void *cur_skip(struct curbuf *cur, unsigned int n)
 {
-	void *buf = cur->buf;
+	const void *buf = cur->buf;
 
 	if (!n || n > cur->len)
 		return NULL;
@@ -261,7 +261,7 @@ void *cur_skip(struct curbuf *cur, unsigned int n)
 
 uint32_t cur_read32(struct curbuf *cur)
 {
-	uint32_t *p = cur_skip(cur, 4);
+	const uint32_t *p = cur_skip(cur, 4);
 	if (p)
 		return ntohl(*p);
 
@@ -306,7 +306,7 @@ uint64_t cur_readmap(struct curbuf *cur)
 	return val;
 }
 
-void *cur_readmem(struct curbuf *cur, unsigned int n)
+const void *cur_readmem(struct curbuf *cur, unsigned int n)
 {
 	if (!n)
 		return NULL;
@@ -325,7 +325,7 @@ void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb)
 
 void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
 {
-	void *verf;
+	const void *verf;
 
 	sid->seqid = cur_read32(cur);
 	sid->id = cur_read32(cur);
@@ -672,7 +672,7 @@ static void garbage_collect(int fd, short events, void *userdata)
 	gc_timer_add();
 }
 
-static bool rpc_msg(struct rpc_cxn *cxn, void *msg, unsigned int msg_len)
+static bool rpc_msg(struct rpc_cxn *cxn, const void *msg, unsigned int msg_len)
 {
 	struct timezone tz = { 0, 0 };
 	struct curbuf _cur = { msg, msg, msg_len, msg_len };
