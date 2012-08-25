@@ -162,9 +162,20 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 
 	creating = (args->openhow.opentype == OPEN4_CREATE);
 	if (creating) {
-		copy_attr(&args_attr,
-		       &args->openhow.openflag4_u.how.createhow4_u.createattrs);
-		exclusive = (args->openhow.openflag4_u.how.mode == EXCLUSIVE4);
+		switch (args->openhow.openflag4_u.how.mode) {
+		case UNCHECKED4:
+		case GUARDED4:
+			exclusive = false;
+			copy_attr(&args_attr, &args->openhow.openflag4_u.how.createhow4_u.createattrs);
+			break;
+		case EXCLUSIVE4:
+			exclusive = true;
+			break;
+		case EXCLUSIVE4_1:
+			copy_attr(&args_attr, &args->openhow.openflag4_u.how.createhow4_u.ch_createboth.cva_attrs);
+			exclusive = true;
+			break;
+		}
 	}
 
 	if (creating && ino &&
