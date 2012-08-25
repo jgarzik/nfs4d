@@ -595,6 +595,17 @@ void cli_owner_add(struct nfs_owner *owner)
 	list_add(&owner->cli_node, &clid->owner_list);
 }
 
+static const uint32_t valid_eia_flags =
+	EXCHGID4_FLAG_SUPP_MOVED_REFER |
+	EXCHGID4_FLAG_SUPP_MOVED_MIGR |
+	EXCHGID4_FLAG_BIND_PRINC_STATEID |
+	EXCHGID4_FLAG_USE_NON_PNFS |
+	EXCHGID4_FLAG_USE_PNFS_MDS |
+	EXCHGID4_FLAG_USE_PNFS_DS |
+	EXCHGID4_FLAG_MASK_PNFS |
+	EXCHGID4_FLAG_UPD_CONFIRMED_REC_A |
+	EXCHGID4_FLAG_CONFIRMED_R;
+
 nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 			     struct list_head *writes, struct rpc_write **wr)
 {
@@ -616,6 +627,10 @@ nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 	/* we only support SP4_NONE */
 	if (args->eia_state_protect.spa_how != SP4_NONE) {
 		status = NFS4ERR_NOTSUPP;
+		goto out;
+	}
+	if (args->eia_flags & ~valid_eia_flags) {
+		status = NFS4ERR_INVAL;
 		goto out;
 	}
 
@@ -655,6 +670,8 @@ nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 	 */
 	
 	cli.flags = args->eia_flags;
+	cli.flags &= ~(EXCHGID4_FLAG_UPD_CONFIRMED_REC_A);
+	cli.flags |= EXCHGID4_FLAG_USE_NON_PNFS;
 	memcpy(cli.verifier, owner->co_verifier, sizeof(cli.verifier));
 	cli.owner.owner_len = owner->co_ownerid.co_ownerid_len;
 	cli.owner.owner_val = memdup(owner->co_ownerid.co_ownerid_val,
