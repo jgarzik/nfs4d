@@ -102,9 +102,13 @@ nfsstat4 owner_lookup_name(clientid4 id, struct nfs_buf *owner,
 
 	*owner_out = NULL;
 
-	clid = g_hash_table_lookup(srv.clid_idx, (void *)(unsigned long) id);
-	if (!clid)
+	clid = g_hash_table_lookup(srv.clid_idx, &id);
+	if (!clid) {
+		if (debugging)
+			applog(LOG_INFO, "clientid %016llx not in clid_idx",
+				(unsigned long long) id);
 		return NFS4ERR_STALE_CLIENTID;
+	}
 
 	list_for_each_entry(o, &clid->owner_list, cli_node) {
 		size_t len;
@@ -519,12 +523,40 @@ static int evtimer_renew(struct event *ev, int more_sec)
 	return evtimer_add(ev, &tv);
 }
 
-static nfsstat4 clientid_touch(clientid4 id_in)
+static struct nfs_clientid *clientid_new(void)
 {
 	struct nfs_clientid *clid;
-	unsigned long id = (unsigned long) id_in;
 
-	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	clid = calloc(1, sizeof(*clid));
+	if (!clid)
+		return NULL;
+
+	INIT_LIST_HEAD(&clid->node);
+	INIT_LIST_HEAD(&clid->owner_list);
+
+	return clid;
+}
+
+guint clientid_hash(gconstpointer key_p)
+{
+	const fsdb_client_id *key = key_p;
+
+	return (guint) (uint64_t) (*key);
+}
+
+gboolean clientid_equal(gconstpointer a_p, gconstpointer b_p)
+{
+	const fsdb_client_id *a = a_p;
+	const fsdb_client_id *b = b_p;
+
+	return (*a == *b) ? TRUE : FALSE;
+}
+
+static nfsstat4 clientid_touch(clientid4 id)
+{
+	struct nfs_clientid *clid;
+
+	clid = g_hash_table_lookup(srv.clid_idx, &id);
 	if (!clid)
 		return NFS4ERR_STALE_CLIENTID;
 	if (clid->expired)
@@ -535,12 +567,11 @@ static nfsstat4 clientid_touch(clientid4 id_in)
 	return NFS4_OK;
 }
 
-nfsstat4 clientid_test(clientid4 id_in)
+nfsstat4 clientid_test(clientid4 id)
 {
 	struct nfs_clientid *clid;
-	unsigned long id = (unsigned long) id_in;
 
-	clid = g_hash_table_lookup(srv.clid_idx, (void *) id);
+	clid = g_hash_table_lookup(srv.clid_idx, &id);
 	if (!clid)
 		return NFS4ERR_STALE_CLIENTID;
 	return NFS4_OK;
@@ -555,8 +586,7 @@ void cli_owner_add(struct nfs_owner *owner)
 {
 	struct nfs_clientid *clid;
 
-	clid = g_hash_table_lookup(srv.clid_idx,
-				   (void *)(unsigned long) owner->cli);
+	clid = g_hash_table_lookup(srv.clid_idx, &owner->cli);
 	/* FIXME: handle NULL */
 
 	list_add(&owner->cli_node, &clid->owner_list);
@@ -652,6 +682,15 @@ nfsstat4 nfs_op_exchange_id(struct nfs_cxn *cxn, const EXCHANGE_ID4args *args,
 		status = NFS4ERR_SERVERFAULT;
 		goto out_txn;
 	}
+
+	struct nfs_clientid *clid = clientid_new();
+	if (!clid) {
+		status = NFS4ERR_NOSPC;
+		goto out_txn;
+	}
+	clid->id_short = cli.id;
+
+	g_hash_table_insert(srv.clid_idx, &clid->id_short, clid);
 
 	const char *my_server_owner = "127.0.0.1";
 	const char *my_server_scope = "n/a";

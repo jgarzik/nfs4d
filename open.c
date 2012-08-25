@@ -60,8 +60,8 @@ static void print_open_args(const OPEN4args *args)
 		//print_fattr(pfx, &args->attr);
 	}
 
-	applog(LOG_INFO, "   OPEN (CID:xx OWNER:%.*s)",
-	       //(unsigned long long) args->clientid,
+	applog(LOG_INFO, "   OPEN (CID:%016llx OWNER:%.*s)",
+	       (unsigned long long) args->owner.clientid,
 	       args->owner.owner.owner_len,
 	       args->owner.owner.owner_val);
 }
@@ -94,6 +94,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 	owner_name.val = args->owner.owner.owner_val;
 	u_file.len = args->claim.open_claim4_u.file.utf8string_len;
 	u_file.val = args->claim.open_claim4_u.file.utf8string_val;
+	clientid4 clientid = cxn->sess.client;
 
 	/* open transaction */
 	rc = dbenv->txn_begin(dbenv, NULL, &txn, 0);
@@ -103,18 +104,12 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 		goto out;
 	}
 
-	status = owner_lookup_name(args->owner.clientid, &owner_name, &open_owner);
+	status = owner_lookup_name(clientid, &owner_name, &open_owner);
 	if (status != NFS4_OK)
 		goto err_out;
 
-	if (open_owner) {
-		if (args->seqid != open_owner->cli_next_seq) {
-			status = NFS4ERR_BAD_SEQID;
-			goto err_out;
-		}
-
+	if (open_owner)
 		open_owner->cli_next_seq++;
-	}
 
 	/* for the moment, we only support CLAIM_NULL */
 	if (args->claim.claim != CLAIM_NULL) {
@@ -225,7 +220,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 
 		ac.ino = ino;
 		ac.op = OP_OPEN;
-		ac.clientid = args->owner.clientid;
+		ac.clientid = clientid;
 		ac.owner = &owner_name;
 		ac.share_access = args->share_access;
 		ac.share_deny = args->share_deny;
@@ -302,8 +297,7 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 			goto err_out;
 		}
 
-		open_owner->cli = args->owner.clientid;
-		open_owner->cli_next_seq = args->seqid + 1;
+		open_owner->cli = clientid;
 
 		cli_owner_add(open_owner);
 
@@ -391,20 +385,19 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, const OPEN_DOWNGRADE4args *a
 	nfsstat4 status = NFS4_OK;
 	struct nfs_stateid sid;
 	struct nfs_inode *ino = NULL;
-	uint32_t seqid, share_access, share_deny;
+	uint32_t share_access, share_deny;
 	struct nfs_openfile *of = NULL;
 
 	cxn->drc_mask |= drc_open;
 
 	copy_sid(&sid, &args->open_stateid);
-	seqid = args->seqid;
 	share_access = args->share_access;
 	share_deny = args->share_deny;
 
 	if (debugging)
 		applog(LOG_INFO, "op OPEN_DOWNGRADE (SEQ:%u IDSEQ:%u ID:%x "
 		       "SHAC:%x SHDN:%x)",
-		       seqid, sid.seqid, sid.id,
+		       args->seqid, sid.seqid, sid.id,
 		       share_access, share_deny);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);
@@ -421,11 +414,6 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, const OPEN_DOWNGRADE4args *a
 	status = openfile_lookup(&sid, ino, nst_open, &of);
 	if (status != NFS4_OK)
 		goto out;
-
-	if (seqid != of->owner->cli_next_seq) {
-		status = NFS4ERR_BAD_SEQID;
-		goto out;
-	}
 
 	of->my_seq++;
 	of->owner->cli_next_seq++;
@@ -472,16 +460,14 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *args,
 	struct nfs_stateid sid;
 	struct nfs_openfile *of = NULL;
 	struct nfs_inode *ino = NULL;
-	uint32_t seqid;
 
 	cxn->drc_mask |= drc_close;
 
-	seqid = args->seqid;
 	copy_sid(&sid, &args->open_stateid);
 
 	if (debugging)
 		applog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
-		       seqid, sid.seqid, sid.id);
+		       args->seqid, sid.seqid, sid.id);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);
 	if (!ino) {
@@ -497,11 +483,6 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *args,
 	status = openfile_lookup(&sid, ino, nst_open, &of);
 	if (status != NFS4_OK)
 		goto out;
-
-	if (seqid != of->owner->cli_next_seq) {
-		status = NFS4ERR_BAD_SEQID;
-		goto out;
-	}
 
 	of->owner->cli_next_seq++;
 

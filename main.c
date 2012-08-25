@@ -323,17 +323,6 @@ void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb)
 		nb->val = cur_readmem(cur, nb->len);
 }
 
-void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid)
-{
-	const void *verf;
-
-	sid->seqid = cur_read32(cur);
-	sid->id = cur_read32(cur);
-	verf = cur_readmem(cur, sizeof(verifier4));
-	if (verf)
-		memcpy(&sid->server_verf, verf, sizeof(verifier4));
-}
-
 static unsigned int wr_free_space(struct rpc_write *wr)
 {
 	return wr->rbuf->len - wr->len;
@@ -1364,7 +1353,7 @@ static int init_server(void)
 	memset(&srv, 0, sizeof(srv));
 	INIT_LIST_HEAD(&srv.dead);
 	srv.lease_time = SRV_LEASE_TIME;
-	srv.clid_idx = g_hash_table_new_full(g_direct_hash, g_direct_equal,
+	srv.clid_idx = g_hash_table_new_full(clientid_hash, clientid_equal,
 					     NULL, NULL);
 	srv.openfiles = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 					  NULL, openfile_free);

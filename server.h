@@ -53,7 +53,6 @@ struct server_socket;
 #define CR64()			cur_read64(cur)
 #define CURMEM(count)		cur_readmem(cur, (count))
 #define CURBUF(buf_ptr)		cur_readbuf(cur, (buf_ptr))
-#define CURSID(sid_ptr)		cur_readsid(cur, (sid_ptr))
 #define CURMAP()		cur_readmap(cur)
 
 #define WRSKIP(count)		wr_skip(writes, wr, (count))
@@ -701,7 +700,6 @@ extern uint64_t cur_read64(struct curbuf *cur);
 extern uint64_t cur_readmap(struct curbuf *cur);
 extern const void *cur_readmem(struct curbuf *cur, unsigned int n);
 extern void cur_readbuf(struct curbuf *cur, struct nfs_buf *nb);
-extern void cur_readsid(struct curbuf *cur, struct nfs_stateid *sid);
 extern void wr_free(struct rpc_write *wr);
 extern struct rpc_write *wr_alloc(unsigned int n);
 extern struct rpc_write *wr_ref(struct refbuf *rb, unsigned int ofs,
@@ -744,6 +742,8 @@ extern int nfsproc_compound(const char *host, struct opaque_auth *cred, struct o
 			     struct rpc_write **wr);
 
 /* state.c */
+extern guint clientid_hash(gconstpointer key_p);
+extern gboolean clientid_equal(gconstpointer a_p, gconstpointer b_p);
 extern struct list_head ino_openfile_list;
 extern bool cli_new_owner(clientid4, char *);
 extern void state_gc(void);
