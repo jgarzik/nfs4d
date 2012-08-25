@@ -499,7 +499,7 @@ struct nfs_openfile *openfile_new(enum nfs_state_type type, struct nfs_owner *o)
 
 	of->owner = o;
 	of->type = type;
-	of->my_seq = random() & 0xfff;
+	of->my_seq = 1;
 	of->id = gen_stateid();
 	if (!of->id) {
 		free(of);
