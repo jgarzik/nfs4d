@@ -849,8 +849,10 @@ static inline void copy_sid(struct nfs_stateid *sid, const stateid4 *sid4)
 {
 	sid->seqid = sid4->seqid;
 
-	/* FIXME: endian */
-	memcpy(&sid->id, &sid4->other[0], sizeof(sid->id));
+	uint32_t tmp_id;
+	memcpy(&tmp_id, &sid4->other[0], sizeof(sid->id));
+
+	sid->id = ntohl(tmp_id);
 	memcpy(&sid->server_verf, &sid4->other[4], sizeof(sid->server_verf));
 	memcpy(&sid->server_magic, &sid4->other[8], sizeof(sid->server_magic));
 }

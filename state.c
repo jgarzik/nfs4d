@@ -174,8 +174,11 @@ nfsstat4 openfile_lookup(struct nfs_stateid *id_in,
 		if ((type != nst_any) && (of->type != type))
 			return NFS4ERR_BAD_STATEID;
 
+#if 0
 		if (id_in->seqid != of->my_seq)
 			return NFS4ERR_OLD_STATEID;
+#endif
+
 
 		if (ino && (ino->inum != of->inum))
 			return NFS4ERR_BAD_STATEID;
