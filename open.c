@@ -348,8 +348,8 @@ nfsstat4 nfs_op_open(struct nfs_cxn *cxn, const OPEN4args *args,
 	fh_set(&cxn->current_fh, ino->inum);
 
 	if (debugging)
-		applog(LOG_INFO, "   OPEN -> (SEQ:%u ID:%x)",
-		       sid.seqid, of->id);
+		applog(LOG_INFO, "   OPEN -> (SID.SEQ:%u SID.ID:%x)",
+		       sid.seqid, sid.id);
 
 out:
 	fattr_free(&args_attr);
@@ -442,7 +442,7 @@ nfsstat4 nfs_op_open_downgrade(struct nfs_cxn *cxn, const OPEN_DOWNGRADE4args *a
 	memcpy(&sid.server_magic, SRV_MAGIC, 4);
 
 	if (debugging)
-		applog(LOG_INFO, "   OPEN_DOWNGRADE -> (SEQ:%u ID:%x)",
+		applog(LOG_INFO, "   OPEN_DOWNGRADE -> (SID.SEQ:%u ID:%x)",
 		       sid.seqid, of->id);
 
 out:
@@ -466,7 +466,7 @@ nfsstat4 nfs_op_close(struct nfs_cxn *cxn, const CLOSE4args *args,
 	copy_sid(&sid, &args->open_stateid);
 
 	if (debugging)
-		applog(LOG_INFO, "op CLOSE (SEQ:%u IDSEQ:%u ID:%x)",
+		applog(LOG_INFO, "op CLOSE (SEQ:%u SID.SEQ:%u SID.ID:%x)",
 		       args->seqid, sid.seqid, sid.id);
 
 	ino = inode_fhdec(NULL, cxn->current_fh, 0);

@@ -139,7 +139,7 @@ nfsstat4 nfs_op_write(struct nfs_cxn *cxn, const WRITE4args *args,
 	srv.stats.write_bytes += data.len;
 
 	if (debugging)
-		applog(LOG_INFO, "op WRITE (IDSEQ:%u ID:%x OFS:%Lu ST:%s LEN:%x)",
+		applog(LOG_INFO, "op WRITE (SID.SEQ:%u SID.ID:%x OFS:%Lu ST:%s LEN:%x)",
 		       sid.seqid, sid.id,
 		       (unsigned long long) offset,
 		       name_stable_how4[stable],
