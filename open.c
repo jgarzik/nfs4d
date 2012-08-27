@@ -23,12 +23,19 @@
 #include <syslog.h>
 #include "server.h"
 
-static const char *name_open_claim_type4[] = {
-	[CLAIM_NULL] = "NULL",
-	[CLAIM_PREVIOUS] = "PREVIOUS",
-	[CLAIM_DELEGATE_CUR] = "DELEGATE_CUR",
-	[CLAIM_DELEGATE_PREV] = "DELEGATE_PREV",
-};
+static const char *name_open_claim_type(open_claim_type4 ctype)
+{
+	switch (ctype) {
+	case CLAIM_NULL: return "CLAIM_NULL";
+	case CLAIM_PREVIOUS: return "CLAIM_PREVIOUS";
+	case CLAIM_DELEGATE_CUR: return "CLAIM_DELEGATE_CUR";
+	case CLAIM_DELEGATE_PREV: return "CLAIM_DELEGATE_PREV";
+	case CLAIM_FH: return "CLAIM_FH";
+	case CLAIM_DELEG_CUR_FH: return "CLAIM_DELEG_CUR_FH";
+	case CLAIM_DELEG_PREV_FH: return "CLAIM_DELEG_PREV_FH";
+	default: return "<unknown>";
+	}
+}
 
 static void print_open_args(const OPEN4args *args)
 {
@@ -42,7 +49,7 @@ static void print_open_args(const OPEN4args *args)
 	       args->share_access,
 	       args->share_deny,
 	       args->openhow.opentype == OPEN4_CREATE ? "YES" : "NO",
-	       name_open_claim_type4[args->claim.claim]);
+	       name_open_claim_type(args->claim.claim));
 
 	if (args->openhow.opentype == OPEN4_CREATE && args->openhow.openflag4_u.how.mode == EXCLUSIVE4) {
 		uint64_t x;
