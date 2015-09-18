@@ -17,6 +17,8 @@ install-sh
 missing
 push
 stamp-h1
+compile
+test-driver
 
 # app-specific
 nfs4d
