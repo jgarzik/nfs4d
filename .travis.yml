@@ -1,0 +1,54 @@
+
+language: c
+
+compiler:
+  - gcc
+  - clang
+
+os:
+  - linux
+#  - osx
+
+sudo: required
+
+env:
+  global:
+    - MAKEJOBS=-j3
+    - RUN_TESTS=false
+    - BASE_OUTDIR=$TRAVIS_BUILD_DIR/out
+    - GOAL=all
+
+cache:
+  apt: true
+
+addons:
+  apt:
+    packages:
+#      - libdb4.8-dev
+      - libssl-dev
+      - libevent-dev
+      - pkg-config
+      - libglib2.0-dev
+
+before_install:
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew update; fi
+
+install:
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then sudo sudo apt-get install --no-install-recommends --no-upgrade -qq libdb5.1-dev ; fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew install glib; fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew install libevent; fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew install berkeley-db4; fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then brew install argp-standalone; fi
+
+before_script:
+  - if [ -n "$USE_SHELL" ]; then export CONFIG_SHELL="$USE_SHELL"; fi
+  - test -n "$USE_SHELL" && eval '"$USE_SHELL" -c "./autogen.sh"' || ./autogen.sh
+
+script:
+  - OUTDIR=$BASE_OUTDIR/$TRAVIS_PULL_REQUEST/$TRAVIS_JOB_NUMBER-$HOST
+  - NFS4D_CONFIG_ALL="--prefix=$TRAVIS_BUILD_DIR/depends/$HOST --bindir=$OUTDIR/bin --libdir=$OUTDIR/lib"
+  - ./configure --cache-file=config.cache $NFS4D_CONFIG_ALL $NFS4D_CONFIG || ( cat config.log && false)
+  - make -s $MAKEJOBS $GOAL || ( echo "Build failure. Verbose build follows." && make $GOAL ; false )
+  - export LD_LIBRARY_PATH=$TRAVIS_BUILD_DIR/depends/$HOST/lib
+  - if [ "$RUN_TESTS" = "true" ]; then make check; fi
+

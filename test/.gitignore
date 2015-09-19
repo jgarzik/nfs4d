@@ -1,4 +1,7 @@
 
+*.log
+*.trs
+
 libnfstest.a
 
 null
