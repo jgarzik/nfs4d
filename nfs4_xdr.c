@@ -50,15 +50,17 @@ bool_t
 xdr_authsys_parms (XDR *xdrs, authsys_parms *objp)
 {
 
-	 if (!xdr_u_int (xdrs, &objp->stamp))
+	 if (!xdr_u_quad_t (xdrs, &objp->aup_time))
 		 return FALSE;
-	 if (!xdr_string (xdrs, &objp->machinename, 255))
+	 if (!xdr_string (xdrs, &objp->aup_machname, 255))
 		 return FALSE;
-	 if (!xdr_u_int (xdrs, &objp->uid))
+	 if (!xdr_u_int (xdrs, &objp->aup_uid))
 		 return FALSE;
-	 if (!xdr_u_int (xdrs, &objp->gid))
+	 if (!xdr_u_int (xdrs, &objp->aup_gid))
 		 return FALSE;
-	 if (!xdr_array (xdrs, (char **)&objp->gids.gids_val, (u_int *) &objp->gids.gids_len, 16,
+	 if (!xdr_u_int (xdrs, &objp->aup_len))
+		 return FALSE;
+	 if (!xdr_array (xdrs, (char **)&objp->aup_gids, (u_int *) &objp->aup_len, 16,
 		sizeof (u_int), (xdrproc_t) xdr_u_int))
 		 return FALSE;
 	return TRUE;
