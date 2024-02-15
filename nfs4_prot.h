@@ -37,6 +37,7 @@ typedef u_quad_t uint64_t;
 #define AUTH_SYS 1
 #define RPCSEC_GSS 6
 
+#if 0
 struct authsys_parms {
 	u_int stamp;
 	char *machinename;
@@ -48,6 +49,7 @@ struct authsys_parms {
 	} gids;
 };
 typedef struct authsys_parms authsys_parms;
+#endif
 #define NFS4_FHSIZE 128
 #define NFS4_VERIFIER_SIZE 8
 #define NFS4_OPAQUE_LIMIT 1024

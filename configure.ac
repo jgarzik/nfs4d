@@ -54,6 +54,7 @@ AC_CHECK_LIB(db-4.9, db_create, DB4_LIBS=-ldb-4.9)
 AC_CHECK_LIB(db-5.0, db_create, DB4_LIBS=-ldb-5.0)
 AC_CHECK_LIB(db-5.1, db_create, DB4_LIBS=-ldb-5.1)
 AC_CHECK_LIB(db-5.2, db_create, DB4_LIBS=-ldb-5.2)
+AC_CHECK_LIB(db-5.3, db_create, DB4_LIBS=-ldb-5.3)
 
 if test "x$DB4_LIBS" = x; then
 	AC_MSG_ERROR([Missing required libdb 4.x])
@@ -62,6 +63,7 @@ fi
 AC_CHECK_LIB(event, event_base_new, EVENT_LIBS=-levent,
   [AC_MSG_ERROR([Missing required libevent])])
 AC_CHECK_LIB(argp, argp_parse, ARGP_LIBS=-largp)
+AC_CHECK_LIB(tirpc, xdr_array, TIRPC_LIBS=-ltirpc)
 
 dnl -------------------------------------
 dnl Checks for optional library functions
@@ -82,6 +84,7 @@ dnl AC_SUBST(GSSRPC_LIBS)
 AC_SUBST(DB4_LIBS)
 AC_SUBST(EVENT_LIBS)
 AC_SUBST(ARGP_LIBS)
+AC_SUBST(TIRPC_LIBS)
 
 AC_CONFIG_FILES([doc/Makefile test/Makefile Makefile])
 AC_OUTPUT

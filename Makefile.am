@@ -4,7 +4,7 @@
 
 SUBDIRS		= doc test
 
-INCLUDES	= @GLIB_CFLAGS@
+AM_CPPFLAGS	= @GLIB_CFLAGS@
 
 noinst_LIBRARIES= libnfscommon.a
 
@@ -16,9 +16,9 @@ nfs4d_SOURCES	= nfscommon.h elist.h nfs4_prot.h server.h fattr.h fsdb.h \
 		  main.c server.c			\
 		  dir.c fh.c fattr.c inode.c open.c	\
 		  id.c state.c data.c
-nfs4d_LDADD	= libnfscommon.a @GLIB_LIBS@ @DB4_LIBS@ @EVENT_LIBS@ @ARGP_LIBS@
+nfs4d_LDADD	= libnfscommon.a @GLIB_LIBS@ @DB4_LIBS@ @EVENT_LIBS@ @ARGP_LIBS@ @TIRPC_LIBS@
 
-nfs4dba_LDADD	= libnfscommon.a @GLIB_LIBS@ @DB4_LIBS@ @ARGP_LIBS@
+nfs4dba_LDADD	= libnfscommon.a @GLIB_LIBS@ @DB4_LIBS@ @ARGP_LIBS@ @TIRPC_LIBS@
 
 EXTRA_DIST	= autogen.sh nfs4_prot.x
 
